@@ -1,0 +1,17 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    schema: "db/schema.sql"
+    queries: "db/query"
+    gen:
+      go:
+        package: "repo"
+        out: "internal/repo"
+        sql_package: "pgx/v5"
+        emit_interface: true
+        emit_empty_slices: true
+        emit_pointers_for_null_types: false
+        overrides:
+          # numeric 统一映射为 float64，使公式层与统计层直接使用原生数值类型
+          - db_type: "pg_catalog.numeric"
+            go_type: "float64"

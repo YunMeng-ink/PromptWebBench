@@ -1,0 +1,10 @@
+# 统一以 LF 存储与检出，避免 Windows 与 Linux 之间的行尾差异。
+* text=auto eol=lf
+
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary

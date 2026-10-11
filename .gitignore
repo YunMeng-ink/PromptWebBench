@@ -1,0 +1,34 @@
+# 中间产物与临时目录
+.scratch/
+.tmp/
+
+# Go
+backend/bin/
+backend/**/*.exe
+backend/coverage.out
+backend/coverage.html
+*.test
+
+# Node / 前端
+node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/coverage/
+frontend/*.tsbuildinfo
+
+# Playwright
+frontend/playwright-report/
+frontend/test-results/
+frontend/.playwright/
+
+# 环境与密钥
+.env
+.env.local
+*.local.env
+
+# 编辑器与系统
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

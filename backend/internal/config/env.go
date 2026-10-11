@@ -1,0 +1,116 @@
+// Package config 提供环境变量加载与 config 表的带缓存读取。
+package config
+
+import (
+	"fmt"
+	"os"
+	"strings"
+)
+
+// Env 是启动时的环境变量配置，进程生命周期内不变。
+type Env struct {
+	Port string
+
+	DBHost     string
+	DBPort     string
+	DBName     string
+	DBUser     string
+	DBPassword string
+	DBSSLMode  string
+
+	JWTSecret         string
+	ConfigSecret      string
+	AdminInitPassword string
+	AdminInitEmail    string
+
+	SMTPHost     string
+	SMTPPort     string
+	SMTPUser     string
+	SMTPPassword string
+	SMTPFrom     string
+
+	GitHubClientID     string
+	GitHubClientSecret string
+
+	TrustedProxies []string
+	StaticDir      string
+	LogLevel       string
+
+	// CORSAllowOrigins 与 CookieSecure 供中间件层使用：前者限定允许跨域的前端来源，
+	// 后者决定 CSRF 与会话 Cookie 是否要求 HTTPS 传输。
+	CORSAllowOrigins []string
+	CookieSecure     bool
+}
+
+// DSN 组装 pgx 连接串。
+func (e Env) DSN() string {
+	return fmt.Sprintf(
+		"host=%s port=%s dbname=%s user=%s password=%s sslmode=%s",
+		e.DBHost, e.DBPort, e.DBName, e.DBUser, e.DBPassword, e.DBSSLMode,
+	)
+}
+
+// Load 读取环境变量。缺少必需项时直接返回错误，不提供隐含默认值。
+func Load() (Env, error) {
+	e := Env{
+		Port:       getenv("PORT", "8080"),
+		DBHost:     getenv("DB_HOST", "127.0.0.1"),
+		DBPort:     getenv("DB_PORT", "5432"),
+		DBName:     getenv("DB_NAME", "prompt_benchmark"),
+		DBUser:     getenv("DB_USER", "postgres"),
+		DBPassword: os.Getenv("DB_PASSWORD"),
+		DBSSLMode:  getenv("DB_SSLMODE", "disable"),
+
+		JWTSecret:         os.Getenv("JWT_SECRET"),
+		ConfigSecret:      os.Getenv("CONFIG_SECRET"),
+		AdminInitPassword: os.Getenv("ADMIN_INIT_PASSWORD"),
+		AdminInitEmail:    getenv("ADMIN_INIT_EMAIL", "admin@prompt-benchmark.local"),
+
+		SMTPHost:     os.Getenv("SMTP_HOST"),
+		SMTPPort:     getenv("SMTP_PORT", "587"),
+		SMTPUser:     os.Getenv("SMTP_USER"),
+		SMTPPassword: os.Getenv("SMTP_PASSWORD"),
+		SMTPFrom:     os.Getenv("SMTP_FROM"),
+
+		GitHubClientID:     os.Getenv("GITHUB_CLIENT_ID"),
+		GitHubClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
+
+		StaticDir: os.Getenv("STATIC_DIR"),
+		LogLevel:  getenv("LOG_LEVEL", "info"),
+
+		CORSAllowOrigins: splitNonEmpty(getenv("CORS_ALLOW_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")),
+		CookieSecure:     getenv("COOKIE_SECURE", "false") == "true",
+	}
+
+	e.TrustedProxies = splitNonEmpty(os.Getenv("TRUSTED_PROXIES"))
+
+	if len(e.JWTSecret) < 32 {
+		return Env{}, fmt.Errorf("JWT_SECRET 必须为至少 32 字节的十六进制字符串，当前长度为 %d", len(e.JWTSecret))
+	}
+	if e.DBName == "" || e.DBUser == "" {
+		return Env{}, fmt.Errorf("DB_NAME 与 DB_USER 不可为空")
+	}
+	return e, nil
+}
+
+func getenv(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// splitNonEmpty 把逗号分隔的配置拆为切片，忽略空白项。
+func splitNonEmpty(raw string) []string {
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if trimmed := strings.TrimSpace(part); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
+}

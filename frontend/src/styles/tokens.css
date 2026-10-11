@@ -1,0 +1,83 @@
+/* 设计令牌：全局唯一的样式取值来源。组件只引用 --pb-* 变量。 */
+
+:root {
+  --pb-color-bg: #ffffff;
+  --pb-color-bg-soft: #f5f7fa;
+  --pb-color-surface: #ffffff;
+  --pb-color-text: #303133;
+  --pb-color-text-soft: #606266;
+  --pb-color-text-faint: #909399;
+  --pb-color-border: #dcdfe6;
+  --pb-color-primary: #409eff;
+
+  --pb-header-height: 60px;
+  --pb-content-max-width: 1200px;
+
+  --pb-space-xs: 4px;
+  --pb-space-sm: 8px;
+  --pb-space-md: 16px;
+  --pb-space-lg: 24px;
+  --pb-space-xl: 32px;
+
+  --pb-radius-sm: 4px;
+  --pb-radius-md: 8px;
+}
+
+html.dark {
+  --pb-color-bg: #141414;
+  --pb-color-bg-soft: #1d1e1f;
+  --pb-color-surface: #1d1e1f;
+  --pb-color-text: #e5eaf3;
+  --pb-color-text-soft: #cfd3dc;
+  --pb-color-text-faint: #a3a6ad;
+  --pb-color-border: #4c4d4f;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background-color: var(--pb-color-bg);
+  color: var(--pb-color-text);
+  font-family:
+    system-ui, -apple-system, "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei",
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.pb-shell {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.pb-main {
+  flex: 1 1 auto;
+  width: 100%;
+  max-width: var(--pb-content-max-width);
+  margin: 0 auto;
+  padding: var(--pb-space-lg) var(--pb-space-md);
+}
+
+.pb-container {
+  width: 100%;
+  max-width: var(--pb-content-max-width);
+  margin: 0 auto;
+  padding: 0 var(--pb-space-md);
+}
