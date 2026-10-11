@@ -23,9 +23,12 @@ import (
 	"github.com/promptbench/backend/internal/oauth"
 	"github.com/promptbench/backend/internal/platform"
 	"github.com/promptbench/backend/internal/platform/migrate"
+	"github.com/promptbench/backend/internal/repo"
 	"github.com/promptbench/backend/internal/security"
 	"github.com/promptbench/backend/internal/service/admin"
 	"github.com/promptbench/backend/internal/service/auth"
+	"github.com/promptbench/backend/internal/service/prompt"
+	"github.com/promptbench/backend/internal/service/rating"
 )
 
 func main() {
@@ -108,6 +111,8 @@ func run(envFile string) error {
 		PublicBaseURL: env.PublicBaseURL,
 	})
 	adminService := admin.New(admin.Deps{Pool: pool, Logger: logger})
+	promptService := prompt.New(prompt.Deps{Pool: pool, Config: cfgStore, Logger: logger})
+	ratingService := rating.New(rating.Deps{Pool: pool, Config: cfgStore, Logger: logger})
 
 	srv, err := api.New(api.Deps{
 		Env:     env,
@@ -115,8 +120,11 @@ func run(envFile string) error {
 		Pool:    pool,
 		Config:  cfgStore,
 		Metrics: metrics.New(),
+		Repo:    repo.New(pool),
 		Auth:    authService,
 		Admin:   adminService,
+		Prompt:  promptService,
+		Rating:  ratingService,
 		Signer:  signer,
 	})
 	if err != nil {

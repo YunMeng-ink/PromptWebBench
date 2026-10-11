@@ -48,6 +48,10 @@ type Env struct {
 
 	// AuthRateLimit 是认证类接口每分钟的限额（按来源地址）。0 表示使用规格默认值 10。
 	AuthRateLimit int
+
+	// RateLimit 是全部限流规则的统一上限。0 表示逐条使用规则表中的规格默认值。
+	// 用于端到端测试环境：套件从同一地址连续请求，放宽后用例之间不会互相干扰。
+	RateLimit int
 }
 
 // DSN 组装 pgx 连接串。
@@ -99,6 +103,14 @@ func Load() (Env, error) {
 			return Env{}, fmt.Errorf("AUTH_RATE_LIMIT 必须为正整数，当前值 %q", raw)
 		}
 		e.AuthRateLimit = limit
+	}
+
+	if raw := os.Getenv("RATE_LIMIT"); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit <= 0 {
+			return Env{}, fmt.Errorf("RATE_LIMIT 必须为正整数，当前值 %q", raw)
+		}
+		e.RateLimit = limit
 	}
 
 	if len(e.JWTSecret) < 32 {

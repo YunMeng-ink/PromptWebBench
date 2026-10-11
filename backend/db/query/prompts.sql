@@ -1,0 +1,142 @@
+-- prompts 与 prompt_versions 的读取与写入。
+
+-- name: InsertPrompt :one
+INSERT INTO prompts (
+    title, body, description, category_id, ability_id, difficulty_id,
+    visibility, sensitive_level, uploader_id, original_uploader_id,
+    latest_version_no, major_modified
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11)
+RETURNING *;
+
+-- name: InsertPromptVersion :one
+INSERT INTO prompt_versions (
+    prompt_id, version_no, major, minor, title, body, description,
+    category_id, ability_id, difficulty_id, visibility, sensitive_level,
+    is_major, change_note, author_id
+)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+RETURNING *;
+
+-- name: SetPromptCurrentVersion :one
+UPDATE prompts
+SET current_version_id = $2,
+    latest_version_no = $3,
+    major_modified = major_modified OR $4,
+    updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING *;
+
+-- prompts 表自身冗余保存当前版本的全部字段，供列表筛选与判定直接使用，
+-- 不必每次联表 prompt_versions。每次修改都要同步，否则列表与详情会给出不同取值。
+-- name: UpdatePromptContent :one
+UPDATE prompts
+SET title = $2,
+    body = $3,
+    description = $4,
+    category_id = $5,
+    ability_id = $6,
+    difficulty_id = $7,
+    visibility = $8,
+    sensitive_level = $9,
+    updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING *;
+
+-- name: GetPrompt :one
+SELECT p.*, c.is_high_risk
+FROM prompts p
+JOIN categories c ON c.id = p.category_id
+WHERE p.id = $1 AND p.deleted_at IS NULL;
+
+-- name: LockPrompt :one
+SELECT p.*, c.is_high_risk
+FROM prompts p
+JOIN categories c ON c.id = p.category_id
+WHERE p.id = $1 AND p.deleted_at IS NULL
+FOR UPDATE OF p;
+
+-- name: GetPromptVersion :one
+SELECT * FROM prompt_versions
+WHERE prompt_id = $1 AND version_no = $2;
+
+-- name: GetLatestPromptVersion :one
+SELECT * FROM prompt_versions
+WHERE prompt_id = $1
+ORDER BY major DESC, minor DESC
+LIMIT 1;
+
+-- name: ListPromptVersions :many
+SELECT * FROM prompt_versions
+WHERE prompt_id = $1
+ORDER BY major DESC, minor DESC;
+
+-- name: ReplacePromptTags :exec
+DELETE FROM prompt_tags WHERE prompt_id = $1;
+
+-- name: AttachPromptTag :exec
+INSERT INTO prompt_tags (prompt_id, tag_id)
+VALUES ($1, $2)
+ON CONFLICT DO NOTHING;
+
+-- name: ListPromptTagIDs :many
+SELECT tag_id FROM prompt_tags WHERE prompt_id = $1;
+
+-- name: ListPromptTags :many
+SELECT t.*
+FROM tags t
+JOIN prompt_tags pt ON pt.tag_id = t.id
+WHERE pt.prompt_id = $1
+ORDER BY t.priority DESC, t.id;
+
+-- name: SoftDeletePrompt :one
+UPDATE prompts
+SET deleted_at = now(), updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id;
+
+-- 重大修改时把当前评分归档到历史版本表（需求 §7.3 第 4 步）。
+-- 先归档再删除：归档表保留原始评分时间与创建时间，统计窗口仍以评分创建时间为准。
+-- name: ArchivePromptRatings :many
+INSERT INTO prompt_version_ratings (
+    source_rating_id, user_id, prompt_id, prompt_version_id, model_id,
+    score, edit_count, rated_at, archive_reason
+)
+SELECT r.id, r.user_id, r.prompt_id, r.prompt_version_id, r.model_id, r.score, r.edit_count,
+       r.created_at, sqlc.arg(reason)
+FROM ratings r
+WHERE r.prompt_id = sqlc.arg(prompt_id) AND r.deleted_at IS NULL
+RETURNING id;
+
+-- name: DeletePromptRatingsForMajorChange :many
+DELETE FROM ratings
+WHERE prompt_id = $1 AND deleted_at IS NULL
+RETURNING id;
+
+-- 重大修改使统计快照失效，阶段 3 会按新版本重算（需求 §7.3 第 6 步）。
+-- name: DeletePromptStatsForMajorChange :exec
+DELETE FROM prompt_stats WHERE prompt_id = $1;
+
+-- name: DeletePromptModelStatsForMajorChange :exec
+DELETE FROM prompt_model_stats WHERE prompt_id = $1;
+
+-- 私有提示词额度在事务内统计，未删除的私有提示词计入（需求 §8.3、C-21）。
+-- name: CountPrivatePrompts :one
+SELECT count(*)::bigint
+FROM prompts
+WHERE uploader_id = $1
+  AND visibility = 'private'
+  AND deleted_at IS NULL;
+
+-- name: ListOwnPrompts :many
+SELECT p.*, c.is_high_risk
+FROM prompts p
+JOIN categories c ON c.id = p.category_id
+WHERE p.uploader_id = $1 AND p.deleted_at IS NULL
+ORDER BY p.updated_at DESC, p.id DESC
+LIMIT $2 OFFSET $3;
+
+-- name: CountOwnPrompts :one
+SELECT count(*)::bigint
+FROM prompts
+WHERE uploader_id = $1 AND deleted_at IS NULL;

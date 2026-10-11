@@ -33,7 +33,11 @@ function latestCodeFor(email: string): string {
 
 async function fillLoginAndSubmit(page: Page, email: string, password: string): Promise<void> {
   await page.goto('/login')
-  await page.getByTestId('login-email').fill(email)
+
+  // 等表单渲染完成再填值：页面刚导航时组件尚未挂载，直接 fill 会落空。
+  const emailInput = page.getByTestId('login-email')
+  await expect(emailInput).toBeVisible()
+  await emailInput.fill(email)
   await page.getByTestId('login-password').fill(password)
   await page.getByTestId('login-submit').click()
 }
@@ -52,18 +56,23 @@ async function registerThroughUI(page: Page, email: string): Promise<void> {
   await expect(page.getByTestId('header-user')).toBeVisible()
 }
 
-// 多个用例共用同一个已验证账户，避免触发认证类接口的限流。
-let sharedEmail: string | null = null
+// 认证用例各自使用独立账户：本文件最后一个用例会修改口令，
+// 若与提示词、评分用例共用同一账户，那两个套件之后的登录就会失败。
+let authEmail: string | null = null
 
-async function loginSharedAccount(page: Page): Promise<string> {
-  if (sharedEmail === null) {
-    sharedEmail = uniqueEmail('shared')
-    await registerThroughUI(page, sharedEmail)
-    return sharedEmail
+async function loginAuthAccount(page: Page): Promise<string> {
+  if (authEmail === null) {
+    authEmail = uniqueEmail('auth')
+    await registerThroughUI(page, authEmail)
+    return authEmail
   }
-  await fillLoginAndSubmit(page, sharedEmail, PASSWORD)
+
+  await fillLoginAndSubmit(page, authEmail, PASSWORD)
+
+  // 登录失败时页面上会给出错误提示，先断言登录成功再继续，
+  // 否则后续断言会指向一个与登录无关的页面，报错难以定位。
   await expect(page.getByTestId('header-user')).toBeVisible()
-  return sharedEmail
+  return authEmail
 }
 
 test('游客访问个人中心会被引导到登录页', async ({ page }) => {
@@ -93,7 +102,7 @@ test('注册与邮箱验证完成后直接处于登录态', async ({ page }) => 
 })
 
 test('登出后恢复游客态，可再次登录', async ({ page }) => {
-  const email = await loginSharedAccount(page)
+  const email = await loginAuthAccount(page)
 
   await page.getByTestId('header-user').click()
   await page.getByTestId('header-logout').click()
@@ -110,30 +119,33 @@ test('登出后恢复游客态，可再次登录', async ({ page }) => {
 })
 
 test('口令错误时给出提示且不进入登录态', async ({ page }) => {
-  await loginSharedAccount(page)
+  await loginAuthAccount(page)
   await page.getByTestId('header-user').click()
   await page.getByTestId('header-logout').click()
   await expect(page.getByTestId('header-login')).toBeVisible()
 
-  await fillLoginAndSubmit(page, sharedEmail ?? '', 'WrongPassw0rd!')
+  await fillLoginAndSubmit(page, authEmail ?? '', 'WrongPassw0rd!')
 
   await expect(page.getByText('邮箱或密码错误')).toBeVisible()
   await expect(page.getByTestId('header-login')).toBeVisible()
 })
 
 test('个人中心可以修改资料', async ({ page }) => {
-  await loginSharedAccount(page)
+  await loginAuthAccount(page)
+
+  // 昵称在库上是唯一键，固定取值会让第二次运行的用例撞上已存在的记录。
+  const nickname = `端到端昵称-${Date.now()}`
 
   await page.goto('/me')
-  await page.getByTestId('me-username-input').fill('端到端昵称')
+  await page.getByTestId('me-username-input').fill(nickname)
   await page.getByTestId('me-profile-form').getByTestId('me-save').click()
 
   await expect(page.getByTestId('me-notice')).toContainText('资料已更新')
-  await expect(page.getByTestId('header-user')).toContainText('端到端昵称')
+  await expect(page.getByTestId('header-user')).toContainText(nickname)
 })
 
 test('API Token 只展示一次并可撤销', async ({ page }) => {
-  await loginSharedAccount(page)
+  await loginAuthAccount(page)
 
   await page.goto('/me')
   await page.getByRole('tab', { name: 'API Token' }).click()
@@ -151,7 +163,7 @@ test('API Token 只展示一次并可撤销', async ({ page }) => {
 })
 
 test('修改口令后当前会话保持可用', async ({ page }) => {
-  await loginSharedAccount(page)
+  await loginAuthAccount(page)
 
   await page.goto('/me')
   await page.getByRole('tab', { name: '口令' }).click()

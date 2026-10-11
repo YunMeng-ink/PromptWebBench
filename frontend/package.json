@@ -15,7 +15,7 @@
     "format": "biome check --write src e2e",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "node ./scripts/prepare-e2e.mjs && playwright test",
+    "e2e": "node ./scripts/prepare-e2e.mjs && vite build && playwright test",
     "e2e:only": "playwright test"
   },
   "dependencies": {

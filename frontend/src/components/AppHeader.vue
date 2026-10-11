@@ -40,6 +40,14 @@ async function onLogout(): Promise<void> {
         <RouterLink class="pb-header__link" to="/">
           {{ t('nav.home') }}
         </RouterLink>
+        <RouterLink
+          v-if="auth.status === 'authenticated'"
+          class="pb-header__link"
+          to="/upload"
+          data-testid="header-upload"
+        >
+          {{ t('nav.upload') }}
+        </RouterLink>
         <el-select
           class="pb-header__locale"
           :model-value="preferences.locale"

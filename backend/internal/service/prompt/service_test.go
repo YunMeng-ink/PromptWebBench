@@ -1,0 +1,505 @@
+package prompt
+
+import (
+	"context"
+	"fmt"
+	"log/slog"
+	"os"
+	"testing"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/promptbench/backend/internal/apperr"
+	"github.com/promptbench/backend/internal/config"
+	"github.com/promptbench/backend/internal/domain"
+	"github.com/promptbench/backend/internal/platform/pgtest"
+	"github.com/promptbench/backend/internal/repo"
+)
+
+// fixture 汇集用例需要的构造物，避免每个用例重复建立服务与查询。
+type fixture struct {
+	pool   *pgxpool.Pool
+	svc    *Service
+	config *config.Store
+}
+
+func newFixture(t *testing.T) *fixture {
+	t.Helper()
+	pool := pgtest.MigratedDatabase(t)
+	cfgStore := config.NewStore(pool, config.DefaultCacheTTL)
+	if err := cfgStore.Refresh(context.Background()); err != nil {
+		t.Fatalf("加载配置失败: %v", err)
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	return &fixture{pool: pool, svc: New(Deps{Pool: pool, Config: cfgStore, Logger: logger}), config: cfgStore}
+}
+
+// categoryID 按 slug 取类别 ID。
+func (f *fixture) categoryID(t *testing.T, slug string) int64 {
+	t.Helper()
+	var id int64
+	if err := f.pool.QueryRow(context.Background(),
+		`SELECT id FROM categories WHERE slug = $1`, slug).Scan(&id); err != nil {
+		t.Fatalf("读取类别 %s 失败: %v", slug, err)
+	}
+	return id
+}
+
+func (f *fixture) normalUser(t *testing.T) domain.User {
+	t.Helper()
+	return domain.User{
+		ID:     pgtest.SeedUser(t, f.pool, pgtest.UserOptions{Verified: true}),
+		Role:   domain.RoleUser,
+		Status: domain.StatusNormal,
+	}
+}
+
+func (f *fixture) developer(t *testing.T) domain.User {
+	t.Helper()
+	return domain.User{
+		ID:     pgtest.SeedUser(t, f.pool, pgtest.UserOptions{Role: "developer", Verified: true}),
+		Role:   domain.RoleDeveloper,
+		Status: domain.StatusNormal,
+	}
+}
+
+func baseInput(categoryID int64, visibility domain.Visibility) Input {
+	return Input{
+		Title:       "测试提示词",
+		Body:        "请完成以下任务",
+		CategoryID:  categoryID,
+		Visibility:  visibility,
+		Sensitive:   domain.SensitiveLow,
+		ChangeNote:  "初始版本",
+		Description: "描述说明",
+	}
+}
+
+// assertAppErrCode 断言服务返回的错误码。
+func assertAppErrCode(t *testing.T, err error, want apperr.Code) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("期望错误码 %s，实际无错误", want)
+	}
+	appErr, ok := err.(*apperr.Error)
+	if !ok {
+		t.Fatalf("期望 apperr.Error，实际 %T: %v", err, err)
+	}
+	if appErr.Code != want {
+		t.Fatalf("错误码 = %s（%s），期望 %s", appErr.Code, appErr.Message, want)
+	}
+}
+
+func TestCreateRejectsHighRiskCategoryForOrdinaryUser(t *testing.T) {
+	// 创建路径拦截：普通用户不能选择高风险类别（C-19、需求 §8.7）。
+	f := newFixture(t)
+	user := f.normalUser(t)
+
+	_, err := f.svc.Create(context.Background(), user,
+		baseInput(f.categoryID(t, "jailbreak"), domain.VisibilityPublic))
+	assertAppErrCode(t, err, apperr.CodeForbidden)
+}
+
+func TestUpdateRejectsHighRiskCategoryForOrdinaryUser(t *testing.T) {
+	// 更新路径拦截。这是 C-20 明确要求的回归：需求 §8.7 只提了创建，
+	// 若更新路径漏判，普通用户可以先建普通提示词、再改成高风险类别绕过限制。
+	f := newFixture(t)
+	user := f.normalUser(t)
+	normal := f.categoryID(t, "reasoning")
+
+	created, err := f.svc.Create(context.Background(), user, baseInput(normal, domain.VisibilityPublic))
+	if err != nil {
+		t.Fatalf("创建提示词失败: %v", err)
+	}
+
+	in := baseInput(normal, domain.VisibilityPublic)
+	in.Title = "改为高风险类别"
+	in.CategoryID = f.categoryID(t, "jailbreak")
+	_, err = f.svc.Update(context.Background(), user, created.Prompt.ID, in)
+	assertAppErrCode(t, err, apperr.CodeForbidden)
+
+	// 拒绝之后类别未被改写，仍是创建时的类别。
+	detail, err := f.svc.Get(context.Background(), domain.ViewerFor(user), created.Prompt.ID)
+	if err != nil {
+		t.Fatalf("读取提示词失败: %v", err)
+	}
+	if detail.Prompt.CategoryID != normal {
+		t.Errorf("被拒绝的修改不应生效，类别 = %d，期望 %d", detail.Prompt.CategoryID, normal)
+	}
+}
+
+func TestCreateRejectsDeveloperVisibilityForOrdinaryUser(t *testing.T) {
+	f := newFixture(t)
+	user := f.normalUser(t)
+
+	_, err := f.svc.Create(context.Background(), user,
+		baseInput(f.categoryID(t, "reasoning"), domain.VisibilityDeveloper))
+	assertAppErrCode(t, err, apperr.CodeForbidden)
+}
+
+func TestUpdateRejectsDeveloperVisibilityForOrdinaryUser(t *testing.T) {
+	f := newFixture(t)
+	user := f.normalUser(t)
+	normal := f.categoryID(t, "reasoning")
+
+	created, err := f.svc.Create(context.Background(), user, baseInput(normal, domain.VisibilityPublic))
+	if err != nil {
+		t.Fatalf("创建提示词失败: %v", err)
+	}
+
+	in := baseInput(normal, domain.VisibilityDeveloper)
+	_, err = f.svc.Update(context.Background(), user, created.Prompt.ID, in)
+	assertAppErrCode(t, err, apperr.CodeForbidden)
+}
+
+func TestDeveloperMayUseHighRiskCategoryAndDeveloperVisibility(t *testing.T) {
+	f := newFixture(t)
+	dev := f.developer(t)
+	jailbreak := f.categoryID(t, "jailbreak")
+
+	created, err := f.svc.Create(context.Background(), dev, baseInput(jailbreak, domain.VisibilityDeveloper))
+	if err != nil {
+		t.Fatalf("开发者应能选择高风险类别与开发者可见: %v", err)
+	}
+	if !created.Prompt.HighRisk {
+		t.Error("创建结果的���风险标记应为真")
+	}
+
+	// 开发者对自己的高风险提示词可读，游客与普通用户读到 404（C-20 的直链侧）。
+	if _, err := f.svc.Get(context.Background(), domain.ViewerFor(dev), created.Prompt.ID); err != nil {
+		t.Errorf("开发者读取高风险提示词失败: %v", err)
+	}
+	_, err = f.svc.Get(context.Background(), domain.Guest(), created.Prompt.ID)
+	assertAppErrCode(t, err, apperr.CodeNotFound)
+
+	other := f.normalUser(t)
+	_, err = f.svc.Get(context.Background(), domain.ViewerFor(other), created.Prompt.ID)
+	assertAppErrCode(t, err, apperr.CodeNotFound)
+}
+
+func TestHighRiskPublicPromptIsHiddenFromOrdinaryUsers(t *testing.T) {
+	// C-20 的完整形态：类别高风险 + 可见性 public。开发者先按普通类别创建再改为高风险，
+	// 使一条 public 的高风险提示词真实存在；普通用户与游客都必须 404。
+	f := newFixture(t)
+	dev := f.developer(t)
+	normal := f.categoryID(t, "reasoning")
+
+	created, err := f.svc.Create(context.Background(), dev, baseInput(normal, domain.VisibilityPublic))
+	if err != nil {
+		t.Fatalf("创建提示词失败: %v", err)
+	}
+	in := baseInput(normal, domain.VisibilityPublic)
+	in.CategoryID = f.categoryID(t, "jailbreak")
+	if _, err := f.svc.Update(context.Background(), dev, created.Prompt.ID, in); err != nil {
+		t.Fatalf("改为高风险类别失败: %v", err)
+	}
+
+	_, err = f.svc.Get(context.Background(), domain.Guest(), created.Prompt.ID)
+	assertAppErrCode(t, err, apperr.CodeNotFound)
+
+	_, err = f.svc.Get(context.Background(), domain.ViewerFor(f.normalUser(t)), created.Prompt.ID)
+	assertAppErrCode(t, err, apperr.CodeNotFound)
+
+	// 列表侧同样不可见：ListScope 的高风险过滤对非开发者生效。
+	list, err := f.svc.List(context.Background(), domain.Guest(), repo.PromptListFilter{}, domain.SortLatest, 1, 20)
+	if err != nil {
+		t.Fatalf("查询公开列表失败: %v", err)
+	}
+	for _, item := range list.Items {
+		if item.Prompt.ID == created.Prompt.ID {
+			t.Error("高风险提示词不应出现在游客可见的公开列表中")
+		}
+	}
+
+	// 开发者可见：其本人本就对该内容有权限。
+	devList, err := f.svc.List(context.Background(), domain.ViewerFor(dev), repo.PromptListFilter{}, domain.SortLatest, 1, 20)
+	if err != nil {
+		t.Fatalf("查询公开列表失败: %v", err)
+	}
+	found := false
+	for _, item := range devList.Items {
+		if item.Prompt.ID == created.Prompt.ID {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("开发者应能在公开列表中看到高风险提示词")
+	}
+}
+
+func TestNormalEditCreatesMinorVersionAndKeepsRatings(t *testing.T) {
+	// 需求 §7.2：普通修改生成新版本、不重置评分、保留历史版本。
+	f := newFixture(t)
+	user := f.normalUser(t)
+	normal := f.categoryID(t, "reasoning")
+
+	created, err := f.svc.Create(context.Background(), user, baseInput(normal, domain.VisibilityPublic))
+	if err != nil {
+		t.Fatalf("创建提示词失败: %v", err)
+	}
+	if created.VersionNo != "v1.0" {
+		t.Errorf("初始版本号 = %s，期望 v1.0", created.VersionNo)
+	}
+
+	in := baseInput(normal, domain.VisibilityPublic)
+	in.Title = "普通修改后的标题"
+	result, err := f.svc.Update(context.Background(), user, created.Prompt.ID, in)
+	if err != nil {
+		t.Fatalf("普通修改失败: %v", err)
+	}
+	if result.VersionNo != "v1.1" {
+		t.Errorf("普通修改后版本号 = %s，期望 v1.1", result.VersionNo)
+	}
+	if result.MajorChange {
+		t.Error("未勾选重大修改时不应标记为重大修改")
+	}
+
+	detail, err := f.svc.Get(context.Background(), domain.ViewerFor(user), created.Prompt.ID)
+	if err != nil {
+		t.Fatalf("读取提示词失败: %v", err)
+	}
+	if len(detail.Versions) != 2 {
+		t.Fatalf("版本数 = %d，期望 2（历史版本应保留）", len(detail.Versions))
+	}
+	if detail.Version.Title != "普通修改后的标题" {
+		t.Errorf("当前版本标题 = %q，期望展示最新版本", detail.Version.Title)
+	}
+	if detail.Prompt.MajorModified {
+		t.Error("普通修改不应把提示词标记为已发生重大修改")
+	}
+}
+
+func TestMajorChangeResetsRatingsAndArchivesHistory(t *testing.T) {
+	// 需求 §7.3 的 7 步影响面：生成新版本、前台展示新版本、评分从零开始、
+	// 历史评分归档、提示标记、系统重算统计、标签待复核。
+	f := newFixture(t)
+	user := f.normalUser(t)
+	normal := f.categoryID(t, "reasoning")
+
+	created, err := f.svc.Create(context.Background(), user, baseInput(normal, domain.VisibilityPublic))
+	if err != nil {
+		t.Fatalf("创建提示词失败: %v", err)
+	}
+
+	ratingsBefore := seedRatings(t, f.pool, user.ID, created.Prompt.ID, 4)
+	if len(ratingsBefore) == 0 {
+		t.Fatal("评分准备失败")
+	}
+
+	in := baseInput(normal, domain.VisibilityPublic)
+	in.Title = "重大修改后的标题"
+	in.IsMajorChange = true
+	in.ChangeNote = "任务定义整体重写"
+
+	result, err := f.svc.Update(context.Background(), user, created.Prompt.ID, in)
+	if err != nil {
+		t.Fatalf("重大修改失败: %v", err)
+	}
+	if result.VersionNo != "v2.0" {
+		t.Errorf("重大修改后版本号 = %s，期望 v2.0（C-27 次版本归零）", result.VersionNo)
+	}
+	if !result.MajorChange {
+		t.Error("结果应标记为重大修改")
+	}
+	if result.ArchivedRatings != int64(len(ratingsBefore)) {
+		t.Errorf("归档评分数 = %d，期望 %d", result.ArchivedRatings, len(ratingsBefore))
+	}
+
+	ctx := context.Background()
+	// 当前评分从零开始：一条也不剩。
+	var activeCount int64
+	if err := f.pool.QueryRow(ctx,
+		`SELECT count(*) FROM ratings WHERE prompt_id = $1 AND deleted_at IS NULL`,
+		created.Prompt.ID).Scan(&activeCount); err != nil {
+		t.Fatalf("统计当前评分失败: %v", err)
+	}
+	if activeCount != 0 {
+		t.Errorf("重大修改后当前评分数 = %d，期望 0", activeCount)
+	}
+
+	// 历史评分归档完整，且保留原始评分时间与被归档版本号。
+	var archived int64
+	if err := f.pool.QueryRow(ctx,
+		`SELECT count(*) FROM prompt_version_ratings WHERE prompt_id = $1`,
+		created.Prompt.ID).Scan(&archived); err != nil {
+		t.Fatalf("统计归档评分失败: %v", err)
+	}
+	if archived != int64(len(ratingsBefore)) {
+		t.Errorf("归档表评分数 = %d，期望 %d", archived, len(ratingsBefore))
+	}
+
+	var oldVersion string
+	if err := f.pool.QueryRow(ctx,
+		`SELECT pv.version_no FROM prompt_version_ratings pvr
+		 JOIN prompt_versions pv ON pv.id = pvr.prompt_version_id
+		 WHERE pvr.prompt_id = $1 LIMIT 1`, created.Prompt.ID).Scan(&oldVersion); err != nil {
+		t.Fatalf("读取归档评分所属版本失败: %v", err)
+	}
+	if oldVersion != "v1.0" {
+		t.Errorf("归档评分应指向修改前的版本，实际 %s", oldVersion)
+	}
+
+	// 统计快照失效，等待阶段 3 按新版本重算。
+	var statsLeft int64
+	if err := f.pool.QueryRow(ctx,
+		`SELECT count(*) FROM prompt_stats WHERE prompt_id = $1`, created.Prompt.ID).Scan(&statsLeft); err != nil {
+		t.Fatalf("统计快照残留检查失败: %v", err)
+	}
+	if statsLeft != 0 {
+		t.Errorf("重大修改后统计快照应被清空，实际残留 %d 行", statsLeft)
+	}
+
+	// 前台标记：详情页据此展示提示文案（需求 §7.3 第 5 步）。
+	detail, err := f.svc.Get(ctx, domain.ViewerFor(user), created.Prompt.ID)
+	if err != nil {
+		t.Fatalf("读取提示词失败: %v", err)
+	}
+	if !detail.Prompt.MajorModified {
+		t.Error("重大修改后提示词应被标记为已发生重大修改")
+	}
+	if detail.Version.Title != "重大修改后的标题" {
+		t.Error("重大修改后前台应展示新版本")
+	}
+}
+
+func TestUpdateByNonOwnerReturnsNotFound(t *testing.T) {
+	// 无权限对象统一 404，不通过状态码暴露对象存在性（开发方案 §5.3）。
+	f := newFixture(t)
+	owner := f.normalUser(t)
+	normal := f.categoryID(t, "reasoning")
+
+	created, err := f.svc.Create(context.Background(), owner, baseInput(normal, domain.VisibilityPublic))
+	if err != nil {
+		t.Fatalf("创建提示词失败: %v", err)
+	}
+
+	other := f.normalUser(t)
+	in := baseInput(normal, domain.VisibilityPublic)
+	_, err = f.svc.Update(context.Background(), other, created.Prompt.ID, in)
+	assertAppErrCode(t, err, apperr.CodeNotFound)
+}
+
+func TestUnverifiedUserCannotCreatePrompt(t *testing.T) {
+	// C-23：未验证账户可浏览但不可上传。
+	f := newFixture(t)
+	unverified := domain.User{
+		ID:     pgtest.SeedUser(t, f.pool, pgtest.UserOptions{Verified: false}),
+		Role:   domain.RoleUser,
+		Status: domain.StatusUnverified,
+	}
+
+	_, err := f.svc.Create(context.Background(), unverified,
+		baseInput(f.categoryID(t, "reasoning"), domain.VisibilityPublic))
+	assertAppErrCode(t, err, apperr.CodeEmailNotVerified)
+}
+
+func TestPrivatePromptQuotaBlocksBeyondLimit(t *testing.T) {
+	// 需求 §8.3 与 C-21：额度在事务内判定。
+	f := newFixture(t)
+	user := f.normalUser(t)
+	normal := f.categoryID(t, "reasoning")
+
+	limit, err := f.config.GetInt(context.Background(), "private_prompt_quota_user")
+	if err != nil {
+		t.Fatalf("读取私有提示词额度失败: %v", err)
+	}
+	if limit != 100 {
+		t.Fatalf("私有提示词额度 = %d，需求 §8.3 规定普通用户为 100", limit)
+	}
+
+	// 把额度临时调到 2，使用例覆盖「超限」而不必插入 100 条。
+	if _, err := f.pool.Exec(context.Background(),
+		`UPDATE config SET value = '2'::jsonb WHERE key = 'private_prompt_quota_user'`); err != nil {
+		t.Fatalf("调整额度配置失败: %v", err)
+	}
+	if err := f.config.Refresh(context.Background()); err != nil {
+		t.Fatalf("刷新配置缓存失败: %v", err)
+	}
+
+	for i := 0; i < 2; i++ {
+		in := baseInput(normal, domain.VisibilityPrivate)
+		in.Title = fmt.Sprintf("私有提示词 %d", i)
+		if _, err := f.svc.Create(context.Background(), user, in); err != nil {
+			t.Fatalf("创建第 %d 条私有提示词失败: %v", i+1, err)
+		}
+	}
+
+	_, err = f.svc.Create(context.Background(), user, baseInput(normal, domain.VisibilityPrivate))
+	assertAppErrCode(t, err, apperr.CodeQuotaExceeded)
+}
+
+func TestPublicPromptsDoNotConsumePrivateQuota(t *testing.T) {
+	// 需求 §8.2：公开提示词不占用用户私有提示词额度。
+	f := newFixture(t)
+	user := f.normalUser(t)
+	normal := f.categoryID(t, "reasoning")
+
+	if _, err := f.pool.Exec(context.Background(),
+		`UPDATE config SET value = '1'::jsonb WHERE key = 'private_prompt_quota_user'`); err != nil {
+		t.Fatalf("调整额度配置失败: %v", err)
+	}
+	if err := f.config.Refresh(context.Background()); err != nil {
+		t.Fatalf("刷新配置缓存失败: %v", err)
+	}
+
+	for i := 0; i < 3; i++ {
+		in := baseInput(normal, domain.VisibilityPublic)
+		in.Title = fmt.Sprintf("公开提示词 %d", i)
+		if _, err := f.svc.Create(context.Background(), user, in); err != nil {
+			t.Fatalf("创建第 %d 条公开提示词失败: %v", i+1, err)
+		}
+	}
+
+	in := baseInput(normal, domain.VisibilityPrivate)
+	if _, err := f.svc.Create(context.Background(), user, in); err != nil {
+		t.Fatalf("公开提示词不应占用私有额度，创建私有提示词失败: %v", err)
+	}
+}
+
+func seedRatings(t *testing.T, pool *pgxpool.Pool, userID, promptID int64, modelCount int) []int64 {
+	t.Helper()
+	ctx := context.Background()
+
+	var versionID int64
+	if err := pool.QueryRow(ctx,
+		`SELECT current_version_id FROM prompts WHERE id = $1`, promptID).Scan(&versionID); err != nil {
+		t.Fatalf("读取当前版本失败: %v", err)
+	}
+
+	ids := make([]int64, 0, modelCount)
+	for i := 0; i < modelCount; i++ {
+		modelKey := fmt.Sprintf("test-model-%d-%d", promptID, i)
+		var modelID int64
+		if err := pool.QueryRow(ctx, `
+			INSERT INTO models (name, model_key, provider_key)
+			VALUES ($1, $1, 'test')
+			RETURNING id`, modelKey).Scan(&modelID); err != nil {
+			t.Fatalf("创建测试模型失败: %v", err)
+		}
+		var ratingID int64
+		if err := pool.QueryRow(ctx, `
+			INSERT INTO ratings (user_id, prompt_id, prompt_version_id, model_id, score)
+			VALUES ($1, $2, $3, $4, 4)
+			RETURNING id`, userID, promptID, versionID, modelID).Scan(&ratingID); err != nil {
+			t.Fatalf("创建测试评分失败: %v", err)
+		}
+		ids = append(ids, ratingID)
+	}
+	return ids
+}
+
+// assertNoRows 断言查询没有命中任何行。
+func assertNoRows(t *testing.T, err error) {
+	t.Helper()
+	if err == nil {
+		t.Fatal("期望无结果，实际查到一行")
+	}
+	if !isNoRows(err) {
+		t.Fatalf("期望无结果，实际错误为 %v", err)
+	}
+}
+
+func isNoRows(err error) bool {
+	return err == pgx.ErrNoRows
+}

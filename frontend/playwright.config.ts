@@ -12,6 +12,9 @@ const API_HEALTH = 'http://127.0.0.1:8080/api/v1/health'
 
 export default defineConfig({
   testDir: './e2e',
+  // 服务就绪后写入评分用例所需的模型与标签。迁移由后端启动时执行，
+  // 因此种子数据必须在服务起来之后补，不能并入重建数据库的脚本。
+  globalSetup: resolve(here, 'scripts', 'global-setup.ts'),
   // 用例共用同一份后端数据与认证类限流额度，串行执行保证结果确定。
   fullyParallel: false,
   workers: 1,

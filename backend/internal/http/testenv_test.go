@@ -20,9 +20,12 @@ import (
 	"github.com/promptbench/backend/internal/mail/mailtest"
 	"github.com/promptbench/backend/internal/metrics"
 	"github.com/promptbench/backend/internal/platform/pgtest"
+	"github.com/promptbench/backend/internal/repo"
 	"github.com/promptbench/backend/internal/security"
 	"github.com/promptbench/backend/internal/service/admin"
 	"github.com/promptbench/backend/internal/service/auth"
+	"github.com/promptbench/backend/internal/service/prompt"
+	"github.com/promptbench/backend/internal/service/rating"
 )
 
 // testEnv 是一套完整可用的接口层测试环境：真实数据库、真实 SMTP 服务、真实 HTTP 服务。
@@ -36,6 +39,9 @@ type testEnv struct {
 
 	auth   *auth.Service
 	admin  *admin.Service
+	prompt *prompt.Service
+	rating *rating.Service
+	repo   *repo.Queries
 	signer *security.Signer
 }
 
@@ -48,8 +54,11 @@ func (e *testEnv) Deps(t *testing.T) api.Deps {
 		Pool:    e.pool,
 		Config:  e.config,
 		Metrics: metrics.New(),
+		Repo:    e.repo,
 		Auth:    e.auth,
 		Admin:   e.admin,
+		Prompt:  e.prompt,
+		Rating:  e.rating,
 		Signer:  e.signer,
 	}
 }
@@ -82,6 +91,8 @@ func newTestEnv(t *testing.T) *testEnv {
 		PublicBaseURL: "http://127.0.0.1",
 	})
 	adminService := admin.New(admin.Deps{Pool: pool, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	promptService := prompt.New(prompt.Deps{Pool: pool, Config: cfgStore, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	ratingService := rating.New(rating.Deps{Pool: pool, Config: cfgStore, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 
 	env := testEnv{
 		Env:    testEnvConfig(),
@@ -90,6 +101,9 @@ func newTestEnv(t *testing.T) *testEnv {
 		mail:   mailServer,
 		auth:   authService,
 		admin:  adminService,
+		prompt: promptService,
+		rating: ratingService,
+		repo:   repo.New(pool),
 		signer: signer,
 	}
 
@@ -99,8 +113,11 @@ func newTestEnv(t *testing.T) *testEnv {
 		Pool:    pool,
 		Config:  cfgStore,
 		Metrics: metrics.New(),
+		Repo:    env.repo,
 		Auth:    authService,
 		Admin:   adminService,
+		Prompt:  promptService,
+		Rating:  ratingService,
 		Signer:  signer,
 	})
 	if err != nil {

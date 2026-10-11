@@ -9,9 +9,20 @@ import (
 )
 
 type Querier interface {
+	// 重大修改时把当前评分归档到历史版本表（需求 §7.3 第 4 步）。
+	// 先归档再删除：归档表保留原始评分时间与创建时间，统计窗口仍以评分创建时间为准。
+	ArchivePromptRatings(ctx context.Context, arg ArchivePromptRatingsParams) ([]int64, error)
+	AttachPromptTag(ctx context.Context, arg AttachPromptTagParams) error
 	BumpUserTokenVersion(ctx context.Context, id int64) (User, error)
 	ConsumeEmailVerification(ctx context.Context, id int64) error
 	ConsumeInviteCode(ctx context.Context, id int64) (InviteCode, error)
+	CountMyRatings(ctx context.Context, userID int64) (int64, error)
+	CountOwnPrompts(ctx context.Context, uploaderID int64) (int64, error)
+	// 私有提示词额度在事务内统计，未删除的私有提示词计入（需求 §8.3、C-21）。
+	CountPrivatePrompts(ctx context.Context, uploaderID int64) (int64, error)
+	CountPromptRatings(ctx context.Context, promptID int64) (int64, error)
+	// 每日修改与删除次数统计，窗口为 [day_start, day_end)。
+	CountRatingChangesInDay(ctx context.Context, arg CountRatingChangesInDayParams) (int64, error)
 	CountRecentEmailVerifications(ctx context.Context, arg CountRecentEmailVerificationsParams) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) (ApiToken, error)
@@ -19,30 +30,84 @@ type Querier interface {
 	CreateEmailVerification(ctx context.Context, arg CreateEmailVerificationParams) (EmailVerification, error)
 	CreateInviteCodeUsage(ctx context.Context, arg CreateInviteCodeUsageParams) error
 	CreateOAuthAccount(ctx context.Context, arg CreateOAuthAccountParams) (OauthAccount, error)
+	// ratings 与 rating_change_logs 的读写。
+	//
+	// 每日限额一律在事务内统计，窗口边界由应用层按 UTC 自然日计算后作为参数传入（C-03、
+	// 开发方案 §3.4）：SQL 中不出现 date_trunc 与任何依赖会话时区的表达式。
+	CreateRating(ctx context.Context, arg CreateRatingParams) (Rating, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DeletePromptModelStatsForMajorChange(ctx context.Context, promptID int64) error
+	DeletePromptRatingsForMajorChange(ctx context.Context, promptID int64) ([]int64, error)
+	// 重大修改使统计快照失效，阶段 3 会按新版本重算（需求 §7.3 第 6 步）。
+	DeletePromptStatsForMajorChange(ctx context.Context, promptID int64) error
+	GetAbility(ctx context.Context, id int64) (Ability, error)
 	GetActiveAPIToken(ctx context.Context, userID int64) (ApiToken, error)
 	GetActiveEmailVerification(ctx context.Context, arg GetActiveEmailVerificationParams) (EmailVerification, error)
+	GetCategory(ctx context.Context, id int64) (Category, error)
 	GetConfig(ctx context.Context, key string) (GetConfigRow, error)
+	GetDifficulty(ctx context.Context, id int64) (Difficulty, error)
 	// 邀请码的读取与占用。占用走条件更新，保证并发下不重复消耗（C-21）。
 	GetInviteCodeByCode(ctx context.Context, code string) (InviteCode, error)
+	GetLatestPromptVersion(ctx context.Context, promptID int64) (PromptVersion, error)
+	GetModel(ctx context.Context, id int64) (Model, error)
 	GetOAuthAccount(ctx context.Context, arg GetOAuthAccountParams) (OauthAccount, error)
+	GetPrompt(ctx context.Context, id int64) (GetPromptRow, error)
+	GetPromptVersion(ctx context.Context, arg GetPromptVersionParams) (PromptVersion, error)
+	GetRating(ctx context.Context, arg GetRatingParams) (Rating, error)
 	GetSystemUser(ctx context.Context) (User, error)
+	GetTagsByIDs(ctx context.Context, ids []int64) ([]Tag, error)
 	GetUserByAPITokenHash(ctx context.Context, tokenHash string) (User, error)
 	// users 表的读取与写入。
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByID(ctx context.Context, id int64) (User, error)
 	// 操作日志与提示词转移日志。操作日志只增不改不删（C-43）。
 	InsertOperationLog(ctx context.Context, arg InsertOperationLogParams) (OperationLog, error)
+	// prompts 与 prompt_versions 的读取与写入。
+	InsertPrompt(ctx context.Context, arg InsertPromptParams) (Prompt, error)
+	InsertPromptVersion(ctx context.Context, arg InsertPromptVersionParams) (PromptVersion, error)
+	InsertRatingChangeLog(ctx context.Context, arg InsertRatingChangeLogParams) (int64, error)
 	InsertTransferLog(ctx context.Context, arg InsertTransferLogParams) error
+	ListAbilities(ctx context.Context) ([]Ability, error)
+	// 字典表查询：类别、能力维度、难度、标签、模型（开发方案 §5.5 字典组）。
+	ListCategories(ctx context.Context) ([]Category, error)
 	// config 表的读写。value 为 JSONB，键名与类型语义由调用方按 C-45 解释。
 	ListConfig(ctx context.Context) ([]ListConfigRow, error)
+	ListDifficulties(ctx context.Context) ([]Difficulty, error)
+	ListModels(ctx context.Context) ([]Model, error)
+	ListMyRatings(ctx context.Context, arg ListMyRatingsParams) ([]ListMyRatingsRow, error)
+	// 当前用户的评分：详情页展示「我已评过的模型」。
+	ListMyRatingsForPrompt(ctx context.Context, arg ListMyRatingsForPromptParams) ([]Rating, error)
+	ListOwnPrompts(ctx context.Context, arg ListOwnPromptsParams) ([]ListOwnPromptsRow, error)
+	// 详情页的模型评分列表：同一模型多条评分取最新一条，展示聚合均值。
+	//
+	// 均值必须包 COALESCE（开发方案 §6.4 专项回归）：LEFT JOIN 后没有任何评分时
+	// avg 返回 NULL，sqlc 会把该列映射为非空 float64，扫描即以
+	// "cannot scan NULL into *float64" 失败，详情页 500 且不自愈。
+	// 无评分的模型均值为 0，评分数为 0 表明「尚无评分」。
+	ListPromptModelRatings(ctx context.Context, promptID int64) ([]ListPromptModelRatingsRow, error)
+	ListPromptTagIDs(ctx context.Context, promptID int64) ([]int64, error)
+	ListPromptTags(ctx context.Context, promptID int64) ([]Tag, error)
+	ListPromptVersions(ctx context.Context, promptID int64) ([]PromptVersion, error)
+	ListTags(ctx context.Context) ([]Tag, error)
+	LockPrompt(ctx context.Context, id int64) (LockPromptRow, error)
+	LockRating(ctx context.Context, id int64) (Rating, error)
 	LockUser(ctx context.Context, id int64) (User, error)
+	ReplacePromptTags(ctx context.Context, promptID int64) error
 	RevokeActiveAPITokens(ctx context.Context, userID int64) error
+	SetPromptCurrentVersion(ctx context.Context, arg SetPromptCurrentVersionParams) (Prompt, error)
 	SetUserRole(ctx context.Context, arg SetUserRoleParams) (User, error)
 	SetUserStatus(ctx context.Context, arg SetUserStatusParams) (User, error)
+	SoftDeletePrompt(ctx context.Context, id int64) (int64, error)
+	SoftDeleteRating(ctx context.Context, id int64) (int64, error)
 	SupersedeEmailVerifications(ctx context.Context, arg SupersedeEmailVerificationsParams) error
 	TouchAPIToken(ctx context.Context, tokenHash string) error
 	TransferPrompts(ctx context.Context, arg TransferPromptsParams) ([]int64, error)
+	// prompts 表自身冗余保存当前版本的全部字段，供列表筛选与判定直接使用，
+	// 不必每次联表 prompt_versions。每次修改都要同步，否则列表与详情会给出不同取值。
+	UpdatePromptContent(ctx context.Context, arg UpdatePromptContentParams) (Prompt, error)
+	// 单条修改次数上限由条件 UPDATE 保证（开发方案 §3.5）：
+	// 即使并发修改同时读到 edit_count 未超限，也只有一个事务能命中该行。
+	UpdateRatingScore(ctx context.Context, arg UpdateRatingScoreParams) (Rating, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (User, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpsertConfig(ctx context.Context, arg UpsertConfigParams) error

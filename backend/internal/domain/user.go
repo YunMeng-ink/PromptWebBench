@@ -42,10 +42,19 @@ type User struct {
 }
 
 // IsAdmin 判定管理员。
-func (u User) IsAdmin() bool { return u.Role == RoleAdmin }
+func (r Role) IsAdmin() bool { return r == RoleAdmin }
 
 // IsDeveloper 判定开发者权限。管理员隐含开发者权限（C-17）。
-func (u User) IsDeveloper() bool { return u.Role == RoleDeveloper || u.Role == RoleAdmin }
+func (r Role) IsDeveloper() bool { return r == RoleDeveloper || r == RoleAdmin }
+
+// AllowWrite 判定该身份组是否允许写入内容。
+func (r Role) AllowWrite() bool { return r == RoleUser || r == RoleDeveloper || r == RoleAdmin }
+
+// IsAdmin 判定管理员。
+func (u User) IsAdmin() bool { return u.Role.IsAdmin() }
+
+// IsDeveloper 判定开发者权限。管理员隐含开发者权限（C-17）。
+func (u User) IsDeveloper() bool { return u.Role.IsDeveloper() }
 
 func (u User) IsBanned() bool { return u.Status == StatusBanned }
 

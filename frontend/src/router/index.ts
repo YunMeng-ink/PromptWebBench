@@ -11,6 +11,8 @@ import LoginView from '@/views/LoginView.vue'
 import MeView from '@/views/MeView.vue'
 import NotFoundView from '@/views/NotFoundView.vue'
 import OAuthCallbackView from '@/views/OAuthCallbackView.vue'
+import PromptDetailView from '@/views/PromptDetailView.vue'
+import PromptFormView from '@/views/PromptFormView.vue'
 import RegisterView from '@/views/RegisterView.vue'
 import ResetPasswordView from '@/views/ResetPasswordView.vue'
 import VerifyEmailView from '@/views/VerifyEmailView.vue'
@@ -20,6 +22,23 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     name: 'home',
     component: HomeView,
+  },
+  {
+    path: '/upload',
+    name: 'prompt-upload',
+    component: PromptFormView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/prompts/:id',
+    name: 'prompt-detail',
+    component: PromptDetailView,
+  },
+  {
+    path: '/prompts/:id/edit',
+    name: 'prompt-edit',
+    component: PromptFormView,
+    meta: { requiresAuth: true },
   },
   {
     path: '/login',
@@ -68,8 +87,9 @@ export function createAppRouter(history: RouterHistory = createWebHistory()): Ro
   })
 
   /**
-   * 需要登录的页面在进入前先探测登录态；未登录时带 redirect 参数跳到登录页。
-   * 探测请求本身标记 silent，因此游客不会因 401 被反复弹回。
+   * 需要登录的页面在进入前先解析登录态；未登录时带 redirect 参数跳到登录页。
+   * ensureSession 与应用启动时的探测共享同一次请求，因此守卫不会在
+   * 探测尚未返回时就把已登录用户判为游客（开发方案 §3.6）。
    */
   router.beforeEach(async (to) => {
     if (to.meta.requiresAuth !== true) {
@@ -77,9 +97,8 @@ export function createAppRouter(history: RouterHistory = createWebHistory()): Ro
     }
 
     const auth = useAuthStore()
-    if (auth.status === 'unknown') {
-      await auth.fetchSession()
-    }
+    await auth.ensureSession()
+
     if (!auth.isAuthenticated) {
       return { name: 'login', query: { redirect: to.fullPath } }
     }

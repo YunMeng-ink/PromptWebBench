@@ -120,6 +120,21 @@ func (l *Limiter) OverrideLimit(name string, limit int) error {
 	return nil
 }
 
+// OverrideAll 把全部规则的限额统一为同一个值。
+// 端到端测试从单一来源地址连续访问，逐条规则都可能触顶；
+// 统一放宽使一次运行的行为与逐条放宽等价，也便于配置。
+func (l *Limiter) OverrideAll(limit int) error {
+	if limit <= 0 {
+		return fmt.Errorf("统一限额必须为正数，得到 %d", limit)
+	}
+	for name := range l.rules {
+		if err := l.OverrideLimit(name, limit); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (l *Limiter) lookupRule(name string) (Rule, bool) {
 	rule, ok := l.rules[name]
 	return rule, ok

@@ -119,6 +119,12 @@ func SeedUser(t *testing.T, pool *pgxpool.Pool, opts UserOptions) int64 {
 	if username == "" {
 		username = "user_" + randomSuffix(t)
 	}
+	// 邮箱在数据库上是唯一键。调用方只关心角色与状态时不传邮箱，
+	// 此处按账户后缀补一个唯一取值，否则同一用例内的多个账户会相互冲突。
+	email := opts.Email
+	if email == "" {
+		email = username + "@example.test"
+	}
 
 	var passwordHash pgtype.Text
 	if opts.Password != "" {
@@ -139,7 +145,7 @@ func SeedUser(t *testing.T, pool *pgxpool.Pool, opts UserOptions) int64 {
 		INSERT INTO users (username, email, password_hash, role, status, email_verified_at)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id`,
-		username, strings.ToLower(opts.Email), passwordHash, role, status, verifiedAt,
+		username, strings.ToLower(email), passwordHash, role, status, verifiedAt,
 	).Scan(&id)
 	if err != nil {
 		t.Fatalf("创建测试账户失败: %v", err)

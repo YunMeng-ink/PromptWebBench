@@ -4,6 +4,8 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 // 端到端测试前重建后端数据库并清空邮件目录，使每次运行从确定的状态开始。
+// 迁移由后端启动时执行，因此此处只建空库；模型与标签的种子数据在服务就绪后
+// 由 seed-e2e.mjs 写入。
 const here = dirname(fileURLToPath(import.meta.url))
 const frontendDir = resolve(here, '..')
 const repoRoot = resolve(frontendDir, '..')

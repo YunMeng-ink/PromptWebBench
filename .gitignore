@@ -2,6 +2,9 @@
 .scratch/
 .tmp/
 
+# 编辑器工具的本地元数据
+.zcode/
+
 # 本地邮件接收器落盘的邮件
 backend/.maildrop/
 

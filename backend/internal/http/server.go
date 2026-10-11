@@ -16,9 +16,12 @@ import (
 	"github.com/promptbench/backend/internal/apperr"
 	"github.com/promptbench/backend/internal/config"
 	"github.com/promptbench/backend/internal/metrics"
+	"github.com/promptbench/backend/internal/repo"
 	"github.com/promptbench/backend/internal/security"
 	"github.com/promptbench/backend/internal/service/admin"
 	"github.com/promptbench/backend/internal/service/auth"
+	"github.com/promptbench/backend/internal/service/prompt"
+	"github.com/promptbench/backend/internal/service/rating"
 )
 
 // APIPrefix 是全部业务端点的前缀（G-17）。
@@ -31,9 +34,12 @@ type Deps struct {
 	Pool    *pgxpool.Pool
 	Config  *config.Store
 	Metrics *metrics.Metrics
+	Repo    *repo.Queries
 
 	Auth   *auth.Service
 	Admin  *admin.Service
+	Prompt *prompt.Service
+	Rating *rating.Service
 	Signer *security.Signer
 }
 
@@ -62,6 +68,9 @@ func New(deps Deps) (*Server, error) {
 	if deps.Auth == nil || deps.Admin == nil || deps.Signer == nil {
 		return nil, fmt.Errorf("接口层依赖不完整：Auth、Admin、Signer 均不可为空")
 	}
+	if deps.Prompt == nil || deps.Rating == nil || deps.Repo == nil {
+		return nil, fmt.Errorf("接口层依赖不完整：Prompt、Rating、Repo 均不可为空")
+	}
 	trusted, err := ParseTrustedProxies(deps.Env.TrustedProxies)
 	if err != nil {
 		return nil, fmt.Errorf("解析 TRUSTED_PROXIES: %w", err)
@@ -83,6 +92,11 @@ func New(deps Deps) (*Server, error) {
 	}
 	if deps.Env.AuthRateLimit > 0 {
 		if err := s.limiter.OverrideLimit("auth", deps.Env.AuthRateLimit); err != nil {
+			return nil, err
+		}
+	}
+	if deps.Env.RateLimit > 0 {
+		if err := s.limiter.OverrideAll(deps.Env.RateLimit); err != nil {
 			return nil, err
 		}
 	}
@@ -115,6 +129,9 @@ func New(deps Deps) (*Server, error) {
 	s.registerAuthRoutes()
 	s.registerMeRoutes()
 	s.registerAdminAccountRoutes()
+	s.registerPromptRoutes()
+	s.registerRatingRoutes()
+	s.registerDictionaryRoutes()
 	return s, nil
 }
 
