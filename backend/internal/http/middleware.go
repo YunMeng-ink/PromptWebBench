@@ -11,11 +11,18 @@ import (
 	"github.com/labstack/echo/v5"
 	"github.com/labstack/echo/v5/middleware"
 
+	"github.com/promptbench/backend/internal/apperr"
 	"github.com/promptbench/backend/internal/metrics"
 )
 
 // BodyLimitBytes 是请求体上限（开发方案 §5.1）。
 const BodyLimitBytes = 1 << 20
+
+// CSRF 双提交校验的两半：Cookie 与请求头必须一致（开发方案 §5.1）。
+const (
+	CSRFCookieName = "pb_csrf"
+	CSRFHeaderName = "X-CSRF-Token"
+)
 
 // EchoErrorHandler 把任何到达全局错误处理器的错误规范为 {error:{code,message}}。
 // Echo 中间件（CSRF、限流回退、路由未匹配等）产生的错误走这里，
@@ -23,9 +30,12 @@ const BodyLimitBytes = 1 << 20
 func EchoErrorHandler(logger *slog.Logger) echo.HTTPErrorHandler {
 	return func(c *echo.Context, err error) {
 		var apiErr *APIError
+		var appErr *apperr.Error
 		switch {
 		case errors.As(err, &apiErr):
 			writeAPIError(c, apiErr)
+		case errors.As(err, &appErr):
+			writeAPIError(c, FromAppError(appErr))
 		default:
 			var sc echo.HTTPStatusCoder
 			status := http.StatusInternalServerError
@@ -50,20 +60,9 @@ func writeAPIError(c *echo.Context, apiErr *APIError) {
 	}
 }
 
-// codeForStatus 把状态码映射为错误码；未知状态码按 4xx/5xx 归类。
-func codeForStatus(status int) Code {
-	if code, ok := statusToCode[status]; ok {
-		return code
-	}
-	if status >= http.StatusInternalServerError {
-		return CodeInternal
-	}
-	return CodeUnprocessableEntity
-}
-
 // CSRFErrorHandler 让 CSRF 校验失败返回 invalid_csrf。
 func CSRFErrorHandler(c *echo.Context, err error) error {
-	return NewError(CodeInvalidCSRF, "")
+	return NewError(apperr.CodeInvalidCSRF, "")
 }
 
 // isBearerRequest 判定是否为 API Token 通道。Bearer 通道豁免 CSRF（开发方案 §5.1）。
@@ -140,7 +139,8 @@ func EchoCORS(allowOrigins []string) echo.MiddlewareFunc {
 func EchoCSRF(cookieSecure bool) echo.MiddlewareFunc {
 	return middleware.CSRFWithConfig(middleware.CSRFConfig{
 		Skipper:      isBearerRequest,
-		CookieName:   "pb_csrf",
+		CookieName:   CSRFCookieName,
+		TokenLookup:  "header:" + CSRFHeaderName,
 		CookiePath:   "/",
 		CookieSecure: cookieSecure,
 		ErrorHandler: CSRFErrorHandler,

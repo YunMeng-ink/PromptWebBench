@@ -9,15 +9,46 @@ import (
 )
 
 type Querier interface {
+	BumpUserTokenVersion(ctx context.Context, id int64) (User, error)
+	ConsumeEmailVerification(ctx context.Context, id int64) error
+	ConsumeInviteCode(ctx context.Context, id int64) (InviteCode, error)
+	CountRecentEmailVerifications(ctx context.Context, arg CountRecentEmailVerificationsParams) (int64, error)
+	CountUsers(ctx context.Context) (int64, error)
+	CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) (ApiToken, error)
+	// 邮箱验证码、第三方登录绑定与 API Token。
+	CreateEmailVerification(ctx context.Context, arg CreateEmailVerificationParams) (EmailVerification, error)
+	CreateInviteCodeUsage(ctx context.Context, arg CreateInviteCodeUsageParams) error
+	CreateOAuthAccount(ctx context.Context, arg CreateOAuthAccountParams) (OauthAccount, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	GetActiveAPIToken(ctx context.Context, userID int64) (ApiToken, error)
+	GetActiveEmailVerification(ctx context.Context, arg GetActiveEmailVerificationParams) (EmailVerification, error)
 	GetConfig(ctx context.Context, key string) (GetConfigRow, error)
-	// users 表查询。阶段 0 只提供启动期所需的读取与创建。
+	// 邀请码的读取与占用。占用走条件更新，保证并发下不重复消耗（C-21）。
+	GetInviteCodeByCode(ctx context.Context, code string) (InviteCode, error)
+	GetOAuthAccount(ctx context.Context, arg GetOAuthAccountParams) (OauthAccount, error)
+	GetSystemUser(ctx context.Context) (User, error)
+	GetUserByAPITokenHash(ctx context.Context, tokenHash string) (User, error)
+	// users 表的读取与写入。
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByID(ctx context.Context, id int64) (User, error)
+	// 操作日志与提示词转移日志。操作日志只增不改不删（C-43）。
+	InsertOperationLog(ctx context.Context, arg InsertOperationLogParams) (OperationLog, error)
+	InsertTransferLog(ctx context.Context, arg InsertTransferLogParams) error
 	// config 表的读写。value 为 JSONB，键名与类型语义由调用方按 C-45 解释。
 	ListConfig(ctx context.Context) ([]ListConfigRow, error)
+	LockUser(ctx context.Context, id int64) (User, error)
+	RevokeActiveAPITokens(ctx context.Context, userID int64) error
+	SetUserRole(ctx context.Context, arg SetUserRoleParams) (User, error)
+	SetUserStatus(ctx context.Context, arg SetUserStatusParams) (User, error)
+	SupersedeEmailVerifications(ctx context.Context, arg SupersedeEmailVerificationsParams) error
+	TouchAPIToken(ctx context.Context, tokenHash string) error
+	TransferPrompts(ctx context.Context, arg TransferPromptsParams) ([]int64, error)
+	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (User, error)
+	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpsertConfig(ctx context.Context, arg UpsertConfigParams) error
 	UpsertSecretConfig(ctx context.Context, arg UpsertSecretConfigParams) error
+	UsernameExists(ctx context.Context, lower string) (bool, error)
+	VerifyUserEmail(ctx context.Context, id int64) (User, error)
 }
 
 var _ Querier = (*Queries)(nil)

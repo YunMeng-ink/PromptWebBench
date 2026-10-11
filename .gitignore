@@ -2,6 +2,9 @@
 .scratch/
 .tmp/
 
+# 本地邮件接收器落盘的邮件
+backend/.maildrop/
+
 # Go
 backend/bin/
 backend/**/*.exe

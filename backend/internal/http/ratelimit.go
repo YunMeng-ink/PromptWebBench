@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
+	"sort"
 	"strconv"
 	"sync"
 	"time"
@@ -27,9 +28,10 @@ type Rule struct {
 	Scope  Scope
 }
 
-// rules 是限流规则的集中声明表，也是「未登记限流的写路由在启动时 panic」
-// 这一防护的判据来源。
-var rules = map[string]Rule{
+// defaultRules 是限流规则的集中声明表，也是「未登记限流的写路由在启动时 panic」
+// 这一防护的判据来源。前 10 条取自技术可行性报告 §3.2 的限流表；
+// 其后的条目补齐该表未覆盖的已认证写入（资料、口令、令牌）。
+var defaultRules = map[string]Rule{
 	"guest_read":    {Name: "guest_read", Limit: 60, Window: time.Minute, Scope: ScopeIP},
 	"user_read":     {Name: "user_read", Limit: 120, Window: time.Minute, Scope: ScopeUser},
 	"admin_read":    {Name: "admin_read", Limit: 120, Window: time.Minute, Scope: ScopeUser},
@@ -40,20 +42,27 @@ var rules = map[string]Rule{
 	"report_write":  {Name: "report_write", Limit: 5, Window: time.Minute, Scope: ScopeUser},
 	"auth":          {Name: "auth", Limit: 10, Window: time.Minute, Scope: ScopeIP},
 	"admin_write":   {Name: "admin_write", Limit: 120, Window: time.Minute, Scope: ScopeUser},
+	"profile_write": {Name: "profile_write", Limit: 10, Window: time.Minute, Scope: ScopeUser},
+	"token_write":   {Name: "token_write", Limit: 5, Window: time.Minute, Scope: ScopeUser},
+}
+
+// DefaultRules 返回规则表的副本，供调用方按部署环境调整个别限额。
+func DefaultRules() map[string]Rule {
+	out := make(map[string]Rule, len(defaultRules))
+	for name, rule := range defaultRules {
+		out[name] = rule
+	}
+	return out
 }
 
 // RuleNames 返回全部已登记规则名，供启动自检与文档核对。
 func RuleNames() []string {
-	names := make([]string, 0, len(rules))
-	for name := range rules {
+	names := make([]string, 0, len(defaultRules))
+	for name := range defaultRules {
 		names = append(names, name)
 	}
+	sort.Strings(names)
 	return names
-}
-
-func lookupRule(name string) (Rule, bool) {
-	r, ok := rules[name]
-	return r, ok
 }
 
 // isWriteMethod 判定请求是否为写方法。写路由必须显式声明限流规则。
@@ -76,6 +85,7 @@ type Limiter struct {
 	mu      sync.Mutex
 	buckets map[string]*bucket
 	trusted []netip.Prefix
+	rules   map[string]Rule
 
 	// userResolver 由认证层在阶段 1 注入；未注入或未登录时按来源地址计数。
 	userResolver func(huma.Context) (int64, bool)
@@ -83,12 +93,36 @@ type Limiter struct {
 	now func() time.Time
 }
 
-func NewLimiter(trusted []netip.Prefix) *Limiter {
+func NewLimiter(trusted []netip.Prefix, rules map[string]Rule) *Limiter {
+	if rules == nil {
+		rules = DefaultRules()
+	}
 	return &Limiter{
 		buckets: map[string]*bucket{},
 		trusted: trusted,
+		rules:   rules,
 		now:     time.Now,
 	}
+}
+
+// OverrideLimit 调整某条规则的限额。限额是运维参数，默认取值即规格值，
+// 部署环境（例如同一出口地址下的端到端测试）可以按需放宽。
+func (l *Limiter) OverrideLimit(name string, limit int) error {
+	rule, ok := l.rules[name]
+	if !ok {
+		return fmt.Errorf("未登记的限流规则 %q", name)
+	}
+	if limit <= 0 {
+		return fmt.Errorf("限流规则 %s 的限额必须为正数，得到 %d", name, limit)
+	}
+	rule.Limit = limit
+	l.rules[name] = rule
+	return nil
+}
+
+func (l *Limiter) lookupRule(name string) (Rule, bool) {
+	rule, ok := l.rules[name]
+	return rule, ok
 }
 
 // SetUserResolver 注入登录用户解析函数，用于 ScopeUser 规则。
@@ -134,7 +168,7 @@ func (l *Limiter) identity(ctx huma.Context, rule Rule) string {
 
 // Middleware 返回绑定到某条规则的 Huma 中间件。超限时直接写出 429 并终止链路。
 func (l *Limiter) Middleware(api huma.API, ruleName string) func(huma.Context, func(huma.Context)) {
-	rule, ok := lookupRule(ruleName)
+	rule, ok := l.lookupRule(ruleName)
 	if !ok {
 		panic(fmt.Errorf("未登记的限流规则 %q", ruleName))
 	}

@@ -1,28 +1,20 @@
-import { mount } from '@vue/test-utils'
-import ElementPlus from 'element-plus'
-import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
+import { createMemoryHistory } from 'vue-router'
 import AppHeader from '@/components/AppHeader.vue'
-import { i18n, setLocale } from '@/i18n'
+import { createAppRouter } from '@/router'
+import { useAuthStore } from '@/stores/auth'
 import { usePreferencesStore } from '@/stores/preferences'
+import { currentUserFixture, mountView, resetLocale } from '@/testing/mount'
 
 function setup() {
-  const pinia = createPinia()
-  setActivePinia(pinia)
-  const wrapper = mount(AppHeader, {
-    global: {
-      plugins: [pinia, i18n, ElementPlus],
-      stubs: { RouterLink: { template: '<a><slot /></a>' } },
-    },
-  })
-  return { wrapper, preferences: usePreferencesStore() }
+  const router = createAppRouter(createMemoryHistory())
+  const wrapper = mountView(AppHeader, { router })
+  return { wrapper, preferences: usePreferencesStore(), auth: useAuthStore() }
 }
 
 beforeEach(() => {
-  localStorage.clear()
-  setLocale('zh')
-  document.documentElement.classList.remove('dark')
+  resetLocale()
 })
 
 describe('顶栏', () => {
@@ -55,5 +47,29 @@ describe('顶栏', () => {
   it('主题按钮的可访问名称随语言切换', () => {
     const { wrapper } = setup()
     expect(wrapper.get('button').attributes('aria-label')).toBe('主题')
+  })
+
+  it('登录态未知时不渲染登录或账户入口，避免首屏显示错误状态', () => {
+    const { wrapper } = setup()
+    expect(wrapper.find('[data-testid="header-login"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="header-user"]').exists()).toBe(false)
+  })
+
+  it('游客显示登录入口', async () => {
+    const { wrapper, auth } = setup()
+    auth.markGuest()
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="header-login"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="header-user"]').exists()).toBe(false)
+  })
+
+  it('已登录显示账户入口与登出项', async () => {
+    const { wrapper, auth } = setup()
+    auth.markAuthenticated(currentUserFixture() as never)
+    await nextTick()
+
+    expect(wrapper.find('[data-testid="header-user"]').text()).toBe('alice')
+    expect(wrapper.find('[data-testid="header-login"]').exists()).toBe(false)
   })
 })

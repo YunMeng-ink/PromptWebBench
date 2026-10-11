@@ -10,9 +10,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/promptbench/backend/internal/platform/migrate"
 )
@@ -85,4 +89,95 @@ func randomSuffix(t *testing.T) string {
 		t.Fatalf("生成测试库后缀失败: %v", err)
 	}
 	return fmt.Sprintf("%d_%s", os.Getpid(), hex.EncodeToString(buf))
+}
+
+// UserOptions 描述一个测试账户。
+type UserOptions struct {
+	Username string
+	Email    string
+	Password string
+	Role     string
+	Status   string
+	Verified bool
+}
+
+// SeedUser 直接建号，用于把测试置于某个既定状态。密码按 bcrypt 存储，
+// 因此用例可以用它真实登录。
+func SeedUser(t *testing.T, pool *pgxpool.Pool, opts UserOptions) int64 {
+	t.Helper()
+	ctx := context.Background()
+
+	role := opts.Role
+	if role == "" {
+		role = "user"
+	}
+	status := opts.Status
+	if status == "" {
+		status = "normal"
+	}
+	username := opts.Username
+	if username == "" {
+		username = "user_" + randomSuffix(t)
+	}
+
+	var passwordHash pgtype.Text
+	if opts.Password != "" {
+		hash, err := bcrypt.GenerateFromPassword([]byte(opts.Password), 10)
+		if err != nil {
+			t.Fatalf("生成测试口令哈希失败: %v", err)
+		}
+		passwordHash = pgtype.Text{String: string(hash), Valid: true}
+	}
+
+	var verifiedAt pgtype.Timestamptz
+	if opts.Verified {
+		verifiedAt = pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	}
+
+	var id int64
+	err := pool.QueryRow(ctx, `
+		INSERT INTO users (username, email, password_hash, role, status, email_verified_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id`,
+		username, strings.ToLower(opts.Email), passwordHash, role, status, verifiedAt,
+	).Scan(&id)
+	if err != nil {
+		t.Fatalf("创建测试账户失败: %v", err)
+	}
+	return id
+}
+
+// SeedPrompt 插入一条公开提示词及其首个版本，用于验证提示词转移等流程。
+func SeedPrompt(t *testing.T, pool *pgxpool.Pool, uploaderID int64, title string) int64 {
+	t.Helper()
+	ctx := context.Background()
+
+	var categoryID int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM categories WHERE slug = 'reasoning'`).Scan(&categoryID); err != nil {
+		t.Fatalf("读取类别失败: %v", err)
+	}
+
+	var promptID int64
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO prompts (title, body, category_id, visibility, uploader_id)
+		VALUES ($1, '测试正文', $2, 'public', $3)
+		RETURNING id`, title, categoryID, uploaderID).Scan(&promptID); err != nil {
+		t.Fatalf("创建测试提示词失败: %v", err)
+	}
+
+	var versionID int64
+	if err := pool.QueryRow(ctx, `
+		INSERT INTO prompt_versions (
+			prompt_id, version_no, major, minor, title, body,
+			category_id, visibility, sensitive_level, author_id
+		) VALUES ($1, 'v1.0', 1, 0, $2, '测试正文', $3, 'public', 'low', $4)
+		RETURNING id`, promptID, title, categoryID, uploaderID).Scan(&versionID); err != nil {
+		t.Fatalf("创建测试提示词版本失败: %v", err)
+	}
+
+	if _, err := pool.Exec(ctx,
+		`UPDATE prompts SET current_version_id = $1 WHERE id = $2`, versionID, promptID); err != nil {
+		t.Fatalf("回填当前版本失败: %v", err)
+	}
+	return promptID
 }

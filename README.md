@@ -51,13 +51,21 @@ cd backend
 cp .env.example .env.local          # 至少填写 JWT_SECRET
 psql -U postgres -c 'CREATE DATABASE prompt_benchmark'
 
-set -a; . ./.env.local; set +a
-go run ./cmd/server                 # 迁移随启动幂等应用
+go run ./cmd/server -env-file .env.local   # 迁移随启动幂等应用
 ```
+
+`-env-file` 可选：从文件加载 KEY=VALUE，已经存在的环境变量优先，便于临时覆盖。
 
 接口前缀为 `/api/v1`；OpenAPI 3.1 规范位于 `/api/v1/openapi.json`，浏览器可读的接口文档位于 `/api/v1/docs`，健康检查为 `/api/v1/health`，指标抓取为 `/api/v1/metrics`（仅回环地址可达）。
 
 `ADMIN_INIT_PASSWORD` 非空时，首次启动会创建管理员账号 `admin`；未设置则跳过创建，不生成默认口令。
+
+本地开发若需要接收验证码邮件，可另开一个进程运行内置的 SMTP 接收器，把邮件落盘到目录后直接查看：
+
+```sh
+cd backend
+go run ./cmd/smtpsink -addr 127.0.0.1:2525 -dir .maildrop
+```
 
 改动 `db/query/*.sql` 或迁移后重新生成查询代码：
 
@@ -87,7 +95,8 @@ TEST_DATABASE_URL='postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable' 
 # 前端单元测试
 cd frontend && pnpm test
 
-# 端到端测试（自动启动构建产物的预览服务）
+# 端到端测试：脚本先重建 e2e 数据库并清空邮件目录，
+# 再由 Playwright 拉起 SMTP 接收器、后端（backend/.env.e2e）与前端预览服务
 cd frontend && pnpm build && pnpm e2e
 ```
 

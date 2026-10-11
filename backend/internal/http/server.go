@@ -13,8 +13,12 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v5"
 
+	"github.com/promptbench/backend/internal/apperr"
 	"github.com/promptbench/backend/internal/config"
 	"github.com/promptbench/backend/internal/metrics"
+	"github.com/promptbench/backend/internal/security"
+	"github.com/promptbench/backend/internal/service/admin"
+	"github.com/promptbench/backend/internal/service/auth"
 )
 
 // APIPrefix 是全部业务端点的前缀（G-17）。
@@ -27,6 +31,10 @@ type Deps struct {
 	Pool    *pgxpool.Pool
 	Config  *config.Store
 	Metrics *metrics.Metrics
+
+	Auth   *auth.Service
+	Admin  *admin.Service
+	Signer *security.Signer
 }
 
 // RouteRecord 记录一个已登记路由及其限流规则，供启动日志与自检使用。
@@ -42,6 +50,7 @@ type Server struct {
 	echo    *echo.Echo
 	api     huma.API
 	limiter *Limiter
+	signer  *security.Signer
 	trusted []netip.Prefix
 	routes  []RouteRecord
 }
@@ -49,6 +58,9 @@ type Server struct {
 func New(deps Deps) (*Server, error) {
 	if deps.Logger == nil || deps.Pool == nil || deps.Config == nil || deps.Metrics == nil {
 		return nil, fmt.Errorf("接口层依赖不完整：Logger、Pool、Config、Metrics 均不可为空")
+	}
+	if deps.Auth == nil || deps.Admin == nil || deps.Signer == nil {
+		return nil, fmt.Errorf("接口层依赖不完整：Auth、Admin、Signer 均不可为空")
 	}
 	trusted, err := ParseTrustedProxies(deps.Env.TrustedProxies)
 	if err != nil {
@@ -65,10 +77,24 @@ func New(deps Deps) (*Server, error) {
 	s := &Server{
 		deps:    deps,
 		echo:    e,
-		limiter: NewLimiter(trusted),
+		limiter: NewLimiter(trusted, DefaultRules()),
+		signer:  deps.Signer,
 		trusted: trusted,
 	}
-
+	if deps.Env.AuthRateLimit > 0 {
+		if err := s.limiter.OverrideLimit("auth", deps.Env.AuthRateLimit); err != nil {
+			return nil, err
+		}
+	}
+	// 限流的用户维度取自 Authenticate 中间件写入的身份；Authenticate 先于
+	// 各操作的限流中间件执行。
+	s.limiter.SetUserResolver(func(ctx huma.Context) (int64, bool) {
+		state, ok := ctx.Context().Value(viewerContextKey{}).(viewerState)
+		if !ok || state.user == nil {
+			return 0, false
+		}
+		return state.user.ID, true
+	})
 	e.Use(
 		EchoRecover(),
 		EchoRequestID(),
@@ -83,8 +109,12 @@ func New(deps Deps) (*Server, error) {
 	// 错误模型必须在创建 API 之前覆盖，否则后续全部端点的错误形状不受控。
 	InstallErrorModel()
 	s.api = humaecho.New(e, humaConfig())
+	s.api.UseMiddleware(s.Authenticate)
 
 	s.registerInfraRoutes()
+	s.registerAuthRoutes()
+	s.registerMeRoutes()
+	s.registerAdminAccountRoutes()
 	return s, nil
 }
 
@@ -131,7 +161,14 @@ func Register[I, O any](s *Server, rule string, op huma.Operation, handler func(
 	if rule != "" {
 		op.Middlewares = append(op.Middlewares, s.limiter.Middleware(s.api, rule))
 	}
-	huma.Register(s.api, op, handler)
+	huma.Register(s.api, op, func(ctx context.Context, input *I) (*O, error) {
+		out, err := handler(ctx, input)
+		if err != nil {
+			// 服务层错误在此统一转为线格式，业务代码无需感知响应形状。
+			return nil, Translate(err)
+		}
+		return out, nil
+	})
 	s.routes = append(s.routes, RouteRecord{Method: op.Method, Path: op.Path, Rule: rule})
 }
 
@@ -142,7 +179,7 @@ func (s *Server) mustValidateRule(method, path, rule string) {
 		}
 		return
 	}
-	if _, ok := lookupRule(rule); !ok {
+	if _, ok := s.limiter.lookupRule(rule); !ok {
 		panic(fmt.Errorf("路由 %s %s 声明的限流规则 %q 未在集中声明表中登记", method, path, rule))
 	}
 }
@@ -166,7 +203,7 @@ func (s *Server) handleHealth(c *echo.Context) error {
 // handleMetrics 仅允许来自回环地址的抓取（G-02）。
 func (s *Server) handleMetrics(c *echo.Context) error {
 	if !s.metricsReachable(c) {
-		return NewError(CodeNotFound, "")
+		return NewError(apperr.CodeNotFound, "")
 	}
 	s.deps.Metrics.Handler().ServeHTTP(c.Response(), c.Request())
 	return nil

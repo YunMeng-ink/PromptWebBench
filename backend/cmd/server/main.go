@@ -4,6 +4,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,24 +13,39 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v5"
 
 	"github.com/promptbench/backend/internal/config"
-	"github.com/promptbench/backend/internal/http"
+	api "github.com/promptbench/backend/internal/http"
+	"github.com/promptbench/backend/internal/mail"
 	"github.com/promptbench/backend/internal/metrics"
+	"github.com/promptbench/backend/internal/oauth"
 	"github.com/promptbench/backend/internal/platform"
 	"github.com/promptbench/backend/internal/platform/migrate"
+	"github.com/promptbench/backend/internal/security"
+	"github.com/promptbench/backend/internal/service/admin"
 	"github.com/promptbench/backend/internal/service/auth"
 )
 
 func main() {
-	if err := run(); err != nil {
+	envFile := flag.String("env-file", "", "可选：从文件加载环境变量（KEY=VALUE，仅补齐未设置的变量）")
+	flag.Parse()
+
+	if err := run(*envFile); err != nil {
 		fmt.Fprintf(os.Stderr, "启动失败: %v\n", err)
 		os.Exit(1)
 	}
 }
 
-func run() error {
+func run(envFile string) error {
+	if envFile != "" {
+		// 已存在的环境变量优先，便于在 shell 中临时覆盖文件取值。
+		if err := godotenv.Load(envFile); err != nil {
+			return fmt.Errorf("加载环境变量文件 %s: %w", envFile, err)
+		}
+	}
+
 	env, err := config.Load()
 	if err != nil {
 		return err
@@ -63,12 +79,45 @@ func run() error {
 		return err
 	}
 
+	mailConfig := mail.Config{
+		Host:     env.SMTPHost,
+		Port:     env.SMTPPort,
+		User:     env.SMTPUser,
+		Password: env.SMTPPassword,
+		From:     env.SMTPFrom,
+	}
+	if !mailConfig.Configured() {
+		logger.Warn("未配置 SMTP，注册与密码找回将无法发送验证码")
+	}
+	mailer := mail.NewSMTPSender(mailConfig)
+
+	signer := security.NewSigner(env.JWTSecret, security.SessionTTL)
+	gitHub := oauth.NewGitHubClient(env.GitHubClientID, env.GitHubClientSecret)
+	if !gitHub.Configured() {
+		logger.Warn("未配置 GitHub OAuth，第三方登录不可用")
+	}
+
+	authService := auth.New(auth.Deps{
+		Pool:          pool,
+		Config:        cfgStore,
+		Mail:          mailer,
+		Signer:        signer,
+		Logger:        logger,
+		GitHub:        gitHub,
+		StateSigner:   security.NewOAuthStateSigner(env.JWTSecret, security.OAuthStateTTL),
+		PublicBaseURL: env.PublicBaseURL,
+	})
+	adminService := admin.New(admin.Deps{Pool: pool, Logger: logger})
+
 	srv, err := api.New(api.Deps{
 		Env:     env,
 		Logger:  logger,
 		Pool:    pool,
 		Config:  cfgStore,
 		Metrics: metrics.New(),
+		Auth:    authService,
+		Admin:   adminService,
+		Signer:  signer,
 	})
 	if err != nil {
 		return err
@@ -76,7 +125,7 @@ func run() error {
 
 	go runBackgroundTasks(ctx, logger, srv.Limiter())
 
-	sc := echo.StartConfig{Address: ":" + env.Port, GracefulTimeout: 10 * time.Second}
+	sc := echo.StartConfig{Address: ":" + env.Port, GracefulTimeout: 10 * time.Second, HideBanner: true, HidePort: true}
 	if err := sc.Start(ctx, srv.Handler()); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("启动 HTTP 服务: %w", err)
 	}

@@ -10,10 +10,13 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/humatest"
+
+	"github.com/promptbench/backend/internal/apperr"
 )
 
-func TestRuleTableMatchesSpecification(t *testing.T) {
-	// 限额取值来源：技术可行性报告 §3.2 限流表。
+func TestRuleTableCoversSpecification(t *testing.T) {
+	rules := DefaultRules()
+	// 限额取值来源：技术可行性报告 §3.2 限流表。表可以扩充，但已声明的规则不得被削弱。
 	want := map[string]struct {
 		limit int
 		scope Scope
@@ -29,9 +32,6 @@ func TestRuleTableMatchesSpecification(t *testing.T) {
 		"auth":          {10, ScopeIP},
 		"admin_write":   {120, ScopeUser},
 	}
-	if len(rules) != len(want) {
-		t.Fatalf("规则数量 = %d，期望 %d", len(rules), len(want))
-	}
 	for name, expect := range want {
 		rule, ok := rules[name]
 		if !ok {
@@ -46,6 +46,9 @@ func TestRuleTableMatchesSpecification(t *testing.T) {
 		}
 		if rule.Window != time.Minute {
 			t.Errorf("规则 %s 窗口 = %s，期望 1 分钟", name, rule.Window)
+		}
+		if rule.Name != name {
+			t.Errorf("规则 %s 的 Name 字段 = %s，与键不一致", name, rule.Name)
 		}
 	}
 }
@@ -66,7 +69,7 @@ func TestWriteMethodDetection(t *testing.T) {
 func TestLimiterMiddlewareRejectsBeyondLimit(t *testing.T) {
 	InstallErrorModel()
 	_, api := humatest.New(t)
-	limiter := NewLimiter(nil)
+	limiter := NewLimiter(nil, nil)
 
 	op := huma.Operation{
 		Method:      http.MethodPost,
@@ -77,7 +80,7 @@ func TestLimiterMiddlewareRejectsBeyondLimit(t *testing.T) {
 		return nil, nil
 	})
 
-	rule := rules["auth"]
+	rule := DefaultRules()["auth"]
 	for i := 0; i < rule.Limit; i++ {
 		if resp := api.Post("/probe"); resp.Code == http.StatusTooManyRequests {
 			t.Fatalf("第 %d 次请求即被限流，限额为 %d", i+1, rule.Limit)
@@ -96,13 +99,13 @@ func TestLimiterMiddlewareRejectsBeyondLimit(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &envelope); err != nil {
 		t.Fatalf("解析限流响应失败: %v，响应体 %s", err, resp.Body.String())
 	}
-	if envelope.Error.Code != string(CodeRateLimited) {
-		t.Fatalf("限流错误码 = %s，期望 %s", envelope.Error.Code, CodeRateLimited)
+	if envelope.Error.Code != string(apperr.CodeRateLimited) {
+		t.Fatalf("限流错误码 = %s，期望 %s", envelope.Error.Code, apperr.CodeRateLimited)
 	}
 }
 
 func TestLimiterWindowRolls(t *testing.T) {
-	limiter := NewLimiter(nil)
+	limiter := NewLimiter(nil, nil)
 	base := time.Date(2026, 10, 11, 0, 0, 0, 0, time.UTC)
 	limiter.now = func() time.Time { return base }
 
@@ -126,7 +129,7 @@ func TestLimiterWindowRolls(t *testing.T) {
 }
 
 func TestLimiterCleanupDropsExpiredWindows(t *testing.T) {
-	limiter := NewLimiter(nil)
+	limiter := NewLimiter(nil, nil)
 	base := time.Date(2026, 10, 11, 0, 0, 0, 0, time.UTC)
 	limiter.now = func() time.Time { return base }
 
@@ -146,7 +149,7 @@ func TestLimiterCleanupDropsExpiredWindows(t *testing.T) {
 
 func TestLimiterMiddlewarePanicsOnUnknownRule(t *testing.T) {
 	_, api := humatest.New(t)
-	limiter := NewLimiter(nil)
+	limiter := NewLimiter(nil, nil)
 	defer func() {
 		if recover() == nil {
 			t.Fatal("未登记的限流规则应当 panic")
@@ -156,8 +159,8 @@ func TestLimiterMiddlewarePanicsOnUnknownRule(t *testing.T) {
 }
 
 func TestLimiterIdentitySwitchesBetweenAddressAndUser(t *testing.T) {
-	limiter := NewLimiter(nil)
-	rule := rules["rating_write"]
+	limiter := NewLimiter(nil, nil)
+	rule := DefaultRules()["rating_write"]
 
 	op := &huma.Operation{Method: http.MethodGet, Path: "/probe"}
 	req := httptest.NewRequest(http.MethodGet, "/probe", nil)

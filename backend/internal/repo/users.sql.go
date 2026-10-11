@@ -11,6 +11,49 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const bumpUserTokenVersion = `-- name: BumpUserTokenVersion :one
+UPDATE users
+SET token_version = token_version + 1, updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, username, email, password_hash, role, status, is_system, bio, avatar_url, token_version, email_verified_at, last_read_announcement_at, banned_at, banned_reason, deleted_at, created_at, updated_at
+`
+
+func (q *Queries) BumpUserTokenVersion(ctx context.Context, id int64) (User, error) {
+	row := q.db.QueryRow(ctx, bumpUserTokenVersion, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.Status,
+		&i.IsSystem,
+		&i.Bio,
+		&i.AvatarUrl,
+		&i.TokenVersion,
+		&i.EmailVerifiedAt,
+		&i.LastReadAnnouncementAt,
+		&i.BannedAt,
+		&i.BannedReason,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const countUsers = `-- name: CountUsers :one
+SELECT count(*) FROM users WHERE deleted_at IS NULL
+`
+
+func (q *Queries) CountUsers(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countUsers)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, email, password_hash, role, status, email_verified_at)
 VALUES ($1, $2, $3, $4, $5, $6)
@@ -58,13 +101,44 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 	return i, err
 }
 
+const getSystemUser = `-- name: GetSystemUser :one
+SELECT id, username, email, password_hash, role, status, is_system, bio, avatar_url, token_version, email_verified_at, last_read_announcement_at, banned_at, banned_reason, deleted_at, created_at, updated_at FROM users
+WHERE is_system AND deleted_at IS NULL
+LIMIT 1
+`
+
+func (q *Queries) GetSystemUser(ctx context.Context) (User, error) {
+	row := q.db.QueryRow(ctx, getSystemUser)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.Status,
+		&i.IsSystem,
+		&i.Bio,
+		&i.AvatarUrl,
+		&i.TokenVersion,
+		&i.EmailVerifiedAt,
+		&i.LastReadAnnouncementAt,
+		&i.BannedAt,
+		&i.BannedReason,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 
 SELECT id, username, email, password_hash, role, status, is_system, bio, avatar_url, token_version, email_verified_at, last_read_announcement_at, banned_at, banned_reason, deleted_at, created_at, updated_at FROM users
 WHERE lower(email) = lower($1) AND deleted_at IS NULL
 `
 
-// users 表查询。阶段 0 只提供启动期所需的读取与创建。
+// users 表的读取与写入。
 func (q *Queries) GetUserByEmail(ctx context.Context, lower string) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByEmail, lower)
 	var i User
@@ -97,6 +171,286 @@ WHERE id = $1 AND deleted_at IS NULL
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.Status,
+		&i.IsSystem,
+		&i.Bio,
+		&i.AvatarUrl,
+		&i.TokenVersion,
+		&i.EmailVerifiedAt,
+		&i.LastReadAnnouncementAt,
+		&i.BannedAt,
+		&i.BannedReason,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const lockUser = `-- name: LockUser :one
+SELECT id, username, email, password_hash, role, status, is_system, bio, avatar_url, token_version, email_verified_at, last_read_announcement_at, banned_at, banned_reason, deleted_at, created_at, updated_at FROM users
+WHERE id = $1 AND deleted_at IS NULL
+FOR UPDATE
+`
+
+func (q *Queries) LockUser(ctx context.Context, id int64) (User, error) {
+	row := q.db.QueryRow(ctx, lockUser, id)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.Status,
+		&i.IsSystem,
+		&i.Bio,
+		&i.AvatarUrl,
+		&i.TokenVersion,
+		&i.EmailVerifiedAt,
+		&i.LastReadAnnouncementAt,
+		&i.BannedAt,
+		&i.BannedReason,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setUserRole = `-- name: SetUserRole :one
+UPDATE users
+SET role = $2, updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, username, email, password_hash, role, status, is_system, bio, avatar_url, token_version, email_verified_at, last_read_announcement_at, banned_at, banned_reason, deleted_at, created_at, updated_at
+`
+
+type SetUserRoleParams struct {
+	ID   int64
+	Role string
+}
+
+func (q *Queries) SetUserRole(ctx context.Context, arg SetUserRoleParams) (User, error) {
+	row := q.db.QueryRow(ctx, setUserRole, arg.ID, arg.Role)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.Status,
+		&i.IsSystem,
+		&i.Bio,
+		&i.AvatarUrl,
+		&i.TokenVersion,
+		&i.EmailVerifiedAt,
+		&i.LastReadAnnouncementAt,
+		&i.BannedAt,
+		&i.BannedReason,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setUserStatus = `-- name: SetUserStatus :one
+UPDATE users
+SET status = $2,
+    banned_at = $3,
+    banned_reason = $4,
+    token_version = token_version + 1,
+    updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, username, email, password_hash, role, status, is_system, bio, avatar_url, token_version, email_verified_at, last_read_announcement_at, banned_at, banned_reason, deleted_at, created_at, updated_at
+`
+
+type SetUserStatusParams struct {
+	ID           int64
+	Status       string
+	BannedAt     pgtype.Timestamptz
+	BannedReason string
+}
+
+func (q *Queries) SetUserStatus(ctx context.Context, arg SetUserStatusParams) (User, error) {
+	row := q.db.QueryRow(ctx, setUserStatus,
+		arg.ID,
+		arg.Status,
+		arg.BannedAt,
+		arg.BannedReason,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.Status,
+		&i.IsSystem,
+		&i.Bio,
+		&i.AvatarUrl,
+		&i.TokenVersion,
+		&i.EmailVerifiedAt,
+		&i.LastReadAnnouncementAt,
+		&i.BannedAt,
+		&i.BannedReason,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const transferPrompts = `-- name: TransferPrompts :many
+UPDATE prompts
+SET uploader_id = $1,
+    original_uploader_id = COALESCE(original_uploader_id, uploader_id),
+    updated_at = now()
+WHERE uploader_id = $2 AND deleted_at IS NULL
+RETURNING id
+`
+
+type TransferPromptsParams struct {
+	ToUploader   int64
+	FromUploader int64
+}
+
+func (q *Queries) TransferPrompts(ctx context.Context, arg TransferPromptsParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, transferPrompts, arg.ToUploader, arg.FromUploader)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateUserPassword = `-- name: UpdateUserPassword :one
+UPDATE users
+SET password_hash = $2,
+    token_version = token_version + 1,
+    updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, username, email, password_hash, role, status, is_system, bio, avatar_url, token_version, email_verified_at, last_read_announcement_at, banned_at, banned_reason, deleted_at, created_at, updated_at
+`
+
+type UpdateUserPasswordParams struct {
+	ID           int64
+	PasswordHash pgtype.Text
+}
+
+func (q *Queries) UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserPassword, arg.ID, arg.PasswordHash)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.Status,
+		&i.IsSystem,
+		&i.Bio,
+		&i.AvatarUrl,
+		&i.TokenVersion,
+		&i.EmailVerifiedAt,
+		&i.LastReadAnnouncementAt,
+		&i.BannedAt,
+		&i.BannedReason,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updateUserProfile = `-- name: UpdateUserProfile :one
+UPDATE users
+SET username = $2, bio = $3, avatar_url = $4, updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING id, username, email, password_hash, role, status, is_system, bio, avatar_url, token_version, email_verified_at, last_read_announcement_at, banned_at, banned_reason, deleted_at, created_at, updated_at
+`
+
+type UpdateUserProfileParams struct {
+	ID        int64
+	Username  string
+	Bio       string
+	AvatarUrl string
+}
+
+func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserProfile,
+		arg.ID,
+		arg.Username,
+		arg.Bio,
+		arg.AvatarUrl,
+	)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.Username,
+		&i.Email,
+		&i.PasswordHash,
+		&i.Role,
+		&i.Status,
+		&i.IsSystem,
+		&i.Bio,
+		&i.AvatarUrl,
+		&i.TokenVersion,
+		&i.EmailVerifiedAt,
+		&i.LastReadAnnouncementAt,
+		&i.BannedAt,
+		&i.BannedReason,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const usernameExists = `-- name: UsernameExists :one
+SELECT EXISTS (
+    SELECT 1 FROM users WHERE lower(username) = lower($1) AND deleted_at IS NULL
+) AS exists
+`
+
+func (q *Queries) UsernameExists(ctx context.Context, lower string) (bool, error) {
+	row := q.db.QueryRow(ctx, usernameExists, lower)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
+const verifyUserEmail = `-- name: VerifyUserEmail :one
+UPDATE users
+SET status = 'normal',
+    email_verified_at = now(),
+    updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL AND status = 'unverified'
+RETURNING id, username, email, password_hash, role, status, is_system, bio, avatar_url, token_version, email_verified_at, last_read_announcement_at, banned_at, banned_reason, deleted_at, created_at, updated_at
+`
+
+func (q *Queries) VerifyUserEmail(ctx context.Context, id int64) (User, error) {
+	row := q.db.QueryRow(ctx, verifyUserEmail, id)
 	var i User
 	err := row.Scan(
 		&i.ID,

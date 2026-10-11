@@ -2,8 +2,6 @@ package auth_test
 
 import (
 	"context"
-	"io"
-	"log/slog"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -17,10 +15,6 @@ const (
 	adminEmail    = "admin@prompt-benchmark.local"
 	adminPassword = "AdminInitPassw0rd!"
 )
-
-func discardLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
-}
 
 func countUsers(t *testing.T, pool *pgxpool.Pool, email string) int {
 	t.Helper()

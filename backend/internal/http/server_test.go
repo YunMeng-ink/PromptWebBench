@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
@@ -14,13 +13,12 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/promptbench/backend/internal/apperr"
 	"github.com/promptbench/backend/internal/config"
 	api "github.com/promptbench/backend/internal/http"
-	"github.com/promptbench/backend/internal/metrics"
-	"github.com/promptbench/backend/internal/platform/pgtest"
 )
 
-func testEnv() config.Env {
+func testEnvConfig() config.Env {
 	return config.Env{
 		Port:             "0",
 		JWTSecret:        "0123456789abcdef0123456789abcdef",
@@ -31,24 +29,7 @@ func testEnv() config.Env {
 
 func newTestServer(t *testing.T) *api.Server {
 	t.Helper()
-
-	pool := pgtest.MigratedDatabase(t)
-	store := config.NewStore(pool, config.DefaultCacheTTL)
-	if err := store.Refresh(context.Background()); err != nil {
-		t.Fatalf("刷新配置缓存失败: %v", err)
-	}
-
-	srv, err := api.New(api.Deps{
-		Env:     testEnv(),
-		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Pool:    pool,
-		Config:  store,
-		Metrics: metrics.New(),
-	})
-	if err != nil {
-		t.Fatalf("构造接口层失败: %v", err)
-	}
-	return srv
+	return newTestEnv(t).server
 }
 
 func serve(t *testing.T, srv *api.Server) *httptest.Server {
@@ -143,8 +124,8 @@ func TestUnknownRouteReturnsNotFoundEnvelope(t *testing.T) {
 		t.Fatalf("状态码 = %d，期望 404", resp.StatusCode)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	if code := decodeEnvelope(t, body).Error.Code; code != string(api.CodeNotFound) {
-		t.Fatalf("错误码 = %s，期望 %s", code, api.CodeNotFound)
+	if code := decodeEnvelope(t, body).Error.Code; code != string(apperr.CodeNotFound) {
+		t.Fatalf("错误码 = %s，期望 %s", code, apperr.CodeNotFound)
 	}
 }
 
@@ -181,8 +162,8 @@ func TestMetricsReachableFromLoopbackAndHiddenFromForwardedClients(t *testing.T)
 		t.Fatalf("非回环来源抓取状态码 = %d，期望 404", forwarded.StatusCode)
 	}
 	forwardedBody, _ := io.ReadAll(forwarded.Body)
-	if code := decodeEnvelope(t, forwardedBody).Error.Code; code != string(api.CodeNotFound) {
-		t.Fatalf("错误码 = %s，期望 %s", code, api.CodeNotFound)
+	if code := decodeEnvelope(t, forwardedBody).Error.Code; code != string(apperr.CodeNotFound) {
+		t.Fatalf("错误码 = %s，期望 %s", code, apperr.CodeNotFound)
 	}
 }
 
@@ -265,8 +246,8 @@ func TestCSRFBlocksWriteWithoutToken(t *testing.T) {
 		t.Fatalf("状态码 = %d，期望 403", resp.StatusCode)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	if code := decodeEnvelope(t, body).Error.Code; code != string(api.CodeInvalidCSRF) {
-		t.Fatalf("错误码 = %s，期望 %s", code, api.CodeInvalidCSRF)
+	if code := decodeEnvelope(t, body).Error.Code; code != string(apperr.CodeInvalidCSRF) {
+		t.Fatalf("错误码 = %s，期望 %s", code, apperr.CodeInvalidCSRF)
 	}
 }
 
@@ -374,9 +355,18 @@ func TestReadRouteMayOmitRule(t *testing.T) {
 		OperationID: "probeReadNoRule",
 	}, func(_ context.Context, _ *struct{}) (*struct{}, error) { return nil, nil })
 
-	routes := srv.RegisteredRoutes()
-	if len(routes) != 1 || routes[0].Method != http.MethodGet {
-		t.Fatalf("路由登记结果异常: %+v", routes)
+	var found *api.RouteRecord
+	for _, record := range srv.RegisteredRoutes() {
+		if record.Path == api.APIPrefix+"/read-no-rule" {
+			route := record
+			found = &route
+		}
+	}
+	if found == nil {
+		t.Fatal("未登记的读路由应出现在路由清单中")
+	}
+	if found.Rule != "" {
+		t.Fatalf("读路由的限流规则 = %s，期望为空", found.Rule)
 	}
 }
 
@@ -400,13 +390,13 @@ func TestRequestBodyLimitIsEnforced(t *testing.T) {
 		t.Fatalf("状态码 = %d，期望 413", resp.StatusCode)
 	}
 	body, _ := io.ReadAll(resp.Body)
-	if code := decodeEnvelope(t, body).Error.Code; code != string(api.CodeRequestEntityTooLarge) {
-		t.Fatalf("错误码 = %s，期望 %s", code, api.CodeRequestEntityTooLarge)
+	if code := decodeEnvelope(t, body).Error.Code; code != string(apperr.CodeRequestEntityTooLarge) {
+		t.Fatalf("错误码 = %s，期望 %s", code, apperr.CodeRequestEntityTooLarge)
 	}
 }
 
 func TestServerRejectsIncompleteDependencies(t *testing.T) {
-	_, err := api.New(api.Deps{Env: testEnv()})
+	_, err := api.New(api.Deps{Env: testEnvConfig()})
 	if err == nil {
 		t.Fatal("依赖不完整时构造接口层应报错")
 	}
@@ -416,17 +406,11 @@ func TestServerRejectsIncompleteDependencies(t *testing.T) {
 }
 
 func TestServerRejectsEmptyCORSOrigins(t *testing.T) {
-	pool := pgtest.MigratedDatabase(t)
-	env := testEnv()
-	env.CORSAllowOrigins = nil
+	env := newTestEnv(t)
+	deps := env.Deps(t)
+	deps.Env.CORSAllowOrigins = nil
 
-	_, err := api.New(api.Deps{
-		Env:     env,
-		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Pool:    pool,
-		Config:  config.NewStore(pool, config.DefaultCacheTTL),
-		Metrics: metrics.New(),
-	})
+	_, err := api.New(deps)
 	if err == nil {
 		t.Fatal("缺少 CORS 来源时应报错")
 	}

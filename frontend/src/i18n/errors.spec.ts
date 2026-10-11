@@ -5,7 +5,7 @@ import en from '@/i18n/en'
 import zh from '@/i18n/zh'
 
 // vitest 以 frontend 为工作目录运行，据此定位后端错误码表。
-const backendErrorsFile = resolve(process.cwd(), '../backend/internal/http/errors.go')
+const backendErrorsFile = resolve(process.cwd(), '../backend/internal/apperr/codes.go')
 
 /** 从后端错误码表提取全部码值，使前后端错误码不会各自漂移。 */
 function backendErrorCodes(): string[] {

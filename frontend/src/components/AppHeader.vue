@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { type AppLocale, SUPPORTED_LOCALES } from '@/i18n'
+import { useAuthStore } from '@/stores/auth'
 import { usePreferencesStore } from '@/stores/preferences'
 
 const { t } = useI18n()
+const router = useRouter()
 const preferences = usePreferencesStore()
+const auth = useAuthStore()
 
 const localeOptions = computed(() =>
   SUPPORTED_LOCALES.map((value) => ({
@@ -16,6 +20,11 @@ const localeOptions = computed(() =>
 
 function onLocaleChange(value: AppLocale): void {
   preferences.setLocale(value)
+}
+
+async function onLogout(): Promise<void> {
+  await auth.logout()
+  await router.push('/')
 }
 </script>
 
@@ -48,6 +57,29 @@ function onLocaleChange(value: AppLocale): void {
         <el-button size="small" :aria-label="t('nav.theme')" @click="preferences.toggleTheme()">
           {{ preferences.isDark ? t('nav.themeLight') : t('nav.themeDark') }}
         </el-button>
+
+        <template v-if="auth.status === 'authenticated'">
+          <el-dropdown trigger="click">
+            <el-button size="small" data-testid="header-user">
+              {{ auth.user?.username }}
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item data-testid="header-profile" @click="router.push('/me')">
+                  {{ t('nav.profile') }}
+                </el-dropdown-item>
+                <el-dropdown-item data-testid="header-logout" @click="onLogout">
+                  {{ t('nav.logout') }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </template>
+        <RouterLink v-else-if="auth.status === 'guest'" to="/login">
+          <el-button size="small" type="primary" data-testid="header-login">
+            {{ t('nav.login') }}
+          </el-button>
+        </RouterLink>
       </nav>
     </div>
   </header>

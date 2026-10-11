@@ -4,6 +4,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -36,10 +37,17 @@ type Env struct {
 	StaticDir      string
 	LogLevel       string
 
+	// PublicBaseURL 是本服务对外可访问的基地址，用于拼接 GitHub OAuth 回调地址
+	// 与登录后落地页地址。前端经反向代理访问后端时应配置为前端同源地址。
+	PublicBaseURL string
+
 	// CORSAllowOrigins 与 CookieSecure 供中间件层使用：前者限定允许跨域的前端来源，
 	// 后者决定 CSRF 与会话 Cookie 是否要求 HTTPS 传输。
 	CORSAllowOrigins []string
 	CookieSecure     bool
+
+	// AuthRateLimit 是认证类接口每分钟的限额（按来源地址）。0 表示使用规格默认值 10。
+	AuthRateLimit int
 }
 
 // DSN 组装 pgx 连接串。
@@ -78,11 +86,20 @@ func Load() (Env, error) {
 		StaticDir: os.Getenv("STATIC_DIR"),
 		LogLevel:  getenv("LOG_LEVEL", "info"),
 
+		PublicBaseURL:    strings.TrimSuffix(getenv("PUBLIC_BASE_URL", "http://localhost:5173"), "/"),
 		CORSAllowOrigins: splitNonEmpty(getenv("CORS_ALLOW_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")),
 		CookieSecure:     getenv("COOKIE_SECURE", "false") == "true",
 	}
 
 	e.TrustedProxies = splitNonEmpty(os.Getenv("TRUSTED_PROXIES"))
+
+	if raw := os.Getenv("AUTH_RATE_LIMIT"); raw != "" {
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit <= 0 {
+			return Env{}, fmt.Errorf("AUTH_RATE_LIMIT 必须为正整数，当前值 %q", raw)
+		}
+		e.AuthRateLimit = limit
+	}
 
 	if len(e.JWTSecret) < 32 {
 		return Env{}, fmt.Errorf("JWT_SECRET 必须为至少 32 字节的十六进制字符串，当前长度为 %d", len(e.JWTSecret))

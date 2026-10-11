@@ -7,10 +7,12 @@ import (
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/promptbench/backend/internal/apperr"
 )
 
 func TestErrorEnvelopeShape(t *testing.T) {
-	err := NewError(CodeNotFound, "")
+	err := NewError(apperr.CodeNotFound, "")
 	if err.GetStatus() != http.StatusNotFound {
 		t.Fatalf("状态码 = %d，期望 %d", err.GetStatus(), http.StatusNotFound)
 	}
@@ -26,7 +28,7 @@ func TestErrorEnvelopeShape(t *testing.T) {
 }
 
 func TestErrorEnvelopeDetails(t *testing.T) {
-	err := NewError(CodeValidationFailed, "").WithDetails("body.score: 必须介于 1 与 5 之间")
+	err := NewError(apperr.CodeValidationFailed, "").WithDetails("body.score: 必须介于 1 与 5 之间")
 	raw, marshalErr := json.Marshal(err)
 	if marshalErr != nil {
 		t.Fatalf("序列化错误对象失败: %v", marshalErr)
@@ -36,8 +38,8 @@ func TestErrorEnvelopeDetails(t *testing.T) {
 	if unmarshalErr := json.Unmarshal(raw, &decoded); unmarshalErr != nil {
 		t.Fatalf("反序列化错误对象失败: %v", unmarshalErr)
 	}
-	if decoded.Error.Code != string(CodeValidationFailed) {
-		t.Fatalf("错误码 = %s，期望 %s", decoded.Error.Code, CodeValidationFailed)
+	if decoded.Error.Code != string(apperr.CodeValidationFailed) {
+		t.Fatalf("错误码 = %s，期望 %s", decoded.Error.Code, apperr.CodeValidationFailed)
 	}
 	if len(decoded.Error.Details) != 1 {
 		t.Fatalf("details 数量 = %d，期望 1", len(decoded.Error.Details))
@@ -45,30 +47,65 @@ func TestErrorEnvelopeDetails(t *testing.T) {
 }
 
 func TestErrorContentTypeStaysJSON(t *testing.T) {
-	err := NewError(CodeNotFound, "")
+	err := NewError(apperr.CodeNotFound, "")
 	var filter huma.ContentTypeFilter = err
 	if got := filter.ContentType("application/json"); got != "application/json" {
 		t.Fatalf("ContentType = %q，期望 application/json", got)
 	}
 }
 
+func TestFromAppErrorPreservesCodeStatusAndDetails(t *testing.T) {
+	source := apperr.New(apperr.CodeQuotaExceeded, "题库数量已达上限").WithDetails("普通用户上限 1 个")
+	converted := FromAppError(source)
+
+	if converted.ErrorEnvelope.Error.Code != string(apperr.CodeQuotaExceeded) {
+		t.Fatalf("错误码 = %s，期望 %s", converted.ErrorEnvelope.Error.Code, apperr.CodeQuotaExceeded)
+	}
+	if converted.GetStatus() != http.StatusConflict {
+		t.Fatalf("状态码 = %d，期望 409", converted.GetStatus())
+	}
+	if len(converted.ErrorEnvelope.Error.Details) != 1 {
+		t.Fatalf("details 数量 = %d，期望 1", len(converted.ErrorEnvelope.Error.Details))
+	}
+}
+
+func TestTranslateConvertsBusinessErrorsOnly(t *testing.T) {
+	business := apperr.New(apperr.CodeEmailTaken, "")
+	translated := Translate(business)
+	var apiErr *APIError
+	if !errors.As(translated, &apiErr) {
+		t.Fatal("业务错误应被转换为 APIError")
+	}
+	if apiErr.GetStatus() != http.StatusConflict {
+		t.Fatalf("状态码 = %d，期望 409", apiErr.GetStatus())
+	}
+
+	plain := errors.New("数据库连接失败")
+	if Translate(plain) != plain {
+		t.Fatal("非业务错误应原样透传")
+	}
+}
+
 func TestErrorCodeTableIsComplete(t *testing.T) {
 	// 每个错误码都必须有状态码与默认文案，避免出现空响应。
-	for code, spec := range codes {
-		if spec.status < 400 || spec.status > 599 {
-			t.Errorf("错误码 %s 的状态码 %d 不在 4xx/5xx 区间", code, spec.status)
+	for _, code := range apperr.AllCodes() {
+		status := apperr.StatusFor(code)
+		if status < 400 || status > 599 {
+			t.Errorf("错误码 %s 的状态码 %d 不在 4xx/5xx 区间", code, status)
 		}
-		if spec.message == "" {
+		if apperr.DefaultMessage(code) == "" {
 			t.Errorf("错误码 %s 缺少默认文案", code)
 		}
 	}
-	// 除故意保留的 CodeUnprocessableEntity 兜底码外，其余码不应共享同一状态码与文案的组合。
-	seen := map[int]int{}
-	for _, spec := range codes {
-		seen[spec.status]++
+
+	seen := map[int]bool{}
+	for _, code := range apperr.AllCodes() {
+		seen[apperr.StatusFor(code)] = true
 	}
-	if len(seen) < 10 {
-		t.Fatalf("状态码种类 = %d，期望覆盖 400/401/403/404/409/422/429/500/502/503 等", len(seen))
+	for _, status := range []int{400, 401, 403, 404, 409, 422, 429, 500, 502, 503} {
+		if !seen[status] {
+			t.Errorf("错误码表未覆盖状态码 %d", status)
+		}
 	}
 }
 
@@ -79,13 +116,13 @@ func TestInstallErrorModelOverridesFrameworkErrors(t *testing.T) {
 		status int
 		code   string
 	}{
-		{http.StatusNotFound, string(CodeNotFound)},
-		{http.StatusBadRequest, string(CodeBadRequest)},
-		{http.StatusUnauthorized, string(CodeUnauthorized)},
-		{http.StatusTooManyRequests, string(CodeRateLimited)},
-		{http.StatusInternalServerError, string(CodeInternal)},
-		{http.StatusUnprocessableEntity, string(CodeValidationFailed)},
-		{http.StatusBadGateway, string(CodeBadGateway)},
+		{http.StatusNotFound, string(apperr.CodeNotFound)},
+		{http.StatusBadRequest, string(apperr.CodeBadRequest)},
+		{http.StatusUnauthorized, string(apperr.CodeUnauthorized)},
+		{http.StatusTooManyRequests, string(apperr.CodeRateLimited)},
+		{http.StatusInternalServerError, string(apperr.CodeInternal)},
+		{http.StatusUnprocessableEntity, string(apperr.CodeValidationFailed)},
+		{http.StatusBadGateway, string(apperr.CodeBadGateway)},
 	}
 	for _, tc := range cases {
 		got := huma.NewError(tc.status, "framework message")
@@ -122,5 +159,5 @@ func TestNewErrorPanicsOnUnknownCode(t *testing.T) {
 			t.Fatal("未登记的错误码应当 panic")
 		}
 	}()
-	NewError(Code("not_registered"), "")
+	apperr.New(apperr.Code("not_registered"), "")
 }
