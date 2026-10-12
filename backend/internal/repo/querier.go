@@ -6,6 +6,8 @@ package repo
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
@@ -21,9 +23,17 @@ type Querier interface {
 	// 私有提示词额度在事务内统计，未删除的私有提示词计入（需求 §8.3、C-21）。
 	CountPrivatePrompts(ctx context.Context, uploaderID int64) (int64, error)
 	CountPromptRatings(ctx context.Context, promptID int64) (int64, error)
+	// 某提示词在一个时间窗口内的独立评分用户数。
+	//
+	// 单个模型的用户集合互相重叠，跨模型去重后的真实值只能在这里取：
+	// 服务层若把各模型的用户数相加，重复评分同一提示词的用户会被计多次，
+	// 置信度因此被高估（C-05 的同源约束）。
+	//
+	CountPromptWindowUsers(ctx context.Context, arg CountPromptWindowUsersParams) (int64, error)
 	// 每日修改与删除次数统计，窗口为 [day_start, day_end)。
 	CountRatingChangesInDay(ctx context.Context, arg CountRatingChangesInDayParams) (int64, error)
 	CountRecentEmailVerifications(ctx context.Context, arg CountRecentEmailVerificationsParams) (int64, error)
+	CountRecommendTagsByState(ctx context.Context, states []string) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
 	CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) (ApiToken, error)
 	// 邮箱验证码、第三方登录绑定与 API Token。
@@ -36,10 +46,14 @@ type Querier interface {
 	// 开发方案 §3.4）：SQL 中不出现 date_trunc 与任何依赖会话时区的表达式。
 	CreateRating(ctx context.Context, arg CreateRatingParams) (Rating, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	// 删除某提示词下已不在启用模型列表中的统计行，避免快照无限增长。
+	DeletePromptModelStatsExcept(ctx context.Context, arg DeletePromptModelStatsExceptParams) error
 	DeletePromptModelStatsForMajorChange(ctx context.Context, promptID int64) error
 	DeletePromptRatingsForMajorChange(ctx context.Context, promptID int64) ([]int64, error)
 	// 重大修改使统计快照失效，阶段 3 会按新版本重算（需求 §7.3 第 6 步）。
 	DeletePromptStatsForMajorChange(ctx context.Context, promptID int64) error
+	// 提示词被删除或彻底删除时，推荐标签一律转已过期（C-14）。
+	ExpireRecommendTagsByPrompt(ctx context.Context, promptID int64) error
 	GetAbility(ctx context.Context, id int64) (Ability, error)
 	GetActiveAPIToken(ctx context.Context, userID int64) (ApiToken, error)
 	GetActiveEmailVerification(ctx context.Context, arg GetActiveEmailVerificationParams) (EmailVerification, error)
@@ -52,32 +66,72 @@ type Querier interface {
 	GetModel(ctx context.Context, id int64) (Model, error)
 	GetOAuthAccount(ctx context.Context, arg GetOAuthAccountParams) (OauthAccount, error)
 	GetPrompt(ctx context.Context, id int64) (GetPromptRow, error)
+	GetPromptStats(ctx context.Context, promptID int64) (PromptStat, error)
+	// 统计快照记录的提示词当前版本，使快照与它反映的评分所属版本可对照（需求 §7.1）。
+	GetPromptStatsVersion(ctx context.Context, promptID int64) (pgtype.Int8, error)
+	// 快照是否过期：取该提示词自身与它全部评分的最后更新时刻。
+	//
+	// 评分写入不触发统计重算，而是在下一次读取时由这一个比较判定过期，
+	// 使评分提交保持单次写入（P95 指标，G-04），统计计算退化为读放大。
+	//
+	GetPromptStatsWatermark(ctx context.Context, promptID int64) (pgtype.Timestamptz, error)
 	GetPromptVersion(ctx context.Context, arg GetPromptVersionParams) (PromptVersion, error)
 	GetRating(ctx context.Context, arg GetRatingParams) (Rating, error)
+	GetRecommendTag(ctx context.Context, id int64) (RecommendTag, error)
 	GetSystemUser(ctx context.Context) (User, error)
 	GetTagsByIDs(ctx context.Context, ids []int64) ([]Tag, error)
 	GetUserByAPITokenHash(ctx context.Context, tokenHash string) (User, error)
 	// users 表的读取与写入。
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByID(ctx context.Context, id int64) (User, error)
+	// 区分度回升时把已存在的待确认过时标签转已忽略并记录审计日志（C-15）。
+	// 条件里带 state = 'pending'：已确认的标签由管理员显式处理，系统不代为改动。
+	IgnorePendingTags(ctx context.Context, arg IgnorePendingTagsParams) ([]RecommendTag, error)
 	// 操作日志与提示词转移日志。操作日志只增不改不删（C-43）。
 	InsertOperationLog(ctx context.Context, arg InsertOperationLogParams) (OperationLog, error)
 	// prompts 与 prompt_versions 的读取与写入。
 	InsertPrompt(ctx context.Context, arg InsertPromptParams) (Prompt, error)
 	InsertPromptVersion(ctx context.Context, arg InsertPromptVersionParams) (PromptVersion, error)
 	InsertRatingChangeLog(ctx context.Context, arg InsertRatingChangeLogParams) (int64, error)
+	// recommend_tags 的读写。推荐标签生命周期由 C-12 ~ C-16 规定。
+	// 同一「提示词 × 模型 × 标签类型」同时只保留一条未终结的推荐标签，
+	// 唯一索引在该状态下约束，重算时冲突即视为标签已存在（C-13）。
+	//
+	InsertRecommendTag(ctx context.Context, arg InsertRecommendTagParams) (RecommendTag, error)
 	InsertTransferLog(ctx context.Context, arg InsertTransferLogParams) error
 	ListAbilities(ctx context.Context) ([]Ability, error)
 	// 字典表查询：类别、能力维度、难度、标签、模型（开发方案 §5.5 字典组）。
 	ListCategories(ctx context.Context) ([]Category, error)
 	// config 表的读写。value 为 JSONB，键名与类型语义由调用方按 C-45 解释。
 	ListConfig(ctx context.Context) ([]ListConfigRow, error)
+	// 详情页展示已确认的推荐标签。忽略、过期与待确认的推荐不进前台。
+	ListConfirmedRecommendTags(ctx context.Context, promptID int64) ([]RecommendTag, error)
 	ListDifficulties(ctx context.Context) ([]Difficulty, error)
+	ListLiveRecommendTagsByKind(ctx context.Context, arg ListLiveRecommendTagsByKindParams) ([]RecommendTag, error)
 	ListModels(ctx context.Context) ([]Model, error)
 	ListMyRatings(ctx context.Context, arg ListMyRatingsParams) ([]ListMyRatingsRow, error)
 	// 当前用户的评分：详情页展示「我已评过的模型」。
 	ListMyRatingsForPrompt(ctx context.Context, arg ListMyRatingsForPromptParams) ([]Rating, error)
 	ListOwnPrompts(ctx context.Context, arg ListOwnPromptsParams) ([]ListOwnPromptsRow, error)
+	// 统计域的读写：prompt_stats、prompt_model_stats、recommend_tags。
+	//
+	// 时间窗口边界一律由应用层按 UTC 自然日计算后作为参数传入（C-03、开发方案 §3.4）：
+	// SQL 中不出现 date_trunc 与任何依赖会话时区的表达式。
+	//
+	// COALESCE 纪律（开发方案 §6.4 专项回归）：本文件的每一个聚合都被 COALESCE 包住。
+	// sqlc 的空值分析器不读 FILTER 子句的语义，裸的 count(*) FILTER (WHERE ...) 与
+	// avg(...) FILTER (WHERE ...) 会被映射为非空类型，而「模型有历史评分但近 N 日无评分」
+	// 这一必然形态下 PostgreSQL 对它们返回 NULL，扫描即以
+	// "cannot scan NULL into *int64" 失败。
+	// 某提示词在一个时间窗口内、按模型聚合的评分原始数据。
+	//
+	// 这是全部统计的单一数据来源：完成度、标准差、区间半宽都由这四组聚合量算出，
+	// 由 formula 包做纯计算。
+	//
+	// 用 LEFT JOIN 从 models 出发而不是从 ratings 出发：后一种写法会直接丢掉无评分的
+	// 模型，服务层就无法区分「该模型没有评分记录」与「该模型已不在启用列表中」。
+	//
+	ListPromptModelAggregates(ctx context.Context, arg ListPromptModelAggregatesParams) ([]ListPromptModelAggregatesRow, error)
 	// 详情页的模型评分列表：同一模型多条评分取最新一条，展示聚合均值。
 	//
 	// 均值必须包 COALESCE（开发方案 §6.4 专项回归）：LEFT JOIN 后没有任何评分时
@@ -85,13 +139,27 @@ type Querier interface {
 	// "cannot scan NULL into *float64" 失败，详情页 500 且不自愈。
 	// 无评分的模型均值为 0，评分数为 0 表明「尚无评分」。
 	ListPromptModelRatings(ctx context.Context, promptID int64) ([]ListPromptModelRatingsRow, error)
+	ListPromptModelStats(ctx context.Context, promptID int64) ([]PromptModelStat, error)
 	ListPromptTagIDs(ctx context.Context, promptID int64) ([]int64, error)
 	ListPromptTags(ctx context.Context, promptID int64) ([]Tag, error)
 	ListPromptVersions(ctx context.Context, promptID int64) ([]PromptVersion, error)
+	// 区分度置信度的 Bootstrap 需要逐条评分样本，重抽样单元就是单条评分。
+	// 一次取回两个窗口的样本，避免两次查询之间出现评分变动导致的口径不一致。
+	//
+	ListPromptWindowScores(ctx context.Context, arg ListPromptWindowScoresParams) ([]ListPromptWindowScoresRow, error)
+	// 详情页在管理员身份下展示全部推荐标签，供后台处理（开发方案 §6.7）。
+	ListRecommendTagsByPrompt(ctx context.Context, promptID int64) ([]RecommendTag, error)
+	// 推荐标签批量处理与后台列表（开发方案 §6.7）。
+	ListRecommendTagsByState(ctx context.Context, arg ListRecommendTagsByStateParams) ([]RecommendTag, error)
 	ListTags(ctx context.Context) ([]Tag, error)
 	LockPrompt(ctx context.Context, id int64) (LockPromptRow, error)
+	// 快照重算的事务入口：锁定该提示词的评分写入，使快照与它反映的评分集合一致。
+	// 评分提交路径在写评分前同样先取本锁，两侧因此互斥。
+	LockPromptStatsRecompute(ctx context.Context, promptID int64) error
 	LockRating(ctx context.Context, id int64) (Rating, error)
 	LockUser(ctx context.Context, id int64) (User, error)
+	// 重大修改：过时标签转待复核，训练饱和标签转待复核（C-12）。
+	MoveTagsToReview(ctx context.Context, arg MoveTagsToReviewParams) error
 	ReplacePromptTags(ctx context.Context, promptID int64) error
 	RevokeActiveAPITokens(ctx context.Context, userID int64) error
 	SetPromptCurrentVersion(ctx context.Context, arg SetPromptCurrentVersionParams) (Prompt, error)
@@ -108,9 +176,19 @@ type Querier interface {
 	// 单条修改次数上限由条件 UPDATE 保证（开发方案 §3.5）：
 	// 即使并发修改同时读到 edit_count 未超限，也只有一个事务能命中该行。
 	UpdateRatingScore(ctx context.Context, arg UpdateRatingScoreParams) (Rating, error)
+	// 管理员处置：确认、忽略、修改文案。转移条件与状态由服务层校验。
+	UpdateRecommendTag(ctx context.Context, arg UpdateRecommendTagParams) (RecommendTag, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (User, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpsertConfig(ctx context.Context, arg UpsertConfigParams) error
+	UpsertPromptModelStat(ctx context.Context, arg UpsertPromptModelStatParams) (PromptModelStat, error)
+	// 统计快照写入。两个窗口的字段在同一行内更新，写入由服务层放在单个事务中
+	// （开发方案 §6.4：统计快照写入在单事务内，无半写状态）。
+	//
+	// 两处区分度可空：无数据时写 NULL 而非 0。写 0 会被展示层读成「区分度为零」，
+	// 与 C-06 要求的「数据不足，暂不计算区分度」矛盾。参数类型保持 numeric 的可空形态。
+	//
+	UpsertPromptStats(ctx context.Context, arg UpsertPromptStatsParams) (PromptStat, error)
 	UpsertSecretConfig(ctx context.Context, arg UpsertSecretConfigParams) error
 	UsernameExists(ctx context.Context, lower string) (bool, error)
 	VerifyUserEmail(ctx context.Context, id int64) (User, error)

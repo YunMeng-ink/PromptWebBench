@@ -22,6 +22,7 @@ import (
 	"github.com/promptbench/backend/internal/service/auth"
 	"github.com/promptbench/backend/internal/service/prompt"
 	"github.com/promptbench/backend/internal/service/rating"
+	"github.com/promptbench/backend/internal/service/stats"
 )
 
 // APIPrefix 是全部业务端点的前缀（G-17）。
@@ -40,6 +41,7 @@ type Deps struct {
 	Admin  *admin.Service
 	Prompt *prompt.Service
 	Rating *rating.Service
+	Stats  *stats.Service
 	Signer *security.Signer
 }
 
@@ -70,6 +72,9 @@ func New(deps Deps) (*Server, error) {
 	}
 	if deps.Prompt == nil || deps.Rating == nil || deps.Repo == nil {
 		return nil, fmt.Errorf("接口层依赖不完整：Prompt、Rating、Repo 均不可为空")
+	}
+	if deps.Stats == nil {
+		return nil, fmt.Errorf("接口层依赖不完整：Stats 不可为空")
 	}
 	trusted, err := ParseTrustedProxies(deps.Env.TrustedProxies)
 	if err != nil {
@@ -131,6 +136,7 @@ func New(deps Deps) (*Server, error) {
 	s.registerAdminAccountRoutes()
 	s.registerPromptRoutes()
 	s.registerRatingRoutes()
+	s.registerStatsRoutes()
 	s.registerDictionaryRoutes()
 	return s, nil
 }

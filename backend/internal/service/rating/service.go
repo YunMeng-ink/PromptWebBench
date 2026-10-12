@@ -29,18 +29,56 @@ type Deps struct {
 	Pool   *pgxpool.Pool
 	Config *config.Store
 	Logger *slog.Logger
+	// Stats 用于评分写入后作废统计缓存，并取统计重算锁与重算事务互斥。
+	// 为空时评分功能仍可用，只是不参与统计刷新。
+	Stats StatsHook
+}
+
+// StatsHook 是评分服务对统计服务的依赖声明。
+// 只声明用到的两个方法，使两个包之间不产生包级循环依赖。
+type StatsHook interface {
+	// MarkStale 作废某提示词的统计缓存。
+	MarkStale(promptID int64)
+	// LockRecompute 在当前事务上取该提示词的统计重算锁。
+	LockRecompute(ctx context.Context, q *repo.Queries, promptID int64) error
 }
 
 type Service struct {
 	pool   *pgxpool.Pool
 	config *config.Store
 	logger *slog.Logger
+	stats  StatsHook
 
 	now func() time.Time
 }
 
 func New(deps Deps) *Service {
-	return &Service{pool: deps.Pool, config: deps.Config, logger: deps.Logger, now: time.Now}
+	return &Service{
+		pool:   deps.Pool,
+		config: deps.Config,
+		logger: deps.Logger,
+		stats:  deps.Stats,
+		now:    time.Now,
+	}
+}
+
+// syncStats 作废统计缓存。统计重算由读取路径按需触发（读放大），
+// 评分提交只负责让下一次读取不再返回旧值。
+func (s *Service) syncStats(promptID int64) {
+	if s.stats != nil {
+		s.stats.MarkStale(promptID)
+	}
+}
+
+// lockStats 在当前事务上取统计重算锁，使重算读到的评分集合与本事务的写入互斥。
+func (s *Service) lockStats(ctx context.Context, q *repo.Queries, promptID int64) error {
+	if s.stats == nil {
+		return nil
+	}
+	if err := s.stats.LockRecompute(ctx, q, promptID); err != nil {
+		return fmt.Errorf("获取提示词 %d 的统计重算锁: %w", promptID, err)
+	}
+	return nil
 }
 
 // SubmitInput 是提交与修改评分的输入。
@@ -73,6 +111,11 @@ func (s *Service) Submit(ctx context.Context, actor domain.User, in SubmitInput,
 				return apperr.New(apperr.CodeNotFound, "模型不存在")
 			}
 			return fmt.Errorf("查询模型: %w", err)
+		}
+
+		// 与统计重算互斥：重算期间不写入新评分，快照才不会与评分错位。
+		if err := s.lockStats(ctx, q, in.PromptID); err != nil {
+			return err
 		}
 
 		row, err := q.CreateRating(ctx, repo.CreateRatingParams{
@@ -114,6 +157,7 @@ func (s *Service) Submit(ctx context.Context, actor domain.User, in SubmitInput,
 	if err != nil {
 		return domain.Rating{}, err
 	}
+	s.syncStats(in.PromptID)
 	return created, nil
 }
 
@@ -150,6 +194,10 @@ func (s *Service) Update(ctx context.Context, actor domain.User, in SubmitInput,
 		}
 
 		if err := s.checkDailyLimit(ctx, q, actor.ID, actionUpdate, dailyLimit); err != nil {
+			return err
+		}
+
+		if err := s.lockStats(ctx, q, in.PromptID); err != nil {
 			return err
 		}
 
@@ -191,6 +239,7 @@ func (s *Service) Update(ctx context.Context, actor domain.User, in SubmitInput,
 	if err != nil {
 		return domain.Rating{}, err
 	}
+	s.syncStats(in.PromptID)
 	return updated, nil
 }
 
@@ -222,11 +271,15 @@ func (s *Service) Delete(ctx context.Context, actor domain.User, promptID, model
 			return err
 		}
 
+		if err := s.lockStats(ctx, q, promptID); err != nil {
+			return err
+		}
+
 		if _, err := q.SoftDeleteRating(ctx, existing.ID); err != nil {
 			return fmt.Errorf("软删除评分: %w", err)
 		}
 
-		return s.logChange(ctx, q, logEntry{
+		if err := s.logChange(ctx, q, logEntry{
 			RatingID:        existing.ID,
 			Actor:           actor,
 			PromptID:        promptID,
@@ -235,7 +288,11 @@ func (s *Service) Delete(ctx context.Context, actor domain.User, promptID, model
 			BeforeScore:     int16(existing.Score),
 			BeforeEditCount: existing.EditCount,
 			IP:              ip,
-		})
+		}); err != nil {
+			return err
+		}
+		s.syncStats(promptID)
+		return nil
 	})
 }
 

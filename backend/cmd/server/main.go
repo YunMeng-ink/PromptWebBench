@@ -29,6 +29,7 @@ import (
 	"github.com/promptbench/backend/internal/service/auth"
 	"github.com/promptbench/backend/internal/service/prompt"
 	"github.com/promptbench/backend/internal/service/rating"
+	"github.com/promptbench/backend/internal/service/stats"
 )
 
 func main() {
@@ -112,7 +113,10 @@ func run(envFile string) error {
 	})
 	adminService := admin.New(admin.Deps{Pool: pool, Logger: logger})
 	promptService := prompt.New(prompt.Deps{Pool: pool, Config: cfgStore, Logger: logger})
-	ratingService := rating.New(rating.Deps{Pool: pool, Config: cfgStore, Logger: logger})
+	statsService := stats.New(stats.Deps{Pool: pool, Config: cfgStore, Logger: logger})
+	ratingService := rating.New(rating.Deps{
+		Pool: pool, Config: cfgStore, Logger: logger, Stats: statsService,
+	})
 
 	srv, err := api.New(api.Deps{
 		Env:     env,
@@ -125,6 +129,7 @@ func run(envFile string) error {
 		Admin:   adminService,
 		Prompt:  promptService,
 		Rating:  ratingService,
+		Stats:   statsService,
 		Signer:  signer,
 	})
 	if err != nil {

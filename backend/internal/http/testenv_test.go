@@ -26,6 +26,7 @@ import (
 	"github.com/promptbench/backend/internal/service/auth"
 	"github.com/promptbench/backend/internal/service/prompt"
 	"github.com/promptbench/backend/internal/service/rating"
+	"github.com/promptbench/backend/internal/service/stats"
 )
 
 // testEnv 是一套完整可用的接口层测试环境：真实数据库、真实 SMTP 服务、真实 HTTP 服务。
@@ -41,6 +42,7 @@ type testEnv struct {
 	admin  *admin.Service
 	prompt *prompt.Service
 	rating *rating.Service
+	stats  *stats.Service
 	repo   *repo.Queries
 	signer *security.Signer
 }
@@ -59,6 +61,7 @@ func (e *testEnv) Deps(t *testing.T) api.Deps {
 		Admin:   e.admin,
 		Prompt:  e.prompt,
 		Rating:  e.rating,
+		Stats:   e.stats,
 		Signer:  e.signer,
 	}
 }
@@ -92,7 +95,12 @@ func newTestEnv(t *testing.T) *testEnv {
 	})
 	adminService := admin.New(admin.Deps{Pool: pool, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	promptService := prompt.New(prompt.Deps{Pool: pool, Config: cfgStore, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
-	ratingService := rating.New(rating.Deps{Pool: pool, Config: cfgStore, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	statsService := stats.New(stats.Deps{Pool: pool, Config: cfgStore, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	ratingService := rating.New(rating.Deps{
+		Pool: pool, Config: cfgStore,
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Stats:  statsService,
+	})
 
 	env := testEnv{
 		Env:    testEnvConfig(),
@@ -103,6 +111,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		admin:  adminService,
 		prompt: promptService,
 		rating: ratingService,
+		stats:  statsService,
 		repo:   repo.New(pool),
 		signer: signer,
 	}
@@ -118,6 +127,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		Admin:   adminService,
 		Prompt:  promptService,
 		Rating:  ratingService,
+		Stats:   statsService,
 		Signer:  signer,
 	})
 	if err != nil {

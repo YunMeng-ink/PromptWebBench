@@ -4,8 +4,10 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { type PromptDetail, promptApi } from '@/api/prompt'
 import { type PromptModelRating, ratingApi } from '@/api/rating'
+import { type PromptStats, statsApi } from '@/api/stats'
 import { useErrorMessage } from '@/composables/useErrorMessage'
 import { useAuthStore } from '@/stores/auth'
+import { confidenceKey, discriminationOf, formatScore, meanOf, modelLabel } from './promptStats'
 
 const route = useRoute()
 const router = useRouter()
@@ -20,6 +22,8 @@ const promptID = computed(() => {
 
 const detail = ref<PromptDetail | null>(null)
 const ratings = ref<PromptModelRating[]>([])
+const stats = ref<PromptStats | null>(null)
+const statsFailure = ref('')
 const loading = ref(true)
 const failure = ref('')
 const notice = ref('')
@@ -59,6 +63,31 @@ function remainingEdits(item: PromptModelRating, maxEdits: number): number {
   return Math.max(0, maxEdits - (item.my_edit_count ?? 0))
 }
 
+/**
+ * discriminationText 返回区分度的展示文案。
+ * 数据不足时给出 C-06 规定的「数据不足，暂不计算区分度」，
+ * 而不是一个 0 或一个空位。
+ */
+function discriminationText(window: PromptStats['history']): string {
+  const value = discriminationOf(window)
+  return value === null ? t('prompt.dataInsufficient') : value.toFixed(2)
+}
+
+/** confidenceText 把置信度等级翻译为当前语言的文案。 */
+function confidenceText(level: PromptStats['history']['confidence']): string {
+  return t(`prompt.confidence${confidenceKey(level)}`)
+}
+
+/** meanText 返回某个模型在窗口内的原始平均完成度。 */
+function meanText(window: PromptStats['models'][number]['history']): string {
+  return formatScore(meanOf(window))
+}
+
+/** tagText 返回推荐标签的文案，按当前语言取后端给出的双语之一。 */
+function tagText(tag: PromptStats['recommendation'][number]): string {
+  return locale.value === 'en' ? tag.label_en : tag.label_zh
+}
+
 const maxEdits = ref(3)
 
 function startRating(item: PromptModelRating): void {
@@ -95,6 +124,7 @@ async function confirmRating(): Promise<void> {
     }
     cancelRating()
     await reloadRatings()
+    await reloadStats()
   } catch (error) {
     failure.value = messageOf(error)
   }
@@ -105,6 +135,7 @@ async function deleteRating(item: PromptModelRating): Promise<void> {
     await ratingApi.remove(promptID.value as number, item.model_id)
     notice.value = t('prompt.ratingDeleted')
     await reloadRatings()
+    await reloadStats()
   } catch (error) {
     failure.value = messageOf(error)
   }
@@ -143,6 +174,25 @@ async function reloadRatings(): Promise<void> {
   ratings.value = result.items
 }
 
+/**
+ * reloadStats 拉取测量结果。
+ *
+ * 统计计算失败与提示词本身无关，因此单独记录失败信息：正文、版本与评分列表
+ * 照常展示，只有测量结果区显示不可用，不让整页打不开。
+ */
+async function reloadStats(): Promise<void> {
+  if (promptID.value === null) {
+    return
+  }
+  try {
+    stats.value = await statsApi.byPrompt(promptID.value)
+    statsFailure.value = ''
+  } catch (error) {
+    stats.value = null
+    statsFailure.value = messageOf(error)
+  }
+}
+
 onMounted(async () => {
   await auth.connect()
   if (promptID.value === null) {
@@ -159,6 +209,7 @@ onMounted(async () => {
   } finally {
     loading.value = false
   }
+  await reloadStats()
 })
 </script>
 
@@ -314,6 +365,95 @@ onMounted(async () => {
         </el-dialog>
       </section>
 
+      <section class="pb-stats" data-testid="stats-section">
+        <h2 class="pb-stats__title">{{ t('prompt.statsSection') }}</h2>
+        <p class="pb-stats__hint">{{ t('prompt.statsHint') }}</p>
+
+        <p v-if="statsFailure" class="pb-prompt-detail__error" data-testid="stats-error">
+          {{ t('prompt.statsUnavailable') }}
+        </p>
+
+        <template v-else-if="stats">
+          <ul v-if="stats.recommendation.length > 0" class="pb-stats__tags" data-testid="stats-tags">
+            <li v-for="tag in stats.recommendation" :key="tag.id" class="pb-stats__tag">
+              <span class="pb-stats__tag-label" :data-testid="`stats-tag-${tag.kind}`">
+                {{ tagText(tag) }}
+              </span>
+              <span class="pb-stats__tag-confidence">
+                {{ t('prompt.confidence') }}：{{ confidenceText(tag.confidence) }}
+              </span>
+              <span class="pb-stats__tag-reason">{{ t('prompt.tagReason') }}：{{ tag.reason }}</span>
+            </li>
+          </ul>
+
+          <h3 class="pb-stats__subtitle">{{ t('prompt.discriminationSection') }}</h3>
+          <dl class="pb-stats__discrimination">
+            <div>
+              <dt>{{ t('prompt.historyDiscrimination') }}</dt>
+              <dd data-testid="stats-history-discrimination">
+                {{ discriminationText(stats.history) }}
+              </dd>
+            </div>
+            <div>
+              <dt>{{ t('prompt.recentDiscrimination') }}</dt>
+              <dd data-testid="stats-recent-discrimination">
+                {{ discriminationText(stats.recent) }}
+              </dd>
+            </div>
+            <div>
+              <dt>{{ t('prompt.discriminationConfidence') }}</dt>
+              <dd data-testid="stats-discrimination-confidence">
+                {{ confidenceText(stats.recent.confidence) }}
+              </dd>
+            </div>
+            <div>
+              <dt>{{ t('prompt.validModelCount') }}</dt>
+              <dd data-testid="stats-valid-models">{{ stats.recent.valid_model_count }}</dd>
+            </div>
+            <div>
+              <dt>{{ t('prompt.totalRatingCount') }}</dt>
+              <dd data-testid="stats-total-ratings">{{ stats.recent.total_rating_count }}</dd>
+            </div>
+          </dl>
+
+          <h3 class="pb-stats__subtitle">{{ t('prompt.modelCompletion') }}</h3>
+          <table class="pb-stats__table" data-testid="stats-models">
+            <thead>
+              <tr>
+                <th scope="col">{{ t('prompt.model') }}</th>
+                <th scope="col">{{ t('prompt.historyMean') }}</th>
+                <th scope="col">{{ t('prompt.recentMean') }}</th>
+                <th scope="col">{{ t('prompt.historyRatingCount') }}</th>
+                <th scope="col">{{ t('prompt.recentRatingCount') }}</th>
+                <th scope="col">{{ t('prompt.adjustedScore') }}</th>
+                <th scope="col">{{ t('prompt.userCount') }}</th>
+                <th scope="col">{{ t('prompt.confidence') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="model in stats.models" :key="model.model_id">
+                <td :data-testid="`stats-model-${model.model_id}`">
+                  {{ modelLabel(model.model_name, model.model_id) }}
+                </td>
+                <td>{{ meanText(model.history) }}</td>
+                <td>{{ meanText(model.recent) }}</td>
+                <td>{{ model.history.rating_count }}</td>
+                <td>{{ model.recent.rating_count }}</td>
+                <td>{{ model.recent.adjusted.toFixed(2) }}</td>
+                <td>{{ model.recent.user_count }}</td>
+                <td>
+                  {{
+                    model.recent.has_data
+                      ? confidenceText(model.recent.confidence)
+                      : t('prompt.noObservation')
+                  }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </template>
+      </section>
+
       <section v-if="detail.versions.length > 1" class="pb-versions">
         <h2 class="pb-versions__title">{{ t('prompt.versions') }}</h2>
         <ul class="pb-versions__list">
@@ -459,6 +599,86 @@ onMounted(async () => {
   display: flex;
   gap: var(--pb-space-md);
   padding: var(--pb-space-xs) 0;
+}
+
+.pb-stats__title {
+  font-size: 18px;
+  margin: var(--pb-space-lg) 0 var(--pb-space-xs);
+}
+
+.pb-stats__hint {
+  color: var(--pb-color-text-faint);
+  font-size: 13px;
+  margin: 0 0 var(--pb-space-sm);
+}
+
+.pb-stats__subtitle {
+  font-size: 15px;
+  margin: var(--pb-space-md) 0 var(--pb-space-xs);
+}
+
+.pb-stats__discrimination {
+  display: grid;
+  gap: var(--pb-space-sm);
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  margin: 0;
+}
+
+.pb-stats__discrimination dt {
+  color: var(--pb-color-text-faint);
+  font-size: 12px;
+}
+
+.pb-stats__discrimination dd {
+  margin: 2px 0 0;
+}
+
+.pb-stats__tags {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-xs);
+  list-style: none;
+  margin: 0 0 var(--pb-space-sm);
+  padding: 0;
+}
+
+.pb-stats__tag {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pb-space-sm);
+}
+
+.pb-stats__tag-label {
+  background-color: var(--el-color-primary-light-9);
+  border-radius: var(--pb-radius-sm);
+  color: var(--el-color-primary-dark-2);
+  font-weight: 600;
+  padding: 2px var(--pb-space-xs);
+}
+
+.pb-stats__tag-confidence,
+.pb-stats__tag-reason {
+  color: var(--pb-color-text-soft);
+  font-size: 13px;
+}
+
+.pb-stats__table {
+  border-collapse: collapse;
+  font-size: 13px;
+  width: 100%;
+}
+
+.pb-stats__table th,
+.pb-stats__table td {
+  border-bottom: 1px solid var(--pb-color-border);
+  padding: var(--pb-space-xs) var(--pb-space-sm);
+  text-align: left;
+}
+
+.pb-stats__table th {
+  color: var(--pb-color-text-faint);
+  font-weight: 500;
 }
 
 .pb-versions__no {
