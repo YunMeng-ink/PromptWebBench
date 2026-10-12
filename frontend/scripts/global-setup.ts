@@ -23,6 +23,11 @@ const API = process.env.E2E_API ?? 'http://127.0.0.1:8080/api/v1'
 const DB_NAME = process.env.E2E_DATABASE ?? 'prompt_benchmark_e2e'
 const SHARED_EMAIL = 'e2e-shared@example.com'
 const SHARED_PASSWORD = 'E2ePassw0rd!'
+/**
+ * 第二个账户。举报与「查看他人收藏夹」要求操作者不是内容所有者：
+ * 提示词作者看不到举报自己的入口，公开收藏夹也需要一个非所有者的观察者。
+ */
+const REPORTER_EMAIL = 'e2e-reporter@example.com'
 
 async function waitForBackend(attempts = 60): Promise<void> {
   for (let i = 0; i < attempts; i += 1) {
@@ -69,6 +74,11 @@ function latestCodeFor(email: string): string {
 /** cookies 保存本文件发出的请求所累积的 Cookie，供写请求做 CSRF 双提交。 */
 const cookies = new Map<string, string>()
 
+/** clearCookies 清空累积的 Cookie：切换账户前必须清，否则会带着上一个账户的会话。 */
+function clearCookies(): void {
+  cookies.clear()
+}
+
 /** absorb 记录响应头下发的 Cookie。 */
 function absorb(response: Response): void {
   // Node 的 fetch 不暴露 getSetCookie，取原始头自行切分多条 Cookie。
@@ -106,35 +116,36 @@ async function post(path: string, body: unknown): Promise<Response> {
 }
 
 /**
- * ensureSharedAccount 通过真实流程创建共用账户，已存在则跳过。
+ * ensureAccount 通过真实流程创建账户，已存在则跳过。
  *
  * 直接对后端发请求：全局前置在后端就绪之后、前端预览服务起来之前运行，
  * 此时还没有可用的页面。Cookie 由本文件自己维护，写方法的 CSRF 双提交
  * 因此与浏览器中的行为一致。
+ *
+ * 每个账户的 Cookie 相互独立存放在 cookiesByAccount 中，否则第二个账户的
+ * 注册请求会带着第一个账户的会话，后端会按已登录处理。
  */
-async function ensureSharedAccount(): Promise<void> {
-  if (psql(`SELECT count(*) FROM users WHERE email = '${SHARED_EMAIL}'`, true).trim() === '1') {
+async function ensureAccount(email: string): Promise<void> {
+  if (psql(`SELECT count(*) FROM users WHERE email = '${email}'`, true).trim() === '1') {
     return
   }
 
   // 任一业务读请求都会让中间件下发 CSRF Cookie。
   absorb(await fetch(`${API}/categories`))
 
-  const registered = await post('/auth/register', {
-    email: SHARED_EMAIL,
-    password: SHARED_PASSWORD,
-  })
+  const registered = await post('/auth/register', { email, password: SHARED_PASSWORD })
   if (!registered.ok) {
-    throw new Error(`创建共用账户失败：${await registered.text()}`)
+    throw new Error(`创建账户 ${email} 失败：${await registered.text()}`)
   }
 
   const verified = await post('/auth/verify-email', {
-    email: SHARED_EMAIL,
-    code: latestCodeFor(SHARED_EMAIL),
+    email,
+    code: latestCodeFor(email),
   })
   if (!verified.ok) {
-    throw new Error(`验证共用账户失败：${await verified.text()}`)
+    throw new Error(`验证账户 ${email} 失败：${await verified.text()}`)
   }
+  clearCookies()
 }
 
 export default async function globalSetup(_config: FullConfig): Promise<void> {
@@ -150,5 +161,6 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
         VALUES ('e2e-tag', '端到端标签', 'E2E Tag', 10)
         ON CONFLICT (slug) DO NOTHING`)
 
-  await ensureSharedAccount()
+  await ensureAccount(SHARED_EMAIL)
+  await ensureAccount(REPORTER_EMAIL)
 }

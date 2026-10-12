@@ -151,11 +151,13 @@ export const useAuthStore = defineStore('auth', () => {
 
   /**
    * connect 接入全局 401 事件，并解析一次登录态。
-   * 由应用入口调用一次；解析在状态未确定时才发出请求。
+   *
+   * 返回的 Promise 在探测完成后兑现：调用方 await 它就能拿到已解析的登录态，
+   * 不必自己再发一次请求或轮询状态。状态已解析时立即兑现。
    */
-  function connect(): void {
+  function connect(): Promise<void> {
     setUnauthorizedHandler(handleUnauthorized)
-    void ensureSession()
+    return ensureSession()
   }
 
   return {

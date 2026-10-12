@@ -1,15 +1,37 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { type AppLocale, SUPPORTED_LOCALES } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
+import { useNotificationStore } from '@/stores/notifications'
 import { usePreferencesStore } from '@/stores/preferences'
 
 const { t } = useI18n()
 const router = useRouter()
 const preferences = usePreferencesStore()
 const auth = useAuthStore()
+const notifications = useNotificationStore()
+
+/**
+ * 未读数在登录态确定后拉取。
+ *
+ * 登出时必须清空：角标属于上一个身份，留着会让下一个访客看到别人的未读数。
+ */
+async function refreshUnread(): Promise<void> {
+  if (auth.status !== 'authenticated') {
+    notifications.clear()
+    return
+  }
+  try {
+    await notifications.refresh()
+  } catch {
+    // 角标读取失败不影响导航，保留上一次的值。
+  }
+}
+
+watch(() => auth.status, refreshUnread)
+onMounted(refreshUnread)
 
 const localeOptions = computed(() =>
   SUPPORTED_LOCALES.map((value) => ({
@@ -67,6 +89,15 @@ async function onLogout(): Promise<void> {
         </el-button>
 
         <template v-if="auth.status === 'authenticated'">
+          <RouterLink class="pb-header__link" to="/favorites" data-testid="header-favorites">
+            {{ t('prompt.favoriteManage') }}
+          </RouterLink>
+          <RouterLink class="pb-header__link" to="/notifications" data-testid="header-notifications">
+            {{ t('notifications.title') }}
+            <span v-if="notifications.hasUnread" class="pb-header__badge" data-testid="header-unread">
+              {{ notifications.unread }}
+            </span>
+          </RouterLink>
           <el-dropdown trigger="click">
             <el-button size="small" data-testid="header-user">
               {{ auth.user?.username }}
@@ -150,6 +181,15 @@ async function onLogout(): Promise<void> {
 
 .pb-header__locale {
   width: 108px;
+}
+
+.pb-header__badge {
+  background-color: var(--el-color-danger);
+  border-radius: 8px;
+  color: #fff;
+  font-size: 11px;
+  margin-left: 4px;
+  padding: 0 5px;
 }
 
 @media (max-width: 640px) {

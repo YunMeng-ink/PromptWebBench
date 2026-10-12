@@ -11,6 +11,9 @@ import (
 )
 
 type Querier interface {
+	// 已读全部公告：把水位线推到当前时刻。窗口边界由应用层给出，
+	// SQL 中不出现依赖会话时区的表达式（开发方案 §3.4）。
+	AdvanceAnnouncementWatermark(ctx context.Context, arg AdvanceAnnouncementWatermarkParams) error
 	// 重大修改时把当前评分归档到历史版本表（需求 §7.3 第 4 步）。
 	// 先归档再删除：归档表保留原始评分时间与创建时间，统计窗口仍以评分创建时间为准。
 	ArchivePromptRatings(ctx context.Context, arg ArchivePromptRatingsParams) ([]int64, error)
@@ -18,8 +21,17 @@ type Querier interface {
 	BumpUserTokenVersion(ctx context.Context, id int64) (User, error)
 	ConsumeEmailVerification(ctx context.Context, id int64) error
 	ConsumeInviteCode(ctx context.Context, id int64) (InviteCode, error)
+	CountComments(ctx context.Context, promptID int64) (int64, error)
+	CountFavoriteItems(ctx context.Context, favoriteID int64) (int64, error)
+	CountFavorites(ctx context.Context, userID int64) (int64, error)
+	CountFollowing(ctx context.Context, followerID int64) (int64, error)
+	// 未撤回的公告总条数，用于分页。
+	CountLiveAnnouncements(ctx context.Context) (int64, error)
 	CountMyRatings(ctx context.Context, userID int64) (int64, error)
+	CountNotifications(ctx context.Context, arg CountNotificationsParams) (int64, error)
 	CountOwnPrompts(ctx context.Context, uploaderID int64) (int64, error)
+	// 同一用户对同一对象同时只保留一条待处理举报，避免重复刷单。
+	CountPendingReportByReporter(ctx context.Context, arg CountPendingReportByReporterParams) (int64, error)
 	// 私有提示词额度在事务内统计，未删除的私有提示词计入（需求 §8.3、C-21）。
 	CountPrivatePrompts(ctx context.Context, uploaderID int64) (int64, error)
 	CountPromptRatings(ctx context.Context, promptID int64) (int64, error)
@@ -34,7 +46,13 @@ type Querier interface {
 	CountRatingChangesInDay(ctx context.Context, arg CountRatingChangesInDayParams) (int64, error)
 	CountRecentEmailVerifications(ctx context.Context, arg CountRecentEmailVerificationsParams) (int64, error)
 	CountRecommendTagsByState(ctx context.Context, states []string) (int64, error)
+	CountReplies(ctx context.Context, parentID pgtype.Int8) (int64, error)
+	// 未读公告数：只统计发布时间晚于水位线的条目。
+	// 没有水位线的账户（从未读过公告）看到全部公告为未读。
+	CountUnreadAnnouncements(ctx context.Context, id int64) (int64, error)
+	CountUnreadNotifications(ctx context.Context, userID int64) (int64, error)
 	CountUsers(ctx context.Context) (int64, error)
+	CountVisibleFavorites(ctx context.Context, arg CountVisibleFavoritesParams) (int64, error)
 	CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) (ApiToken, error)
 	// 邮箱验证码、第三方登录绑定与 API Token。
 	CreateEmailVerification(ctx context.Context, arg CreateEmailVerificationParams) (EmailVerification, error)
@@ -46,6 +64,14 @@ type Querier interface {
 	// 开发方案 §3.4）：SQL 中不出现 date_trunc 与任何依赖会话时区的表达式。
 	CreateRating(ctx context.Context, arg CreateRatingParams) (Rating, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	DecrementCommentLikeCount(ctx context.Context, id int64) (int32, error)
+	DecrementFavoriteItemCount(ctx context.Context, id int64) error
+	// 取消点赞用 :execrows 返回影响行数：0 行说明本来就没点过赞，
+	// 此时不能再递减计数，否则计数会与实际点赞记录脱节。
+	DeleteCommentLike(ctx context.Context, arg DeleteCommentLikeParams) (int64, error)
+	DeleteFavoriteItem(ctx context.Context, arg DeleteFavoriteItemParams) (int64, error)
+	DeleteFavoriteItems(ctx context.Context, favoriteID int64) error
+	DeleteFollow(ctx context.Context, arg DeleteFollowParams) error
 	// 删除某提示词下已不在启用模型列表中的统计行，避免快照无限增长。
 	DeletePromptModelStatsExcept(ctx context.Context, arg DeletePromptModelStatsExceptParams) error
 	DeletePromptModelStatsForMajorChange(ctx context.Context, promptID int64) error
@@ -57,9 +83,17 @@ type Querier interface {
 	GetAbility(ctx context.Context, id int64) (Ability, error)
 	GetActiveAPIToken(ctx context.Context, userID int64) (ApiToken, error)
 	GetActiveEmailVerification(ctx context.Context, arg GetActiveEmailVerificationParams) (EmailVerification, error)
+	GetAnnouncementWatermark(ctx context.Context, id int64) (pgtype.Timestamptz, error)
 	GetCategory(ctx context.Context, id int64) (Category, error)
+	GetComment(ctx context.Context, id int64) (Comment, error)
+	// 举报对象的存在性与可见性在服务层判定：评论与提示词的可见性规则不同，
+	// 这里只提供按类型取对象的读取。
+	GetCommentForReport(ctx context.Context, id int64) (Comment, error)
 	GetConfig(ctx context.Context, key string) (GetConfigRow, error)
 	GetDifficulty(ctx context.Context, id int64) (Difficulty, error)
+	GetFavorite(ctx context.Context, id int64) (Favorite, error)
+	GetFavoriteForUpdate(ctx context.Context, id int64) (Favorite, error)
+	GetFolloweeProfile(ctx context.Context, id int64) (GetFolloweeProfileRow, error)
 	// 邀请码的读取与占用。占用走条件更新，保证并发下不重复消耗（C-21）。
 	GetInviteCodeByCode(ctx context.Context, code string) (InviteCode, error)
 	GetLatestPromptVersion(ctx context.Context, promptID int64) (PromptVersion, error)
@@ -87,6 +121,31 @@ type Querier interface {
 	// 区分度回升时把已存在的待确认过时标签转已忽略并记录审计日志（C-15）。
 	// 条件里带 state = 'pending'：已确认的标签由管理员显式处理，系统不代为改动。
 	IgnorePendingTags(ctx context.Context, arg IgnorePendingTagsParams) ([]RecommendTag, error)
+	// 点赞数与插入同事务，条件 WHERE 让计数不会在并发下越过实际点赞数。
+	IncrementCommentLikeCount(ctx context.Context, id int64) (int32, error)
+	// 条目计数与插入同事务：条件 WHERE 让计数不会在并发下越过上限。
+	IncrementFavoriteItemCount(ctx context.Context, arg IncrementFavoriteItemCountParams) (int32, error)
+	// ---------- 公告 ----------
+	InsertAnnouncement(ctx context.Context, arg InsertAnnouncementParams) (Announcement, error)
+	// 评论、点赞与举报的读写。
+	// 插入评论或回复。parent_id 不加 ::bigint 转换：加上会把列的可空性抹掉，
+	// sqlc 随即把参数映射为非空 int64，顶层评论的 NULL 就写不进去。
+	InsertComment(ctx context.Context, arg InsertCommentParams) (Comment, error)
+	// 点赞：唯一约束保证同一用户重复点赞只产生一条记录。
+	// ON CONFLICT DO NOTHING 在冲突时不返回行，据此判定是否为重复点赞。
+	InsertCommentLike(ctx context.Context, arg InsertCommentLikeParams) (int64, error)
+	InsertFavorite(ctx context.Context, arg InsertFavoriteParams) (Favorite, error)
+	// 条目：同一收藏夹内同一提示词只允许一条，由唯一约束兜底。
+	// ON CONFLICT DO NOTHING 在冲突时不返回行，这是「已在夹内」的判定依据。
+	InsertFavoriteItem(ctx context.Context, arg InsertFavoriteItemParams) (FavoriteItem, error)
+	// ---------- 关注 ----------
+	InsertFollow(ctx context.Context, arg InsertFollowParams) (Follow, error)
+	// 通知与公告的读写。
+	//
+	// 公告分发采用「共享条目 + 每用户水位线」（C-33）：公告只存一份，
+	// 已读状态由 users.last_read_announcement_at 标记，不逐用户扇出。
+	// 撤回后共享条目立即从用户侧消失，不留残余通知。
+	InsertNotification(ctx context.Context, arg InsertNotificationParams) (Notification, error)
 	// 操作日志与提示词转移日志。操作日志只增不改不删（C-43）。
 	InsertOperationLog(ctx context.Context, arg InsertOperationLogParams) (OperationLog, error)
 	// prompts 与 prompt_versions 的读取与写入。
@@ -98,20 +157,39 @@ type Querier interface {
 	// 唯一索引在该状态下约束，重算时冲突即视为标签已存在（C-13）。
 	//
 	InsertRecommendTag(ctx context.Context, arg InsertRecommendTagParams) (RecommendTag, error)
+	// ---------- 举报 ----------
+	InsertReport(ctx context.Context, arg InsertReportParams) (Report, error)
 	InsertTransferLog(ctx context.Context, arg InsertTransferLogParams) error
+	IsFollowing(ctx context.Context, arg IsFollowingParams) (bool, error)
+	IsPromptFavorited(ctx context.Context, arg IsPromptFavoritedParams) (bool, error)
 	ListAbilities(ctx context.Context) ([]Ability, error)
 	// 字典表查询：类别、能力维度、难度、标签、模型（开发方案 §5.5 字典组）。
 	ListCategories(ctx context.Context) ([]Category, error)
+	// 顶层评论分页，附带作者昵称、当前用户是否点过赞、以及回复数。
+	// 回复数用相关子查询而不是聚合：聚合会与分页的 LIMIT 互相干扰。
+	ListComments(ctx context.Context, arg ListCommentsParams) ([]ListCommentsRow, error)
 	// config 表的读写。value 为 JSONB，键名与类型语义由调用方按 C-45 解释。
 	ListConfig(ctx context.Context) ([]ListConfigRow, error)
 	// 详情页展示已确认的推荐标签。忽略、过期与待确认的推荐不进前台。
 	ListConfirmedRecommendTags(ctx context.Context, promptID int64) ([]RecommendTag, error)
 	ListDifficulties(ctx context.Context) ([]Difficulty, error)
+	// 收藏夹条目列表。可见性复查在应用层完成：条目里的提示词可能已被改为私有或
+	// 高风险，此时不能再展示（开发方案 §6.5 验收标准）。
+	// 这里取出判定所需的全部列，由 repo.FilterVisibleItems 逐条过 domain.Viewer。
+	ListFavoriteItems(ctx context.Context, arg ListFavoriteItemsParams) ([]ListFavoriteItemsRow, error)
+	// 收藏夹列表：本人查看全部，他人只看到公开的。
+	// 可见性谓词由应用层经 ListScope 派生后作为参数传入，此处只做取值绑定。
+	ListFavorites(ctx context.Context, arg ListFavoritesParams) ([]ListFavoritesRow, error)
+	ListFollowing(ctx context.Context, arg ListFollowingParams) ([]ListFollowingRow, error)
+	// 未撤回的公告按发布时间倒序。撤回后该条立即从本查询结果中消失（C-33）。
+	ListLiveAnnouncements(ctx context.Context, arg ListLiveAnnouncementsParams) ([]Announcement, error)
 	ListLiveRecommendTagsByKind(ctx context.Context, arg ListLiveRecommendTagsByKindParams) ([]RecommendTag, error)
 	ListModels(ctx context.Context) ([]Model, error)
 	ListMyRatings(ctx context.Context, arg ListMyRatingsParams) ([]ListMyRatingsRow, error)
 	// 当前用户的评分：详情页展示「我已评过的模型」。
 	ListMyRatingsForPrompt(ctx context.Context, arg ListMyRatingsForPromptParams) ([]Rating, error)
+	// 通知列表与筛选。kinds 为空数组时不过滤类型。
+	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
 	ListOwnPrompts(ctx context.Context, arg ListOwnPromptsParams) ([]ListOwnPromptsRow, error)
 	// 统计域的读写：prompt_stats、prompt_model_stats、recommend_tags。
 	//
@@ -151,13 +229,22 @@ type Querier interface {
 	ListRecommendTagsByPrompt(ctx context.Context, promptID int64) ([]RecommendTag, error)
 	// 推荐标签批量处理与后台列表（开发方案 §6.7）。
 	ListRecommendTagsByState(ctx context.Context, arg ListRecommendTagsByStateParams) ([]RecommendTag, error)
+	ListReplies(ctx context.Context, arg ListRepliesParams) ([]ListRepliesRow, error)
 	ListTags(ctx context.Context) ([]Tag, error)
+	// 收藏夹、条目与关注的读写。
+	//
+	// 配额判定一律在事务内完成（C-21）：锁定 → 计数 → 判定 → 写入。
+	// 事务外计数后插入会让并发请求各自读到未超限的计数，双双写入成功而突破上限。
+	LockFavoriteOwner(ctx context.Context, ownerID int64) error
 	LockPrompt(ctx context.Context, id int64) (LockPromptRow, error)
 	// 快照重算的事务入口：锁定该提示词的评分写入，使快照与它反映的评分集合一致。
 	// 评分提交路径在写评分前同样先取本锁，两侧因此互斥。
 	LockPromptStatsRecompute(ctx context.Context, promptID int64) error
 	LockRating(ctx context.Context, id int64) (Rating, error)
 	LockUser(ctx context.Context, id int64) (User, error)
+	MarkAllNotificationsRead(ctx context.Context, userID int64) error
+	// 标记单条已读。条件里带 user_id，避免越权读改他人通知。
+	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) (Notification, error)
 	// 重大修改：过时标签转待复核，训练饱和标签转待复核（C-12）。
 	MoveTagsToReview(ctx context.Context, arg MoveTagsToReviewParams) error
 	ReplacePromptTags(ctx context.Context, promptID int64) error
@@ -165,11 +252,16 @@ type Querier interface {
 	SetPromptCurrentVersion(ctx context.Context, arg SetPromptCurrentVersionParams) (Prompt, error)
 	SetUserRole(ctx context.Context, arg SetUserRoleParams) (User, error)
 	SetUserStatus(ctx context.Context, arg SetUserStatusParams) (User, error)
+	SoftDeleteComment(ctx context.Context, id int64) (int64, error)
+	// 初版收藏夹删除为直接删除，但必须记录日志（需求 §11.2）。
+	SoftDeleteFavorite(ctx context.Context, id int64) (int64, error)
+	SoftDeleteNotification(ctx context.Context, arg SoftDeleteNotificationParams) (int64, error)
 	SoftDeletePrompt(ctx context.Context, id int64) (int64, error)
 	SoftDeleteRating(ctx context.Context, id int64) (int64, error)
 	SupersedeEmailVerifications(ctx context.Context, arg SupersedeEmailVerificationsParams) error
 	TouchAPIToken(ctx context.Context, tokenHash string) error
 	TransferPrompts(ctx context.Context, arg TransferPromptsParams) ([]int64, error)
+	UpdateFavorite(ctx context.Context, arg UpdateFavoriteParams) (Favorite, error)
 	// prompts 表自身冗余保存当前版本的全部字段，供列表筛选与判定直接使用，
 	// 不必每次联表 prompt_versions。每次修改都要同步，否则列表与详情会给出不同取值。
 	UpdatePromptContent(ctx context.Context, arg UpdatePromptContentParams) (Prompt, error)

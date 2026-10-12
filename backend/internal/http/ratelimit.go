@@ -44,6 +44,9 @@ var defaultRules = map[string]Rule{
 	"admin_write":   {Name: "admin_write", Limit: 120, Window: time.Minute, Scope: ScopeUser},
 	"profile_write": {Name: "profile_write", Limit: 10, Window: time.Minute, Scope: ScopeUser},
 	"token_write":   {Name: "token_write", Limit: 5, Window: time.Minute, Scope: ScopeUser},
+	// 收藏夹与关注共用一个限额：都是同一类轻量社交写入，
+	// 分开计数只会让前端要把两个配额都展示出来，而它们的风险相同。
+	"favorite_write": {Name: "favorite_write", Limit: 60, Window: time.Minute, Scope: ScopeUser},
 }
 
 // DefaultRules 返回规则表的副本，供调用方按部署环境调整个别限额。

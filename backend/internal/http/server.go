@@ -22,6 +22,7 @@ import (
 	"github.com/promptbench/backend/internal/service/auth"
 	"github.com/promptbench/backend/internal/service/prompt"
 	"github.com/promptbench/backend/internal/service/rating"
+	"github.com/promptbench/backend/internal/service/social"
 	"github.com/promptbench/backend/internal/service/stats"
 )
 
@@ -42,6 +43,7 @@ type Deps struct {
 	Prompt *prompt.Service
 	Rating *rating.Service
 	Stats  *stats.Service
+	Social *social.Service
 	Signer *security.Signer
 }
 
@@ -75,6 +77,9 @@ func New(deps Deps) (*Server, error) {
 	}
 	if deps.Stats == nil {
 		return nil, fmt.Errorf("接口层依赖不完整：Stats 不可为空")
+	}
+	if deps.Social == nil {
+		return nil, fmt.Errorf("接口层依赖不完整：Social 不可为空")
 	}
 	trusted, err := ParseTrustedProxies(deps.Env.TrustedProxies)
 	if err != nil {
@@ -137,6 +142,7 @@ func New(deps Deps) (*Server, error) {
 	s.registerPromptRoutes()
 	s.registerRatingRoutes()
 	s.registerStatsRoutes()
+	s.registerSocialRoutes()
 	s.registerDictionaryRoutes()
 	return s, nil
 }

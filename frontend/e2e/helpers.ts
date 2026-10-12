@@ -21,6 +21,34 @@ export const PASSWORD = 'E2ePassw0rd!'
 /** SHARED_EMAIL 是整个套件共用的账户，各规格文件都用它。 */
 export const SHARED_EMAIL = 'e2e-shared@example.com'
 
+/**
+ * REPORTER_EMAIL 是第二个账户。
+ *
+ * 举报与「查看他人公开收藏夹」要求操作者不是内容所有者：作者看不到举报自己的
+ * 入口，公开收藏夹也需要一个非所有者的观察者。两个账户都在全局前置里创建。
+ */
+export const REPORTER_EMAIL = 'e2e-reporter@example.com'
+
+/** loginAs 用给定账户登录。 */
+export async function loginAs(page: Page, email: string): Promise<void> {
+  await page.goto('/login')
+
+  // 等表单渲染完成再填值：页面刚导航时组件尚未挂载，直接 fill 会落空。
+  const emailInput = page.getByTestId('login-email')
+  await expect(emailInput).toBeVisible()
+  await emailInput.fill(email)
+
+  await page.getByTestId('login-password').fill(PASSWORD)
+  await page.getByTestId('login-submit').click()
+
+  await expect(page.getByTestId('header-user')).toBeVisible()
+}
+
+/** loginReporter 用第二账户登录，供举报与旁观他人收藏夹的用例使用。 */
+export async function loginReporter(page: Page): Promise<void> {
+  await loginAs(page, REPORTER_EMAIL)
+}
+
 /** latestCodeFor 从 SMTP 接收器落盘的邮件中取出指定收件人的验证码。 */
 export function latestCodeFor(email: string): string {
   const files = readdirSync(MAIL_DROP)
@@ -42,18 +70,23 @@ export function latestCodeFor(email: string): string {
 
 /** loginShared 在给定页面上登录共用账户。 */
 export async function loginShared(page: Page): Promise<string> {
-  await page.goto('/login')
-
-  // 等表单渲染完成再填值：页面刚导航时组件尚未挂载，直接 fill 会落空。
-  const email = page.getByTestId('login-email')
-  await expect(email).toBeVisible()
-  await email.fill(SHARED_EMAIL)
-
-  await page.getByTestId('login-password').fill(PASSWORD)
-  await page.getByTestId('login-submit').click()
-
-  await expect(page.getByTestId('header-user')).toBeVisible()
+  await loginAs(page, SHARED_EMAIL)
   return SHARED_EMAIL
+}
+
+/**
+ * openSharedPrompt 用共用账户发布一条提示词，再用第二账户打开它。
+ *
+ * 举报与旁观收藏夹都需要「不是作者」的身份，而发布提示词只应由共用账户做，
+ * 使提示词的所有权稳定。
+ */
+export async function openAsReporter(page: Page, ownerPage: Page, title: string): Promise<number> {
+  await loginShared(ownerPage)
+  const promptID = await createPrompt(ownerPage, title)
+  await loginReporter(page)
+  await page.goto(`/prompts/${promptID}`)
+  await expect(page.getByTestId('detail-title')).toBeVisible()
+  return promptID
 }
 
 /**

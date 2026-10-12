@@ -92,8 +92,16 @@ test('重大修改进到主版本并展示提示文案', async ({ page }) => {
   const promptID = await createPrompt(page, title)
 
   await page.goto(`/prompts/${promptID}/edit`)
-  await page.getByTestId('prompt-title').fill(`${title}-重大`)
-  await page.locator('[data-testid="prompt-major"]').click()
+
+  // 等编辑表单加载完再操作：表单在拉取详情后才渲染，此时 title 与 major 开关才存在。
+  const titleInput = page.getByTestId('prompt-title')
+  await expect(titleInput).toBeVisible()
+  await titleInput.fill(`${title}-重大`)
+
+  const major = page.locator('[data-testid="prompt-major"]')
+  await expect(major).toBeVisible()
+  await major.click()
+  // 勾选后提示文案出现，确认标记已被表单接收，再提交。
   await expect(page.getByText('重大修改会生成新版本')).toBeVisible()
   await page.getByTestId('prompt-submit').click()
 

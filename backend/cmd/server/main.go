@@ -29,6 +29,7 @@ import (
 	"github.com/promptbench/backend/internal/service/auth"
 	"github.com/promptbench/backend/internal/service/prompt"
 	"github.com/promptbench/backend/internal/service/rating"
+	"github.com/promptbench/backend/internal/service/social"
 	"github.com/promptbench/backend/internal/service/stats"
 )
 
@@ -114,6 +115,9 @@ func run(envFile string) error {
 	adminService := admin.New(admin.Deps{Pool: pool, Logger: logger})
 	promptService := prompt.New(prompt.Deps{Pool: pool, Config: cfgStore, Logger: logger})
 	statsService := stats.New(stats.Deps{Pool: pool, Config: cfgStore, Logger: logger})
+	socialService := social.New(social.Deps{Pool: pool, Config: cfgStore, Logger: logger})
+	// 社交动作会改变提示词的派生数据（评论数、收藏数），注入统计缓存失效入口。
+	socialService.SetStatsHook(statsService)
 	ratingService := rating.New(rating.Deps{
 		Pool: pool, Config: cfgStore, Logger: logger, Stats: statsService,
 	})
@@ -130,6 +134,7 @@ func run(envFile string) error {
 		Prompt:  promptService,
 		Rating:  ratingService,
 		Stats:   statsService,
+		Social:  socialService,
 		Signer:  signer,
 	})
 	if err != nil {

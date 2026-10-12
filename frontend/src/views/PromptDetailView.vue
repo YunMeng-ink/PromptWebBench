@@ -4,7 +4,10 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { type PromptDetail, promptApi } from '@/api/prompt'
 import { type PromptModelRating, ratingApi } from '@/api/rating'
+import { type Favorite, socialApi } from '@/api/social'
 import { type PromptStats, statsApi } from '@/api/stats'
+import CommentSection from '@/components/CommentSection.vue'
+import ReportDialog from '@/components/ReportDialog.vue'
 import { useErrorMessage } from '@/composables/useErrorMessage'
 import { useAuthStore } from '@/stores/auth'
 import { confidenceKey, discriminationOf, formatScore, meanOf, modelLabel } from './promptStats'
@@ -28,6 +31,14 @@ const loading = ref(true)
 const failure = ref('')
 const notice = ref('')
 const copied = ref(false)
+
+/** 收藏与举报。收藏需要先选收藏夹，因此把列表一并取回。 */
+const favorited = ref(false)
+const favoriteDialog = ref(false)
+const favoriteList = ref<Favorite[]>([])
+const favoriteNewName = ref('')
+const favoriteNewVisibility = ref<'public' | 'private'>('private')
+const reportVisible = ref(false)
 
 /** pendingScore 是当前正在评分的模型与其分值，未评分时 model 为空。 */
 const pendingScore = ref<number | undefined>(undefined)
@@ -193,6 +204,73 @@ async function reloadStats(): Promise<void> {
   }
 }
 
+/** openFavoriteDialog 打开收藏夹选择框并拉取当前用户的收藏夹。 */
+async function openFavoriteDialog(): Promise<void> {
+  if (promptID.value === null) {
+    return
+  }
+  try {
+    const result = await socialApi.myFavorites(1, 50)
+    favoriteList.value = result.items
+    favoriteNewName.value = ''
+    // 每次打开都回到默认档位：沿用上一次的选择会让第二次创建静默地公开，
+    // 而用户以为自己只是又建了一个默认（私有）的收藏夹。
+    favoriteNewVisibility.value = 'private'
+    favoriteDialog.value = true
+  } catch (error) {
+    failure.value = messageOf(error)
+  }
+}
+
+/** addToFavorite 把当前提示词加入指定收藏夹。 */
+async function addToFavorite(favorite: Favorite): Promise<void> {
+  if (promptID.value === null) {
+    return
+  }
+  try {
+    await socialApi.addItem(favorite.id, promptID.value)
+    favorited.value = true
+    notice.value = t('prompt.favoriteAdded')
+    favoriteDialog.value = false
+  } catch (error) {
+    failure.value = messageOf(error)
+  }
+}
+
+/** createAndAdd 新建收藏夹后立即把当前提示词加入。 */
+async function createAndAdd(): Promise<void> {
+  if (favoriteNewName.value.trim() === '' || promptID.value === null) {
+    return
+  }
+  try {
+    const created = await socialApi.createFavorite({
+      name: favoriteNewName.value,
+      visibility: favoriteNewVisibility.value,
+    })
+    await socialApi.addItem(created.favorite.id, promptID.value)
+    favorited.value = true
+    notice.value = t('prompt.favoriteAdded')
+    favoriteDialog.value = false
+  } catch (error) {
+    failure.value = messageOf(error)
+  }
+}
+
+/** reloadFavorited 拉取当前提示词的收藏状态。 */
+async function reloadFavorited(): Promise<void> {
+  if (promptID.value === null || !auth.isAuthenticated) {
+    favorited.value = false
+    return
+  }
+  try {
+    const result = await socialApi.isFavorited(promptID.value)
+    favorited.value = result.favorited
+  } catch {
+    // 收藏状态读取失败不影响页面主体，静默保持未收藏。
+    favorited.value = false
+  }
+}
+
 onMounted(async () => {
   await auth.connect()
   if (promptID.value === null) {
@@ -210,6 +288,7 @@ onMounted(async () => {
     loading.value = false
   }
   await reloadStats()
+  await reloadFavorited()
 })
 </script>
 
@@ -225,6 +304,24 @@ onMounted(async () => {
         <div class="pb-prompt-detail__actions">
           <el-button size="small" data-testid="detail-copy" @click="copyBody">
             {{ copied ? t('home.copied') : t('home.copyBody') }}
+          </el-button>
+          <el-button
+            v-if="auth.isAuthenticated"
+            size="small"
+            :type="favorited ? 'primary' : 'default'"
+            :plain="favorited"
+            data-testid="detail-favorite"
+            @click="openFavoriteDialog"
+          >
+            {{ t('prompt.favoriteAdd') }}
+          </el-button>
+          <el-button
+            v-if="auth.isAuthenticated && !canEdit"
+            size="small"
+            data-testid="detail-report"
+            @click="reportVisible = true"
+          >
+            {{ t('prompt.reportAction') }}
           </el-button>
           <RouterLink v-if="canEdit" :to="`/prompts/${detail.prompt.id}/edit`">
             <el-button size="small" data-testid="detail-edit">{{ t('prompt.editTitle') }}</el-button>
@@ -454,6 +551,8 @@ onMounted(async () => {
         </template>
       </section>
 
+      <CommentSection v-if="promptID !== null" :prompt-id="promptID" />
+
       <section v-if="detail.versions.length > 1" class="pb-versions">
         <h2 class="pb-versions__title">{{ t('prompt.versions') }}</h2>
         <ul class="pb-versions__list">
@@ -475,6 +574,60 @@ onMounted(async () => {
     <p v-if="failure && detail" class="pb-prompt-detail__error" data-testid="detail-action-error">
       {{ failure }}
     </p>
+
+    <el-dialog
+      v-if="promptID !== null"
+      v-model="favoriteDialog"
+      :title="t('prompt.favoriteSelectTitle')"
+      width="420px"
+    >
+      <p v-if="favoriteList.length === 0" data-testid="favorite-dialog-empty">
+        {{ t('prompt.favoriteEmpty') }}
+      </p>
+      <ul v-else class="pb-prompt-detail__favorites" data-testid="favorite-dialog-list">
+        <li v-for="favorite in favoriteList" :key="favorite.id">
+          <el-button
+            size="small"
+            text
+            :data-testid="`favorite-choice-${favorite.id}`"
+            @click="addToFavorite(favorite)"
+          >
+            {{ favorite.name }}
+          </el-button>
+        </li>
+      </ul>
+
+      <el-divider />
+
+      <el-form label-width="90px">
+        <el-form-item :label="t('prompt.favoriteCreateHint')">
+          <el-input v-model="favoriteNewName" maxlength="100" data-testid="favorite-new-name" />
+        </el-form-item>
+        <el-form-item :label="t('prompt.favoriteVisibility')">
+          <el-radio-group v-model="favoriteNewVisibility" data-testid="favorite-visibility">
+            <el-radio value="public">{{ t('prompt.favoritePublic') }}</el-radio>
+            <el-radio value="private">{{ t('prompt.favoritePrivate') }}</el-radio>
+          </el-radio-group>
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button data-testid="favorite-dialog-cancel" @click="favoriteDialog = false">
+          {{ t('auth.cancel') }}
+        </el-button>
+        <el-button type="primary" data-testid="favorite-dialog-create" @click="createAndAdd">
+          {{ t('prompt.favoriteCreate') }}
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <ReportDialog
+      v-if="promptID !== null"
+      v-model:visible="reportVisible"
+      object-type="prompt"
+      :object-id="promptID"
+      @submitted="notice = t('prompt.reportSubmitted')"
+    />
   </section>
 </template>
 
@@ -679,6 +832,12 @@ onMounted(async () => {
 .pb-stats__table th {
   color: var(--pb-color-text-faint);
   font-weight: 500;
+}
+
+.pb-prompt-detail__favorites {
+  list-style: none;
+  margin: 0;
+  padding: 0;
 }
 
 .pb-versions__no {

@@ -8,9 +8,10 @@ import { i18n, setLocale } from '@/i18n'
 export interface MountOptions {
   router?: Router
   pinia?: Pinia
+  props?: Record<string, unknown>
 }
 
-/** mountView 统一装配界面依赖：Pinia、i18n、Element Plus，以及可选的真实路由。 */
+/** mountView 统一装配界面依赖：Pinia、i18n、Element Plus，以及可选的真实路由与 props。 */
 export function mountView(component: Component, options: MountOptions = {}): VueWrapper {
   const pinia = options.pinia ?? createPinia()
   setActivePinia(pinia)
@@ -21,6 +22,7 @@ export function mountView(component: Component, options: MountOptions = {}): Vue
   }
 
   return mount(component, {
+    props: options.props,
     global: {
       plugins: plugins as never,
       stubs: options.router === undefined ? { RouterLink: { template: '<a><slot /></a>' } } : {},

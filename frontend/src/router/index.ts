@@ -6,10 +6,12 @@ import {
   type RouterHistory,
 } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import FavoritesView from '@/views/FavoritesView.vue'
 import HomeView from '@/views/HomeView.vue'
 import LoginView from '@/views/LoginView.vue'
 import MeView from '@/views/MeView.vue'
 import NotFoundView from '@/views/NotFoundView.vue'
+import NotificationsView from '@/views/NotificationsView.vue'
 import OAuthCallbackView from '@/views/OAuthCallbackView.vue'
 import PromptDetailView from '@/views/PromptDetailView.vue'
 import PromptFormView from '@/views/PromptFormView.vue'
@@ -69,6 +71,23 @@ const routes: RouteRecordRaw[] = [
     path: '/me',
     name: 'me',
     component: MeView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/favorites',
+    name: 'favorites',
+    component: FavoritesView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/users/:userId/favorites',
+    name: 'user-favorites',
+    component: FavoritesView,
+  },
+  {
+    path: '/notifications',
+    name: 'notifications',
+    component: NotificationsView,
     meta: { requiresAuth: true },
   },
   {

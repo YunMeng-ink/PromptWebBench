@@ -21,6 +21,8 @@ app.use(VueQueryPlugin)
 
 // 界面偏好需要在首屏渲染前落地，401 处理需要尽早接入。
 usePreferencesStore()
-useAuthStore().connect()
+// 探测在后台进行：路由守卫与各视图的 connect() 会等待同一个 Promise，
+// 因此不会重复发请求，也不需要在这里阻塞挂载。
+void useAuthStore().connect()
 
 app.mount('#app')

@@ -19,6 +19,11 @@ const (
 	ActionDeveloperGrant      = "developer_grant"
 	ActionDeveloperRevoke     = "developer_revoke"
 	ActionAPITokenReset       = "api_token_reset"
+
+	// 社交与协作域的审计动作。初版评论与收藏夹为直接删除，
+	// 因此这两条日志是删除行为的唯一留痕（需求 §11.2）。
+	ActionCommentDelete  = "comment_delete"
+	ActionFavoriteDelete = "favorite_delete"
 )
 
 // Entry 是一条待写入的操作日志。
