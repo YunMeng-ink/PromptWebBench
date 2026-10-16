@@ -12,8 +12,19 @@
 | 迁移 | 内置 runner，脚本 `//go:embed` 进二进制，启动时幂等应用 |
 | 前端 | Vue 3.5、Vite 8、TypeScript 6.0、vue-router 5、Element Plus 2.14、Pinia 4、TanStack Query |
 | 单元与集成测试 | `go test` + 真实 PostgreSQL；Vitest 5 |
-| 端到端测试 | Playwright 1.64（驱动本机 Chrome） |
-| 静态检查 | gofmt、go vet、biome 2.5 |
+| 端到端测试 | Playwright 1.64（Chrome、Edge、Firefox、WebKit 四浏览器） |
+| 静态检查 | gofmt、go vet、biome 2.5、shellcheck、shfmt |
+
+## 文档
+
+| 文档 | 内容 |
+|---|---|
+| `docs/架构说明.md` | 按最终实现描述系统结构与结构性约束 |
+| `docs/需求追溯表.md` | 需求条目 → 实现位置 → 验收方式 的逐条映射 |
+| `docs/部署手册.md` | Ubuntu 单实例部署的完整命令 |
+| `docs/开发与测试指南.md` | 构建、检查、测试、冒烟的完整命令 |
+| `docs/验收记录-阶段7.md` | 加固与验收的实际结果与证据 |
+| API 文档 | 由 Huma 生成，不手工维护：`/api/v1/docs` |
 
 ## 目录结构
 
@@ -32,6 +43,8 @@
 | `backend/internal/platform` | 连接池、日志、迁移 runner、集成测试环境 |
 | `frontend/src` | 视图、组件、状态、语言包、接口封装 |
 | `frontend/e2e` | Playwright 用例 |
+| `deploy/backup.sh` | 每日逻辑备份（保留 7 天） |
+| `docs/` | 架构、追溯、部署、测试与验收文档 |
 
 ## 运行前提
 
@@ -85,7 +98,7 @@ pnpm dev                            # http://localhost:5173，/api 反向代理�
 
 ## 测试
 
-集成测试与端到端测试分别需要一个真实 PostgreSQL 实例和本机 Chrome。
+集成测试需要一个真实 PostgreSQL 实例；端到端测试还需要四个浏览器：Chrome 与 Edge 用本机安装的稳定版，Firefox 与 WebKit 由 Playwright 提供。
 
 ```sh
 # 集成测试：TEST_DATABASE_URL 指向一个可建库的维护库，用例各自建库并在结束时销毁
@@ -96,9 +109,22 @@ TEST_DATABASE_URL='postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable' 
 cd frontend && pnpm test
 
 # 端到端测试：脚本先重建 e2e 数据库并清空邮件目录，
-# 再由 Playwright 拉起 SMTP 接收器、后端（backend/.env.e2e）与前端预览服务
+# 再由 Playwright 拉起 SMTP 接收器、models.dev 替身、后端（backend/.env.e2e）与前端预览服务
+cd frontend && npx playwright install firefox webkit
 cd frontend && pnpm build && pnpm e2e
+
+# 指定浏览器（默认集为 Chrome）
+pnpm e2e:only --project=firefox
+pnpm e2e:only --project=chrome --project=edge --project=firefox --project=webkit
 ```
+
+## 备份
+
+```sh
+BACKUP_DIR=/var/backups/prompt-benchmark deploy/backup.sh
+```
+
+每日逻辑备份、保留 7 天（G-01），部署方式见 `docs/部署手册.md`。
 
 ## 门禁
 

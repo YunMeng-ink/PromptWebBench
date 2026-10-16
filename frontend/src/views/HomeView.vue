@@ -159,6 +159,7 @@ watch(locale, () => {
         v-model="filters.categoryID"
         class="pb-filters__select"
         data-testid="filter-category"
+        :aria-label="t('home.category')"
         :placeholder="t('home.category')"
         clearable
         @change="applyFilters"
@@ -175,6 +176,7 @@ watch(locale, () => {
         v-model="filters.abilityID"
         class="pb-filters__select"
         data-testid="filter-ability"
+        :aria-label="t('home.ability')"
         :placeholder="t('home.ability')"
         clearable
         @change="applyFilters"
@@ -191,6 +193,7 @@ watch(locale, () => {
         v-model="filters.difficultyID"
         class="pb-filters__select"
         data-testid="filter-difficulty"
+        :aria-label="t('home.difficulty')"
         :placeholder="t('home.difficulty')"
         clearable
         @change="applyFilters"
@@ -207,6 +210,7 @@ watch(locale, () => {
         v-model="filters.modelID"
         class="pb-filters__select"
         data-testid="filter-model"
+        :aria-label="t('home.model')"
         :placeholder="t('home.model')"
         clearable
         @change="applyFilters"
@@ -225,6 +229,7 @@ watch(locale, () => {
         data-testid="filter-tags"
         multiple
         collapse-tags
+        :aria-label="t('home.tags')"
         :placeholder="t('home.tags')"
         @change="applyFilters"
       >
@@ -240,6 +245,7 @@ watch(locale, () => {
         v-model="filters.sort"
         class="pb-filters__select"
         data-testid="filter-sort"
+        :aria-label="t('home.sort')"
         @change="applyFilters"
       >
         <el-option

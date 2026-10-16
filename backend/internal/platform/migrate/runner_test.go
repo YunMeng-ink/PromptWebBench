@@ -2,6 +2,7 @@ package migrate_test
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/promptbench/backend/internal/platform/migrate"
 	"github.com/promptbench/backend/internal/platform/pgtest"
+	"github.com/promptbench/backend/migrations"
 )
 
 func countTables(t *testing.T, pool *pgxpool.Pool) int {
@@ -35,6 +37,23 @@ func countMigrated(t *testing.T, pool *pgxpool.Pool) int {
 	return n
 }
 
+// embeddedMigrationCount 返回内嵌迁移的文件数，作为迁移记录数的期望值。
+// 从实际文件推导而非写死：新增迁移时测试自动跟上，漂移只可能出现在别处。
+func embeddedMigrationCount(t *testing.T) int {
+	t.Helper()
+	entries, err := fs.ReadDir(migrations.FS, ".")
+	if err != nil {
+		t.Fatalf("读取内嵌迁移目录失败: %v", err)
+	}
+	n := 0
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
+			n++
+		}
+	}
+	return n
+}
+
 func TestApplyBuildsFullSchema(t *testing.T) {
 	pool := pgtest.NewDatabase(t)
 	if err := migrate.Apply(context.Background(), pool); err != nil {
@@ -45,8 +64,8 @@ func TestApplyBuildsFullSchema(t *testing.T) {
 	if got := countTables(t, pool); got != 40 {
 		t.Fatalf("表数量 = %d，期望 40（39 张业务表 + schema_migrations）", got)
 	}
-	if got := countMigrated(t, pool); got != 3 {
-		t.Fatalf("迁移记录数 = %d，期望 3", got)
+	if got, want := countMigrated(t, pool), embeddedMigrationCount(t); got != want {
+		t.Fatalf("迁移记录数 = %d，期望 %d（内嵌迁移文件数）", got, want)
 	}
 }
 
@@ -59,8 +78,8 @@ func TestApplyIsIdempotent(t *testing.T) {
 	if err := migrate.Apply(ctx, pool); err != nil {
 		t.Fatalf("重复应用迁移失败: %v", err)
 	}
-	if got := countMigrated(t, pool); got != 3 {
-		t.Fatalf("重复应用后迁移记录数 = %d，期望仍为 3", got)
+	if got, want := countMigrated(t, pool), embeddedMigrationCount(t); got != want {
+		t.Fatalf("重复应用后迁移记录数 = %d，期望仍为 %d", got, want)
 	}
 	if got := countTables(t, pool); got != 40 {
 		t.Fatalf("重复应用后表数量 = %d，期望仍为 40", got)
@@ -98,7 +117,8 @@ func TestSeedDataIsComplete(t *testing.T) {
 		{"categories", 13},
 		{"abilities", 8},
 		{"difficulties", 3},
-		{"config", 26},
+		// 26 项参数（C-45）加统计缓存时长（阶段 7 按 §3.1 补充）。
+		{"config", 27},
 	}
 	for _, tc := range cases {
 		var n int

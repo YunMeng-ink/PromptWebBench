@@ -10,6 +10,16 @@ const BASE_URL = `http://127.0.0.1:${PORT}`
 const SMTP_PORT = 2525
 const API_HEALTH = 'http://127.0.0.1:8080/api/v1/health'
 
+// 四个浏览器（G-06：最近两个大版本的 Chrome / Firefox / Safari / Edge）：
+// Chrome 与 Edge 用本机安装的稳定版，Firefox 与 WebKit（Safari 引擎）用 Playwright 自带版本。
+// 默认只跑 Chrome：逐浏览器与全量用例分别通过 --project 指定。
+const projects = [
+  { name: 'chrome', use: { ...devices['Desktop Chrome'], channel: 'chrome' } },
+  { name: 'edge', use: { ...devices['Desktop Edge'], channel: 'msedge' } },
+  { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+  { name: 'webkit', use: { ...devices['Desktop Safari'] } },
+]
+
 export default defineConfig({
   testDir: './e2e',
   // 服务就绪后写入评分用例所需的模型与标签。迁移由后端启动时执行，
@@ -27,8 +37,7 @@ export default defineConfig({
     locale: 'zh-CN',
     trace: 'retain-on-failure',
   },
-  // 使用本机安装的 Chrome，避免依赖 Playwright 自带的浏览器下载。
-  projects: [{ name: 'chrome', use: { ...devices['Desktop Chrome'], channel: 'chrome' } }],
+  projects,
   // 三个服务都由本用例集独占启动：端口被占用时立即报错，
   // 避免误用一个版本不符的常驻服务而得出错误的通过结论。
   webServer: [

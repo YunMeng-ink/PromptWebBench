@@ -254,12 +254,16 @@ onMounted(async () => {
   border-bottom: 1px solid var(--el-border-color-lighter);
   display: flex;
   gap: var(--pb-space-sm);
+  flex-wrap: wrap;
   justify-content: space-between;
   padding: var(--pb-space-xs) 0;
 }
 
 .pb-admin-module__link {
   color: var(--el-color-primary);
+  /* 长标题换行而不是把同行指标推出视口，flex 项同时允许收缩。 */
+  min-width: 0;
+  overflow-wrap: anywhere;
   text-decoration: none;
 }
 

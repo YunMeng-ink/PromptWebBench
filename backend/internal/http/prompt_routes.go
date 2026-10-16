@@ -301,7 +301,7 @@ func (s *Server) handleGetPrompt(ctx context.Context, in *getPromptInput) (*prom
 	if err != nil {
 		return nil, err
 	}
-	detail, err := s.deps.Prompt.Get(ctx, v, in.ID)
+	detail, err := s.deps.Prompt.Get(ctx, v, in.ID, clientIP(ctx))
 	if err != nil {
 		return nil, err
 	}

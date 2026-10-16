@@ -64,6 +64,9 @@ test('模型导入的重复处理走二次确认', async ({ page }) => {
   await page.getByTestId('admin-models-import-run').click()
   await expect(page.getByText(/导入完成：新建/)).toBeVisible()
   await expect(page.getByTestId('admin-models-table')).toContainText('E2E Import One')
+  // 等提示气泡自行消失再进入下一次导入：两次的文案相同，
+  // 前一次的气泡还在场时，后一次的断言会同时匹配到两个元素。
+  await expect(page.getByText(/导入完成：新建/)).toBeHidden({ timeout: 15000 })
 
   // 再次预览：三条都标为重复，管理员据此决定是否覆盖。
   await page.getByTestId('admin-models-import').click()

@@ -2,9 +2,14 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/promptbench/backend/internal/apperr"
+	"github.com/promptbench/backend/internal/service/auth"
 )
 
 func (s *Server) registerMeRoutes() {
@@ -37,6 +42,68 @@ func (s *Server) registerMeRoutes() {
 		Method: http.MethodDelete, Path: APIPrefix + "/me/api-token",
 		OperationID: "revokeAPIToken", Summary: "撤销 API Token", Tags: []string{"个人中心"},
 	}, s.handleRevokeAPIToken)
+
+	Register(s, "user_read", huma.Operation{
+		Method: http.MethodGet, Path: APIPrefix + "/me/export",
+		OperationID: "exportMyData", Summary: "导出个人数据", Tags: []string{"个人中心"},
+	}, s.handleExportMyData)
+
+	Register(s, "profile_write", huma.Operation{
+		Method: http.MethodDelete, Path: APIPrefix + "/me",
+		OperationID: "deleteAccount", Summary: "注销账户", Tags: []string{"个人中心"},
+	}, s.handleDeleteAccount)
+}
+
+// personalExportResponse 让浏览器按附件下载导出文件。
+type personalExportResponse struct {
+	ContentDisposition string `header:"Content-Disposition" doc:"下载文件名"`
+	ContentType        string `header:"Content-Type"`
+	Body               json.RawMessage
+}
+
+// 导出与注销是账户自助操作，C-23 的未验证态限制清单不含这两项：
+// 未验证账户同样可以导出自己的数据、注销自己的账户。
+func (s *Server) handleExportMyData(ctx context.Context, _ *struct{}) (*personalExportResponse, error) {
+	user, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	exported, err := s.deps.Auth.ExportMyData(ctx, user.ID)
+	if err != nil {
+		return nil, err
+	}
+	raw, err := auth.MarshalExport(exported)
+	if err != nil {
+		return nil, err
+	}
+	return &personalExportResponse{
+		ContentDisposition: fmt.Sprintf("attachment; filename=%q", exported.Filename),
+		ContentType:        "application/json",
+		Body:               raw,
+	}, nil
+}
+
+type deleteAccountInput struct {
+	Body struct {
+		Confirm string `json:"confirm" required:"true" doc:"确认字符串，必须等于当前昵称"`
+	}
+}
+
+func (s *Server) handleDeleteAccount(ctx context.Context, in *deleteAccountInput) (*sessionResponse, error) {
+	user, err := requireUser(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if in.Body.Confirm != user.Username {
+		return nil, apperr.New(apperr.CodeValidationFailed, "确认字符串与当前昵称不一致")
+	}
+	if err := s.deps.Auth.DeleteAccount(ctx, user.ID, clientIP(ctx)); err != nil {
+		return nil, err
+	}
+	return &sessionResponse{
+		SetCookie: []string{s.expiredSessionCookie().String()},
+		Body:      userDTO{},
+	}, nil
 }
 
 func (s *Server) handleGetMe(ctx context.Context, _ *struct{}) (*userResponse, error) {

@@ -64,6 +64,10 @@ const (
 	ActionRatingUpdate           = "rating_update"
 	ActionRatingDelete           = "rating_delete"
 	ActionDiscriminationRecovery = "discrimination_recovery"
+
+	// 阶段 7 的审计动作（G-09、G-12）。
+	ActionSensitiveContentAccess = "sensitive_content_access"
+	ActionAccountDelete          = "account_delete"
 )
 
 // AllActions 返回 operation_logs.action 的全部合法取值，供筛选参数校验使用。
@@ -82,6 +86,7 @@ func AllActions() []string {
 		ActionRecycleRestore, ActionRecyclePurge,
 		ActionRatingUpdate, ActionRatingDelete, ActionCommentDelete,
 		ActionFavoriteDelete, ActionDiscriminationRecovery,
+		ActionSensitiveContentAccess, ActionAccountDelete,
 	}
 }
 

@@ -690,6 +690,22 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
+/*
+ * 窄屏下标题与操作区分行，操作按钮折行排布：
+ * 横排的按钮组在 375px 下放不下，折行是唯一不隐藏任何入口的排布方式。
+ */
+@media (max-width: 640px) {
+  .pb-prompt-detail__head {
+    flex-direction: column;
+  }
+
+  .pb-prompt-detail__actions {
+    flex-wrap: wrap;
+    flex-shrink: 1;
+    width: 100%;
+  }
+}
+
 .pb-prompt-detail__warn {
   background-color: var(--el-color-warning-light-9);
   border-radius: var(--pb-radius-sm);

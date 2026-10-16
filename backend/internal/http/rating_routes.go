@@ -217,7 +217,8 @@ func (s *Server) handleListPromptRatings(ctx context.Context, in *listPromptRati
 		return nil, err
 	}
 	// 可见性先行：不可见的提示词不返回任何评分信息。
-	if _, err := s.deps.Prompt.Get(ctx, v, in.ID); err != nil {
+	// 这里只做闸门不读取内容，审计记录由详情接口单独产生。
+	if err := s.deps.Prompt.Visible(ctx, v, in.ID); err != nil {
 		return nil, err
 	}
 

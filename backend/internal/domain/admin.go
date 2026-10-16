@@ -215,12 +215,12 @@ func smtpSpecs() []ConfigSpec {
 }
 
 // ConfigSpecs 返回全部可配置项的声明。顺序即管理端的展示顺序：
-// 先按业务分组的 26 项参数（技术可行性报告 §2.14），再是 SMTP 分组。
+// 先按业务分组的参数（技术可行性报告 §2.14 的 26 项，加 §3.1 的统计缓存时长），再是 SMTP 分组。
 func ConfigSpecs() []ConfigSpec {
 	return append(configSpecs(), smtpSpecs()...)
 }
 
-// configSpecs 是技术可行性报告 §2.14 的 26 项参数。
+// configSpecs 是技术可行性报告 §2.14 的 26 项参数，加上阶段 7 按 §3.1 补充的统计缓存时长。
 func configSpecs() []ConfigSpec {
 	return []ConfigSpec{
 		{Key: "bayes_prior", Kind: ConfigFloat, Min: 0, Max: 5, Description: "贝叶斯先验分"},
@@ -246,6 +246,7 @@ func configSpecs() []ConfigSpec {
 		{Key: "favorite_count_limit_user", Kind: ConfigInt, Min: 0, Max: 10000, Description: "普通用户收藏夹数量上限"},
 		{Key: "favorite_count_limit_developer", Kind: ConfigInt, Min: 0, Max: 10000, Description: "开发者用户收藏夹数量上限"},
 		{Key: "bootstrap_iterations", Kind: ConfigInt, Min: 1, Max: 100000, Description: "Bootstrap 重复次数"},
+		{Key: "stats_cache_ttl_seconds", Kind: ConfigInt, Min: 1, Max: 86400, Description: "统计缓存存活时长（秒）"},
 		{Key: "registration_policy", Kind: ConfigEnum, Description: "注册策略",
 			Enum: []string{string(RegistrationOpen), string(RegistrationClosed), string(RegistrationInviteOnly)}},
 		{Key: "email_domain_whitelist", Kind: ConfigStringList, Description: "邮箱后缀白名单，空数组表示不限制"},

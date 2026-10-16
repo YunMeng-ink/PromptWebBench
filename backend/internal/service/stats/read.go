@@ -102,7 +102,7 @@ func (s *Service) Load(ctx context.Context, v domain.Viewer, promptID int64) (Sn
 		return Snapshot{}, err
 	}
 
-	if snapshot, ok := s.Fresh(promptID); ok {
+	if snapshot, ok := s.Fresh(ctx, promptID); ok {
 		return *snapshot, nil
 	}
 
@@ -114,7 +114,7 @@ func (s *Service) Load(ctx context.Context, v domain.Viewer, promptID int64) (Sn
 	if !exists || s.stale(ctx, promptID, snapshot.ComputedAt) {
 		recomputeErr := s.flight.do(promptID, func() error {
 			// 等待期间别的调用可能已经算完，重新判断一次，避免重复计算。
-			if _, ok := s.Fresh(promptID); ok {
+			if _, ok := s.Fresh(ctx, promptID); ok {
 				return nil
 			}
 			return s.Recompute(ctx, promptID)

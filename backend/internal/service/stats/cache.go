@@ -5,13 +5,17 @@ import (
 	"time"
 )
 
-// cache 是统计快照的进程内缓存（开发方案 §6.4 交付内容「统计快照落库与进程内缓存」）。
+// cache 是统计快照的进程内缓存（技术可行性报告 §3.1：TTL 60 s，容量上限 10000 条）。
 //
 // 单实例部署，无需一致性协议：条目在评分写入、提示词修改与重大修改时被主动作废，
 // 存活时长只用于兜底进程重启后遗留的条目。
 type cache struct {
 	mu      sync.RWMutex
 	entries map[int64]cacheEntry
+
+	// capacity 是条目数上限。达到上限时淘汰一条随机条目，
+	// 使内存占用与提示词数量脱钩（§3.1 容量上限 10000 条）。
+	capacity int
 }
 
 type cacheEntry struct {
@@ -19,12 +23,16 @@ type cacheEntry struct {
 	storedAt time.Time
 }
 
+// cacheCapacity 是统计缓存的条目数上限（技术可行性报告 §3.1）。
+const cacheCapacity = 10000
+
 func newCache() *cache {
-	return &cache{entries: map[int64]cacheEntry{}}
+	return &cache{entries: map[int64]cacheEntry{}, capacity: cacheCapacity}
 }
 
 // get 返回缓存条目。存在但已超过存活时长时视为未命中并顺手清除。
-func (c *cache) get(promptID int64) (*Snapshot, bool) {
+// 存活时长由调用方按当前配置传入，配置改动无需重启即可生效。
+func (c *cache) get(promptID int64, ttl time.Duration) (*Snapshot, bool) {
 	if c == nil {
 		return nil, false
 	}
@@ -34,7 +42,7 @@ func (c *cache) get(promptID int64) (*Snapshot, bool) {
 	if !ok {
 		return nil, false
 	}
-	if time.Since(entry.storedAt) > snapshotTTL {
+	if time.Since(entry.storedAt) > ttl {
 		c.invalidate(promptID)
 		return nil, false
 	}
@@ -48,8 +56,20 @@ func (c *cache) put(snapshot Snapshot) {
 		return
 	}
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.entries) >= c.capacity {
+		c.evictOne()
+	}
 	c.entries[snapshot.PromptID] = cacheEntry{snapshot: snapshot, storedAt: time.Now()}
-	c.mu.Unlock()
+}
+
+// evictOne 淘汰一条随机条目。Go 的 map 遍历顺序不确定，
+// 借它做随机选择即可，无需为淘汰维护额外的数据结构。
+func (c *cache) evictOne() {
+	for key := range c.entries {
+		delete(c.entries, key)
+		return
+	}
 }
 
 // invalidate 作废一条条目。

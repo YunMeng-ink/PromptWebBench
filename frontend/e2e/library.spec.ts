@@ -37,10 +37,20 @@ async function purgeLibrary(
   libraryID: number,
 ): Promise<void> {
   await openAsShared(page, '/libraries')
+  // 列表是异步加载的：必须等它渲染出结果（列表或空态）再判断题库是否存在，
+  // 否则会在数据到达之前把「还在的题库」当成「已删除」，跳过删除步骤。
+  await expect(
+    page.getByTestId('libraries-list').or(page.getByTestId('libraries-empty')),
+  ).toBeVisible()
   if ((await page.getByTestId(`library-${libraryID}`).count()) > 0) {
     await page.getByTestId(`library-${libraryID}`).getByRole('link').click()
     await page.getByTestId('library-delete').click()
     await page.getByTestId('library-delete-confirm').click()
+    // 删除后回到列表页；同样要等列表渲染完成才能操作回收站条目。
+    await expect(page).toHaveURL(/\/libraries$/)
+    await expect(
+      page.getByTestId('libraries-recycle').or(page.getByTestId('libraries-recycle-empty')),
+    ).toBeVisible()
   }
   await page.getByTestId(`library-purge-${libraryID}`).click()
   await page.getByTestId('library-purge-confirm').click()

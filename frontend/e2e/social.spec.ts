@@ -44,19 +44,22 @@ test('游客可查看公开收藏夹但看不到私有收藏夹', async ({ brows
   })
 
   // 建一个公开收藏夹并放入提示词。可见性必须显式选择：默认档位是私有。
+  // 完成信号是对话框关闭：它只在两个请求都成功之后才发生。
+  // 不能断言提示文案，因为「已收藏」这个文案在第二次创建时本来就还在屏幕上，
+  // 断言会立刻通过，随后的导航会把尚未完成的创建请求取消掉。
   const publicName = `公开夹-${Date.now()}`
   await ownerPage.getByTestId('detail-favorite').click()
   await ownerPage.getByTestId('favorite-new-name').fill(publicName)
   await ownerPage.locator('[data-testid="favorite-visibility"]').getByText('公开').click()
   await ownerPage.getByTestId('favorite-dialog-create').click()
-  await expect(ownerPage.getByTestId('detail-notice')).toContainText('已收藏')
+  await expect(ownerPage.getByTestId('favorite-new-name')).toBeHidden()
 
   // 再建一个私有收藏夹并放入同一条提示词：重新打开后档位回到默认的私有。
   const privateName = `私有夹-${Date.now()}`
   await ownerPage.getByTestId('detail-favorite').click()
   await ownerPage.getByTestId('favorite-new-name').fill(privateName)
   await ownerPage.getByTestId('favorite-dialog-create').click()
-  await expect(ownerPage.getByTestId('detail-notice')).toContainText('已收藏')
+  await expect(ownerPage.getByTestId('favorite-new-name')).toBeHidden()
 
   // 所有者本人两个都看得到。
   await ownerPage.goto('/favorites')

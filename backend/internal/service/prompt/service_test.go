@@ -120,7 +120,7 @@ func TestUpdateRejectsHighRiskCategoryForOrdinaryUser(t *testing.T) {
 	assertAppErrCode(t, err, apperr.CodeForbidden)
 
 	// 拒绝之后类别未被改写，仍是创建时的类别。
-	detail, err := f.svc.Get(context.Background(), domain.ViewerFor(user), created.Prompt.ID)
+	detail, err := f.svc.Get(context.Background(), domain.ViewerFor(user), created.Prompt.ID, "")
 	if err != nil {
 		t.Fatalf("读取提示词失败: %v", err)
 	}
@@ -163,18 +163,18 @@ func TestDeveloperMayUseHighRiskCategoryAndDeveloperVisibility(t *testing.T) {
 		t.Fatalf("开发者应能选择高风险类别与开发者可见: %v", err)
 	}
 	if !created.Prompt.HighRisk {
-		t.Error("创建结果的���风险标记应为真")
+		t.Error("创建结果的高风险标记应为真")
 	}
 
 	// 开发者对自己的高风险提示词可读，游客与普通用户读到 404（C-20 的直链侧）。
-	if _, err := f.svc.Get(context.Background(), domain.ViewerFor(dev), created.Prompt.ID); err != nil {
+	if _, err := f.svc.Get(context.Background(), domain.ViewerFor(dev), created.Prompt.ID, ""); err != nil {
 		t.Errorf("开发者读取高风险提示词失败: %v", err)
 	}
-	_, err = f.svc.Get(context.Background(), domain.Guest(), created.Prompt.ID)
+	_, err = f.svc.Get(context.Background(), domain.Guest(), created.Prompt.ID, "")
 	assertAppErrCode(t, err, apperr.CodeNotFound)
 
 	other := f.normalUser(t)
-	_, err = f.svc.Get(context.Background(), domain.ViewerFor(other), created.Prompt.ID)
+	_, err = f.svc.Get(context.Background(), domain.ViewerFor(other), created.Prompt.ID, "")
 	assertAppErrCode(t, err, apperr.CodeNotFound)
 }
 
@@ -195,10 +195,10 @@ func TestHighRiskPublicPromptIsHiddenFromOrdinaryUsers(t *testing.T) {
 		t.Fatalf("改为高风险类别失败: %v", err)
 	}
 
-	_, err = f.svc.Get(context.Background(), domain.Guest(), created.Prompt.ID)
+	_, err = f.svc.Get(context.Background(), domain.Guest(), created.Prompt.ID, "")
 	assertAppErrCode(t, err, apperr.CodeNotFound)
 
-	_, err = f.svc.Get(context.Background(), domain.ViewerFor(f.normalUser(t)), created.Prompt.ID)
+	_, err = f.svc.Get(context.Background(), domain.ViewerFor(f.normalUser(t)), created.Prompt.ID, "")
 	assertAppErrCode(t, err, apperr.CodeNotFound)
 
 	// 列表侧同样不可见：ListScope 的高风险过滤对非开发者生效。
@@ -255,7 +255,7 @@ func TestNormalEditCreatesMinorVersionAndKeepsRatings(t *testing.T) {
 		t.Error("未勾选重大修改时不应标记为重大修改")
 	}
 
-	detail, err := f.svc.Get(context.Background(), domain.ViewerFor(user), created.Prompt.ID)
+	detail, err := f.svc.Get(context.Background(), domain.ViewerFor(user), created.Prompt.ID, "")
 	if err != nil {
 		t.Fatalf("读取提示词失败: %v", err)
 	}
@@ -351,7 +351,7 @@ func TestMajorChangeResetsRatingsAndArchivesHistory(t *testing.T) {
 	}
 
 	// 前台标记：详情页据此展示提示文案（需求 §7.3 第 5 步）。
-	detail, err := f.svc.Get(ctx, domain.ViewerFor(user), created.Prompt.ID)
+	detail, err := f.svc.Get(ctx, domain.ViewerFor(user), created.Prompt.ID, "")
 	if err != nil {
 		t.Fatalf("读取提示词失败: %v", err)
 	}

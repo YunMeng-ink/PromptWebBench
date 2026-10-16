@@ -121,6 +121,9 @@ type Querier interface {
 	BumpUserTokenVersion(ctx context.Context, id int64) (User, error)
 	ConsumeEmailVerification(ctx context.Context, id int64) error
 	ConsumeInviteCode(ctx context.Context, id int64) (InviteCode, error)
+	// 注销前统计活跃管理员数量，用于阻止最后一个管理员注销自己：
+	// 注销后无人能进入后台，平台只有重启才会按 ADMIN_INIT_* 重建初始管理员。
+	CountActiveAdmins(ctx context.Context) (int64, error)
 	CountComments(ctx context.Context, promptID int64) (int64, error)
 	CountFavoriteItems(ctx context.Context, favoriteID int64) (int64, error)
 	CountFavorites(ctx context.Context, userID int64) (int64, error)
@@ -196,11 +199,22 @@ type Querier interface {
 	// 重大修改使统计快照失效，阶段 3 会按新版本重算（需求 §7.3 第 6 步）。
 	DeletePromptStatsForMajorChange(ctx context.Context, promptID int64) error
 	DeleteTag(ctx context.Context, id int64) error
+	DeleteUserEmailVerifications(ctx context.Context, userID pgtype.Int8) error
+	// 注销时移除该用户的关注关系：指向已注销账户的关注行没有展示价值。
+	DeleteUserFollows(ctx context.Context, followerID int64) error
+	// 注销时清空凭据类附属数据：第三方绑定与验证码在账户软删后不再有意义，
+	// 留着会让同一个人重新注册时撞上指向已注销账户的绑定。
+	DeleteUserOAuthAccounts(ctx context.Context, userID int64) error
 	// 引用题被修改时原地转为派生题：保留来源提示词标识供追溯，正文改存副本。
 	DeriveLibraryQuestion(ctx context.Context, arg DeriveLibraryQuestionParams) (LibraryQuestion, error)
 	DetachPromptTag(ctx context.Context, arg DetachPromptTagParams) error
 	// 提示词被删除或彻底删除时，推荐标签一律转已过期（C-14）。
 	ExpireRecommendTagsByPrompt(ctx context.Context, promptID int64) error
+	ExportMyComments(ctx context.Context, userID int64) ([]ExportMyCommentsRow, error)
+	// 个人数据导出与账号注销（G-08、G-09）。
+	// ---------- G-08：个人数据导出 ----------
+	ExportMyPrompts(ctx context.Context, uploaderID int64) ([]ExportMyPromptsRow, error)
+	ExportMyRatings(ctx context.Context, userID int64) ([]ExportMyRatingsRow, error)
 	GetAbility(ctx context.Context, id int64) (Ability, error)
 	GetActiveAPIToken(ctx context.Context, userID int64) (ApiToken, error)
 	GetActiveEmailVerification(ctx context.Context, arg GetActiveEmailVerificationParams) (EmailVerification, error)
@@ -469,6 +483,15 @@ type Querier interface {
 	SoftDeleteNotification(ctx context.Context, arg SoftDeleteNotificationParams) (int64, error)
 	SoftDeletePrompt(ctx context.Context, id int64) (int64, error)
 	SoftDeleteRating(ctx context.Context, id int64) (int64, error)
+	// ---------- G-09：账号注销 ----------
+	// 软删账户并匿名化：昵称统一改为「已注销用户」（唯一索引带 deleted_at IS NULL
+	// 条件，注销后昵称不再参与唯一性），邮箱改为不可投递地址以释放原邮箱占用。
+	// 注销后无法登录、无法找回；原昵称与邮箱经审计日志留痕。
+	SoftDeleteUser(ctx context.Context, id int64) (int64, error)
+	// 注销时软删该用户名下的收藏夹与题库：保留行与归属记录供管理员追溯，
+	// 停用其访问价值。
+	SoftDeleteUserFavorites(ctx context.Context, userID int64) error
+	SoftDeleteUserLibraries(ctx context.Context, ownerID int64) error
 	SupersedeEmailVerifications(ctx context.Context, arg SupersedeEmailVerificationsParams) error
 	TouchAPIToken(ctx context.Context, tokenHash string) error
 	TransferPrompts(ctx context.Context, arg TransferPromptsParams) ([]int64, error)

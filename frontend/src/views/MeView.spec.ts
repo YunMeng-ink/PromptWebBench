@@ -158,4 +158,48 @@ describe('个人中心', () => {
     expect(wrapper.text()).toContain('两次输入的口令不一致')
     expect(calls().length).toBe(before)
   })
+
+  it('导出我的数据走 /me/export 并触发下载', async () => {
+    const createObjectURL = vi.fn(() => 'blob:test')
+    const revokeObjectURL = vi.fn()
+    vi.stubGlobal('URL', { ...URL, createObjectURL, revokeObjectURL })
+
+    routeByFetch({
+      'GET /me/api-token': () => stubResponse({ status: 200, body: { present: false } }),
+      'GET /me/export': () =>
+        stubResponse({
+          status: 200,
+          body: {
+            username: '测试用户',
+            filename: 'prompt-benchmark-测试用户-20261017.json',
+            prompts: [],
+            ratings: [],
+            comments: [],
+          },
+        }),
+    })
+    const { wrapper } = await setup()
+
+    await wrapper.get('[data-testid="me-export"]').trigger('click')
+    await flushPromises()
+
+    expect(calls().some((call) => call.url.endsWith('/me/export'))).toBe(true)
+    expect(createObjectURL).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('导出文件已开始下载')
+  })
+
+  it('注销确认字符串不一致时本地拦截，不发起请求', async () => {
+    routeByFetch({
+      'GET /me/api-token': () => stubResponse({ status: 200, body: { present: false } }),
+    })
+    const { wrapper } = await setup()
+    const before = calls().length
+
+    await wrapper.get('input[data-testid="me-delete-confirm-input"]').setValue('写错的昵称')
+    await wrapper.get('[data-testid="me-delete-form"]').trigger('submit')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('确认字符串与当前昵称不一致')
+    expect(calls().length).toBe(before)
+  })
 })

@@ -6,7 +6,8 @@ test('首页渲染顶栏、公开提示词列表与页脚', async ({ page }) => 
   await expect(page.getByRole('heading', { level: 1 })).toContainText('公开提示词')
   await expect(page.getByTestId('home-filters')).toBeVisible()
   await expect(page.locator('footer')).toContainText('Prompt Benchmark')
-  await expect(page.getByRole('navigation')).toBeVisible()
+  await expect(page.getByTestId('footer-privacy')).toBeVisible()
+  await expect(page.locator('header nav.pb-header__actions')).toBeVisible()
 })
 
 test('未匹配路由展示 404 页面并可返回首页', async ({ page }) => {

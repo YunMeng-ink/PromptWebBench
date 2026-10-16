@@ -115,8 +115,9 @@ func (s *Service) MarkStale(promptID int64) {
 }
 
 // Fresh 返回缓存条目；不存在或已作废时返回 false。
-func (s *Service) Fresh(promptID int64) (*Snapshot, bool) {
-	return s.cache.get(promptID)
+// 存活时长按当前配置取值，配置改动无需重启即可生效。
+func (s *Service) Fresh(ctx context.Context, promptID int64) (*Snapshot, bool) {
+	return s.cache.get(promptID, s.cacheTTL(ctx))
 }
 
 // put 写入缓存条目。
@@ -124,8 +125,18 @@ func (s *Service) put(snapshot Snapshot) {
 	s.cache.put(snapshot)
 }
 
-// snapshotTTL 是缓存条目的存活时长。
+// cacheDefaultTTL 是统计缓存存活时长的缺省取值（技术可行性报告 §3.1：60 秒），
+// 实际取值来自配置项 stats_cache_ttl_seconds。
 //
-// 条目在评分写入时被主动作废，因此存活时长只用于兜底进程重启后遗留的条目，
-// 取值取一个工作日，与近 N 日窗口的长度一致。
-const snapshotTTL = 24 * time.Hour
+// 条目在评分写入时被主动作废，存活时长只用于兜底进程重启后遗留的条目。
+const cacheDefaultTTL = 60 * time.Second
+
+// cacheTTL 读取缓存存活时长配置。缺项或取值非法时按缺省值运行：
+// 缓存时长是性能参数，配置表被写坏不应让统计读取整体不可用。
+func (s *Service) cacheTTL(ctx context.Context) time.Duration {
+	seconds := s.intOf(ctx, "stats_cache_ttl_seconds", int64(cacheDefaultTTL/time.Second))
+	if seconds <= 0 {
+		return cacheDefaultTTL
+	}
+	return time.Duration(seconds) * time.Second
+}

@@ -1,17 +1,25 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRouter } from 'vue-router'
 import { type APITokenStatus, authApi } from '@/api/auth'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { useErrorMessage } from '@/composables/useErrorMessage'
 import { useAuthStore } from '@/stores/auth'
 
 const { t } = useI18n()
+const router = useRouter()
 const auth = useAuthStore()
 const { messageOf } = useErrorMessage()
 
 const activeTab = ref('profile')
 const errorText = ref('')
 const noticeText = ref('')
+
+const exporting = ref(false)
+const deleteConfirm = ref('')
+const deleting = ref(false)
+const deleteDialogVisible = ref(false)
 
 const username = ref('')
 const bio = ref('')
@@ -134,6 +142,55 @@ async function copyToken(): Promise<void> {
   }
   await navigator.clipboard.writeText(tokenPlain.value)
   noticeText.value = t('me.tokenCopied')
+}
+
+/** exportData 下载「我的数据」JSON 文件（G-08）。 */
+async function exportData(): Promise<void> {
+  exporting.value = true
+  errorText.value = ''
+  noticeText.value = ''
+  try {
+    const exported = await authApi.exportMyData()
+    const blob = new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = exported.filename
+    link.click()
+    URL.revokeObjectURL(url)
+    noticeText.value = t('me.exportStarted')
+  } catch (error) {
+    errorText.value = messageOf(error)
+  } finally {
+    exporting.value = false
+  }
+}
+
+/** openDeleteDialog 校验确认字符串后弹出二次确认；不一致时只提示不弹窗。 */
+function openDeleteDialog(): void {
+  errorText.value = ''
+  noticeText.value = ''
+  if (deleteConfirm.value !== (auth.user?.username ?? '')) {
+    errorText.value = t('me.dangerMismatch')
+    return
+  }
+  deleteDialogVisible.value = true
+}
+
+/** deleteAccount 注销账户（G-09）。成功后置为游客态并回到首页。 */
+async function deleteAccount(): Promise<void> {
+  deleting.value = true
+  errorText.value = ''
+  deleteDialogVisible.value = false
+  try {
+    await authApi.deleteAccount(deleteConfirm.value)
+    auth.markGuest()
+    await router.push('/')
+  } catch (error) {
+    errorText.value = messageOf(error)
+  } finally {
+    deleting.value = false
+  }
 }
 </script>
 
@@ -260,7 +317,48 @@ async function copyToken(): Promise<void> {
           <p class="pb-me__hint">{{ t('me.tokenCreatedHint') }}</p>
         </div>
       </el-tab-pane>
+
+      <el-tab-pane :label="t('me.dataTab')" name="data">
+        <p class="pb-me__hint">{{ t('me.exportHint') }}</p>
+        <div class="pb-me__actions">
+          <el-button :loading="exporting" data-testid="me-export" @click="exportData">
+            {{ t('me.exportButton') }}
+          </el-button>
+        </div>
+      </el-tab-pane>
+
+      <el-tab-pane :label="t('me.dangerTab')" name="danger">
+        <el-alert class="pb-me__notice" type="warning" :title="t('me.dangerHint')" show-icon />
+        <el-form label-position="top" data-testid="me-delete-form" @submit.prevent="openDeleteDialog">
+          <el-form-item :label="t('me.dangerConfirmLabel')">
+            <el-input
+              v-model="deleteConfirm"
+              :placeholder="t('me.dangerConfirmPlaceholder')"
+              data-testid="me-delete-confirm-input"
+            />
+          </el-form-item>
+          <p class="pb-me__hint">{{ t('me.dangerWarning') }}</p>
+          <el-button
+            type="danger"
+            native-type="submit"
+            :loading="deleting"
+            data-testid="me-delete-submit"
+          >
+            {{ t('me.dangerSubmit') }}
+          </el-button>
+        </el-form>
+      </el-tab-pane>
     </el-tabs>
+
+    <ConfirmDialog
+      v-model="deleteDialogVisible"
+      :title="t('me.dangerTab')"
+      :message="t('me.dangerWarning')"
+      :confirm-text="t('me.dangerSubmit')"
+      :cancel-text="t('auth.cancel')"
+      testid="me-delete"
+      @confirm="deleteAccount"
+    />
   </section>
 </template>
 

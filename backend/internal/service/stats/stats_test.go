@@ -544,7 +544,7 @@ func Test缓存作废后读到新快照(t *testing.T) {
 	// 作废缓存后重算，下一次读取应看到新的评分数。
 	f.rate(t, promptID, modelIDs[0], raters[24], 1, time.Time{})
 	f.svc.MarkStale(promptID)
-	if _, ok := f.svc.Fresh(promptID); ok {
+	if _, ok := f.svc.Fresh(ctx, promptID); ok {
 		t.Fatal("作废后缓存仍命中")
 	}
 

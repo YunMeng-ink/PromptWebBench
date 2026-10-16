@@ -110,8 +110,8 @@ async function onLogout(): Promise<void> {
             </span>
           </RouterLink>
           <el-dropdown trigger="click">
-            <el-button size="small" data-testid="header-user">
-              {{ auth.user?.username }}
+            <el-button size="small" data-testid="header-user" class="pb-header__user">
+              <span class="pb-header__user-name">{{ auth.user?.username }}</span>
             </el-button>
             <template #dropdown>
               <el-dropdown-menu>
@@ -203,9 +203,49 @@ async function onLogout(): Promise<void> {
   padding: 0 5px;
 }
 
+/* 昵称最长 32 个字符，超长时省略以免把顶栏撑出视口。 */
+.pb-header__user-name {
+  display: inline-block;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+/*
+ * 窄屏（375px 起）：顶栏不再固定 60px 高度，导航项折行排布。
+ * 顶栏固定高度与不折行的横排无法同时容纳品牌、导航与账户入口，
+ * 折行是唯一不隐藏任何入口的排布方式。
+ */
 @media (max-width: 640px) {
+  .pb-header {
+    height: auto;
+    min-height: var(--pb-header-height);
+  }
+
+  .pb-header__inner {
+    flex-wrap: wrap;
+    row-gap: var(--pb-space-sm);
+    padding-top: var(--pb-space-sm);
+    padding-bottom: var(--pb-space-sm);
+  }
+
   .pb-brand__tagline {
     display: none;
+  }
+
+  .pb-header__actions {
+    flex-wrap: wrap;
+    row-gap: var(--pb-space-sm);
+  }
+
+  .pb-header__locale {
+    width: 92px;
+  }
+
+  .pb-header__user-name {
+    max-width: 96px;
   }
 }
 </style>

@@ -20,6 +20,8 @@ const en: MessageSchema = {
   },
   footer: {
     copyright: 'Prompt Benchmark',
+    privacy: 'Privacy policy',
+    terms: 'Terms of service',
   },
   home: {
     title: 'Public prompts',
@@ -389,6 +391,76 @@ const en: MessageSchema = {
       'Email not verified. Rating, commenting, uploading and token creation are unavailable.',
     statusLabel: 'Status',
     roleLabel: 'Role',
+    dataTab: 'My data',
+    exportHint:
+      'Export your prompts, ratings and comments as a JSON file. Only currently visible data is included.',
+    exportButton: 'Export my data',
+    exportStarted: 'The export file is downloading.',
+    dangerTab: 'Close account',
+    dangerHint:
+      'Closing your account takes effect immediately and cannot be undone: your display name and email are released, and your prompts move to the fallback account with a traceable record. Ratings and comments are kept as derived data.',
+    dangerWarning: 'Type your current display name to confirm. This action cannot be undone.',
+    dangerConfirmLabel: 'Confirmation',
+    dangerConfirmPlaceholder: 'Type your display name',
+    dangerSubmit: 'Close my account',
+    dangerMismatch: 'The confirmation does not match your display name',
+  },
+  legal: {
+    updated: 'Last updated: October 2026',
+  },
+  privacy: {
+    title: 'Privacy policy',
+    collectTitle: 'What we collect',
+    collectBody: [
+      'Account data: email address, password hash and display name. Passwords are stored as bcrypt hashes and can never be recovered in plaintext.',
+      'Usage data: the prompts you upload, the ratings you submit, the comments you post, plus favorites and shared question banks.',
+      'Security audit data: key actions such as sign-in, bans and content access are recorded with time, actor and source address. These logs are append-only.',
+    ],
+    useTitle: 'How we use it',
+    useBody: [
+      'Ratings feed the completion and discrimination statistics that every visitor can see.',
+      'Every access to high-risk category content is written to the audit log for content-control requirements.',
+      'We never sell, rent or hand your email address or raw rating data to third parties.',
+    ],
+    retentionTitle: 'How long we keep it',
+    retentionBody: [
+      'Account data is kept until you close the account yourself.',
+      'Audit logs and statistics snapshots survive account closure: the former serve security tracing, the latter are part of the platform measurement results.',
+      'Recycled content is permanently deleted once its retention window ends.',
+    ],
+    rightsTitle: 'Your rights',
+    rightsBody: [
+      'Export your prompts, ratings and comments at any time under Account → My data.',
+      'Close your account at any time under Account → Close account. Data is then handled as described above.',
+    ],
+  },
+  terms: {
+    title: 'Terms of service',
+    accountTitle: 'Accounts',
+    accountBody: [
+      'You need a verified email address before you can rate, comment or upload content.',
+      'Keep your password and API token safe. Tokens are stored as hashes; the plaintext is shown once at creation.',
+      'A banned account loses its sessions immediately, and its prompts move to the fallback account with the original uploader recorded.',
+    ],
+    contentTitle: 'Content',
+    contentBody: [
+      'Uploaded prompts are public by default; you may also keep them private. Developer-only and high-risk content is visible only to developer accounts and administrators.',
+      'Do not upload illegal content, content that infringes others, or content you are not allowed to distribute.',
+      'Administrators may remove violating content and keep an audit record. Removed prompts go to the recycle bin and are purged when the retention window ends.',
+      'Reported content is reviewed by administrators, and the decision is written to the audit log.',
+    ],
+    conductTitle: 'Conduct',
+    conductBody: [
+      'Do not manipulate ratings, mass-register accounts, or bypass rate limits with automation.',
+      'Do not probe or attack the platform or other accounts.',
+      'Breaking these rules may lead to content removal, an account ban, or the revocation of developer status.',
+    ],
+    liabilityTitle: 'Liability',
+    liabilityBody: [
+      'The service is provided as is, without availability guarantees.',
+      'Prompts are uploaded by users; the platform makes no warranty about their accuracy or fitness.',
+      'Any consequence of using platform content rests with the user.',
+    ],
   },
   status: {
     normal: 'Active',

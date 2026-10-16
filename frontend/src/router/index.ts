@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth'
 import AdminLayout from '@/views/admin/AdminLayout.vue'
 import FavoritesView from '@/views/FavoritesView.vue'
 import HomeView from '@/views/HomeView.vue'
+import LegalView from '@/views/LegalView.vue'
 import LibraryDetailView from '@/views/LibraryDetailView.vue'
 import LibraryListView from '@/views/LibraryListView.vue'
 import LibraryQuestionView from '@/views/LibraryQuestionView.vue'
@@ -28,6 +29,19 @@ const routes: RouteRecordRaw[] = [
     path: '/',
     name: 'home',
     component: HomeView,
+  },
+  {
+    // 隐私政策与用户条款（G-10）。两个页面共用同一视图，文案随界面语言切换。
+    path: '/privacy',
+    name: 'privacy',
+    component: LegalView,
+    props: { mode: 'privacy' },
+  },
+  {
+    path: '/terms',
+    name: 'terms',
+    component: LegalView,
+    props: { mode: 'terms' },
   },
   {
     path: '/upload',

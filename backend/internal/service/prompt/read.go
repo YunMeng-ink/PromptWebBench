@@ -9,6 +9,7 @@ import (
 
 	"github.com/promptbench/backend/internal/apperr"
 	"github.com/promptbench/backend/internal/domain"
+	"github.com/promptbench/backend/internal/oplog"
 	"github.com/promptbench/backend/internal/repo"
 )
 
@@ -26,7 +27,10 @@ type Detail struct {
 //
 // 可见性判定调用 domain.Viewer.CanView，判定不通过一律返回 not_found
 // （开发方案 §5.3）：高风险类别即便可见性为 public，对普通用户与游客同样 404（C-20）。
-func (s *Service) Get(ctx context.Context, v domain.Viewer, id int64) (Detail, error) {
+//
+// 本方法是「内容访问」的唯一入口：高风险类别内容在这里写入审计日志（G-12），
+// 授予与拒绝都留痕。只做可见性闸门、不读取内容的调用方应改用 Visible。
+func (s *Service) Get(ctx context.Context, v domain.Viewer, id int64, ip string) (Detail, error) {
 	row, err := repo.New(s.pool).GetPrompt(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -40,7 +44,13 @@ func (s *Service) Get(ctx context.Context, v domain.Viewer, id int64) (Detail, e
 		return Detail{}, err
 	}
 
-	if !v.CanView(prompt.Access()) {
+	visible := v.CanView(prompt.Access())
+	if prompt.HighRisk {
+		if err := s.auditSensitiveAccess(ctx, v, prompt.ID, ip, visible); err != nil {
+			return Detail{}, err
+		}
+	}
+	if !visible {
 		return Detail{}, apperr.New(apperr.CodeNotFound, "")
 	}
 
@@ -78,6 +88,58 @@ func (s *Service) Get(ctx context.Context, v domain.Viewer, id int64) (Detail, e
 		Versions: VersionsFromRows(versions),
 		Uploader: uploader.Username,
 	}, nil
+}
+
+// Visible 校验当前身份能否看到该提示词，不读取详情内容。
+// 供「以可见性为闸门、不需要内容」的调用方使用（如评分列表），
+// 使审计记录只由真正的详情读取产生。
+func (s *Service) Visible(ctx context.Context, v domain.Viewer, id int64) error {
+	row, err := repo.New(s.pool).GetPrompt(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return apperr.New(apperr.CodeNotFound, "")
+		}
+		return fmt.Errorf("查询提示词: %w", err)
+	}
+	prompt, err := promptFromRow(fieldsOfGetPrompt(row))
+	if err != nil {
+		return err
+	}
+	if !v.CanView(prompt.Access()) {
+		return apperr.New(apperr.CodeNotFound, "")
+	}
+	return nil
+}
+
+// auditSensitiveAccess 为高风险类别内容的一次访问写入审计日志（G-12）。
+// granted 为假表示本次访问被可见性判定拒绝，同样留痕：被拒访问正是管控对象。
+func (s *Service) auditSensitiveAccess(ctx context.Context, v domain.Viewer, promptID int64, ip string, granted bool) error {
+	name := "游客"
+	if v.Logged {
+		user, err := repo.New(s.pool).GetUserByID(ctx, v.UserID)
+		if err != nil {
+			return fmt.Errorf("查询访问者 %d: %w", v.UserID, err)
+		}
+		name = user.Username
+	}
+	result := "denied"
+	if granted {
+		result = "granted"
+	}
+	return s.oplog.Record(ctx, repo.New(s.pool), oplog.Entry{
+		OperatorID:   v.UserID,
+		OperatorName: name,
+		Action:       oplog.ActionSensitiveContentAccess,
+		ObjectType:   "prompt",
+		ObjectID:     promptID,
+		After: map[string]any{
+			"result":      result,
+			"viewer_role": string(v.Role),
+			"logged":      v.Logged,
+		},
+		Note: result,
+		IP:   ip,
+	})
 }
 
 // lockPrompt 在事务内锁定提示词行，供写入路径使用（开发方案 §3.5）。
