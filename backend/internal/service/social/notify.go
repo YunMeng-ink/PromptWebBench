@@ -69,6 +69,7 @@ func (s *Service) notify(ctx context.Context, q *repo.Queries, n notification) e
 // NotifyLibraryQuestionDeleted 发出协作者删题通知（需求 §10.6、C-34）。
 //
 // 供题库域在删除题目后调用：通知与删除必须同事务，否则会出现删了题却没通知的状态。
+// 正文文案取自 domain，使通知内容只有一个来源，题库域的测试与实现依据同一份定义。
 func (s *Service) NotifyLibraryQuestionDeleted(
 	ctx context.Context, q *repo.Queries, ownerID int64, libraryName, questionTitle, actorName string,
 ) error {
@@ -76,8 +77,7 @@ func (s *Service) NotifyLibraryQuestionDeleted(
 		UserID: ownerID,
 		Kind:   domain.NotifyLibraryQuestionDeleted,
 		Title:  "题库题目被协作者删除",
-		Body: fmt.Sprintf("协作者%s删除了题库「%s」中的题目「%s」。",
-			actorName, libraryName, questionTitle),
+		Body:   domain.NotificationLibraryQuestionDeletedBody(actorName, libraryName, questionTitle),
 		Payload: map[string]any{
 			"library_name":   libraryName,
 			"question_title": questionTitle,

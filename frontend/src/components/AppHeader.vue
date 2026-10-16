@@ -89,6 +89,9 @@ async function onLogout(): Promise<void> {
         </el-button>
 
         <template v-if="auth.status === 'authenticated'">
+          <RouterLink class="pb-header__link" to="/libraries" data-testid="header-libraries">
+            {{ t('library.title') }}
+          </RouterLink>
           <RouterLink class="pb-header__link" to="/favorites" data-testid="header-favorites">
             {{ t('prompt.favoriteManage') }}
           </RouterLink>

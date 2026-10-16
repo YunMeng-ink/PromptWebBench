@@ -26,6 +26,8 @@ frontend/*.tsbuildinfo
 frontend/playwright-report/
 frontend/test-results/
 frontend/.playwright/
+# 全局前置写出的端到端账户昵称：用例据此邀请协作者，昵称由注册流程生成
+frontend/.e2e-accounts.json
 
 # 环境与密钥
 .env

@@ -9,7 +9,7 @@
 // 前者在后端启动之后执行，此时迁移已完成，表一定存在。
 
 import { execFileSync } from 'node:child_process'
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { FullConfig } from '@playwright/test'
@@ -18,6 +18,8 @@ const here = dirname(fileURLToPath(import.meta.url))
 const frontendDir = resolve(here, '..')
 const repoRoot = resolve(frontendDir, '..')
 const MAIL_DROP = resolve(repoRoot, 'backend', '.maildrop')
+/** ACCOUNTS_FILE 是账户昵称的落盘位置，与 e2e/helpers.ts 中的读取路径一致。 */
+const ACCOUNTS_FILE = resolve(frontendDir, '.e2e-accounts.json')
 
 const API = process.env.E2E_API ?? 'http://127.0.0.1:8080/api/v1'
 const DB_NAME = process.env.E2E_DATABASE ?? 'prompt_benchmark_e2e'
@@ -28,6 +30,14 @@ const SHARED_PASSWORD = 'E2ePassw0rd!'
  * 提示词作者看不到举报自己的入口，公开收藏夹也需要一个非所有者的观察者。
  */
 const REPORTER_EMAIL = 'e2e-reporter@example.com'
+/**
+ * 第三个账户，身份组为开发者。
+ *
+ * 开发者身份由后台授予，后台端点在阶段 6 交付，因此这里在真实注册流程之后直接改库，
+ * 使「开发者可见提示词」与「高风险类别」的端到端用例可以运行。先走注册再改身份，
+ * 登录校验路径因此与真实用户一致。
+ */
+const DEVELOPER_EMAIL = 'e2e-developer@example.com'
 
 async function waitForBackend(attempts = 60): Promise<void> {
   for (let i = 0; i < attempts; i += 1) {
@@ -163,4 +173,20 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
 
   await ensureAccount(SHARED_EMAIL)
   await ensureAccount(REPORTER_EMAIL)
+  await ensureAccount(DEVELOPER_EMAIL)
+
+  psql(`UPDATE users SET role = 'developer' WHERE email = '${DEVELOPER_EMAIL}'`)
+
+  // 昵称由注册流程从邮箱推导，用例要邀请协作者就得知道它。
+  // 把三个账户的昵称写出来，规格文件无需额外登录一次去读取。
+  writeAccountNames()
+}
+
+/** writeAccountNames 把账户昵称写入 JSON 文件，供规格文件读取。 */
+function writeAccountNames(): void {
+  const names: Record<string, string> = {}
+  for (const email of [SHARED_EMAIL, REPORTER_EMAIL, DEVELOPER_EMAIL]) {
+    names[email] = psql(`SELECT username FROM users WHERE email = '${email}'`, true).trim()
+  }
+  writeFileSync(ACCOUNTS_FILE, `${JSON.stringify(names, null, 2)}\n`, 'utf8')
 }

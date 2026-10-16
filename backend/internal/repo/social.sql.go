@@ -547,13 +547,15 @@ func (q *Queries) ListFollowing(ctx context.Context, arg ListFollowingParams) ([
 
 const lockFavoriteOwner = `-- name: LockFavoriteOwner :exec
 
-SELECT pg_advisory_xact_lock($1::bigint)
+SELECT pg_advisory_xact_lock((1::bigint << 32) + $1::bigint)
 `
 
 // 收藏夹、条目与关注的读写。
 //
 // 配额判定一律在事务内完成（C-21）：锁定 → 计数 → 判定 → 写入。
 // 事务外计数后插入会让并发请求各自读到未超限的计数，双双写入成功而突破上限。
+// 锁键 = 命名空间 << 32 + 对象标识。命名空间：1 收藏夹、2 统计重算、3 题库。
+// 高位命名空间使不同域的同号对象不再互相阻塞。
 func (q *Queries) LockFavoriteOwner(ctx context.Context, ownerID int64) error {
 	_, err := q.db.Exec(ctx, lockFavoriteOwner, ownerID)
 	return err

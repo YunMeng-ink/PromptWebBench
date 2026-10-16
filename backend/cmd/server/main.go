@@ -27,6 +27,7 @@ import (
 	"github.com/promptbench/backend/internal/security"
 	"github.com/promptbench/backend/internal/service/admin"
 	"github.com/promptbench/backend/internal/service/auth"
+	"github.com/promptbench/backend/internal/service/library"
 	"github.com/promptbench/backend/internal/service/prompt"
 	"github.com/promptbench/backend/internal/service/rating"
 	"github.com/promptbench/backend/internal/service/social"
@@ -118,6 +119,10 @@ func run(envFile string) error {
 	socialService := social.New(social.Deps{Pool: pool, Config: cfgStore, Logger: logger})
 	// 社交动作会改变提示词的派生数据（评论数、收藏数），注入统计缓存失效入口。
 	socialService.SetStatsHook(statsService)
+	// 协作者删题须通知题库所有者（需求 §10.6、C-34），通知由社交域发出。
+	libraryService := library.New(library.Deps{
+		Pool: pool, Config: cfgStore, Logger: logger, Notifier: socialService,
+	})
 	ratingService := rating.New(rating.Deps{
 		Pool: pool, Config: cfgStore, Logger: logger, Stats: statsService,
 	})
@@ -135,6 +140,7 @@ func run(envFile string) error {
 		Rating:  ratingService,
 		Stats:   statsService,
 		Social:  socialService,
+		Library: libraryService,
 		Signer:  signer,
 	})
 	if err != nil {

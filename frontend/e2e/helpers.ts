@@ -29,7 +29,21 @@ export const SHARED_EMAIL = 'e2e-shared@example.com'
  */
 export const REPORTER_EMAIL = 'e2e-reporter@example.com'
 
-/** loginAs 用给定账户登录。 */
+/**
+ * DEVELOPER_EMAIL 是第三个账户，身份组为开发者。
+ *
+ * 「开发者可见提示词」的用例需要这个身份：普通用户看不到这些内容，
+ * 因此无法构造「普通用户协作者看不到开发者专属引用题」的场景。
+ */
+export const DEVELOPER_EMAIL = 'e2e-developer@example.com'
+
+/**
+ * loginAs 用给定账户登录，并确认顶栏显示的就是该账户。
+ *
+ * 只等「顶栏出现用户」是不够的：在已登录状态下重新登录时，顶栏本来就显示着上一个
+ * 账户，等待会立刻通过，随后的导航会把尚未完成的登录请求取消掉，用例就在
+ * 上一个身份下继续执行。因此这里按昵称比对，等的是登录真正完成。
+ */
 export async function loginAs(page: Page, email: string): Promise<void> {
   await page.goto('/login')
 
@@ -41,12 +55,51 @@ export async function loginAs(page: Page, email: string): Promise<void> {
   await page.getByTestId('login-password').fill(PASSWORD)
   await page.getByTestId('login-submit').click()
 
-  await expect(page.getByTestId('header-user')).toBeVisible()
+  const hero = page.getByTestId('header-user')
+  await expect(hero).toBeVisible()
+  const expected = knownUsername(email)
+  if (expected !== null) {
+    await expect(hero).toHaveText(expected)
+  }
+}
+
+/** knownUsername 返回全局前置记录的该邮箱昵称；未记录时返回 null。 */
+function knownUsername(email: string): string | null {
+  try {
+    return accountUsernames()[email] ?? null
+  } catch {
+    return null
+  }
 }
 
 /** loginReporter 用第二账户登录，供举报与旁观他人收藏夹的用例使用。 */
 export async function loginReporter(page: Page): Promise<void> {
   await loginAs(page, REPORTER_EMAIL)
+}
+
+/** loginDeveloper 用开发者账户登录，供开发者可见内容的用例使用。 */
+export async function loginDeveloper(page: Page): Promise<void> {
+  await loginAs(page, DEVELOPER_EMAIL)
+}
+
+/**
+ * accountUsernames 读取全局前置写出的账户昵称。
+ *
+ * 昵称由注册流程从邮箱推导，用例邀请协作者时需要填写它，登录后也要据此确认
+ * 身份确实是目标账户。让前置把结果写出来，规格文件就不必为了读昵称而多登录一次。
+ */
+export function accountUsernames(): Record<string, string> {
+  const raw = readFileSync(resolve(here, '..', '.e2e-accounts.json'), 'utf8')
+  return JSON.parse(raw) as Record<string, string>
+}
+
+/** collaboratorUsername 返回第二账户的昵称，供邀请协作者的用例填写。 */
+export function collaboratorUsername(): string {
+  const name = accountUsernames()[REPORTER_EMAIL]
+  if (name === undefined) {
+    throw new Error(`未找到 ${REPORTER_EMAIL} 的昵称，全局前置未写出账户信息`)
+  }
+  return name
 }
 
 /** latestCodeFor 从 SMTP 接收器落盘的邮件中取出指定收件人的验证码。 */
@@ -121,4 +174,50 @@ export async function createPrompt(page: Page, title: string): Promise<number> {
     throw new Error(`发布后未跳转到详情页，当前地址 ${page.url()}`)
   }
   return Number.parseInt(match[1], 10)
+}
+
+/**
+ * createPromptWithVisibility 以给定可见性发布一条提示词。
+ *
+ * 可见性选择器只对开发者及以上身份出现（需求 §8.4），因此调用方必须已经用
+ * 开发者账户登录；普通身份下该选择器不存在，这里会直接失败而不是静默降级。
+ */
+export async function createPromptWithVisibility(
+  page: Page,
+  title: string,
+  visibility: 'public' | 'private' | 'developer',
+): Promise<number> {
+  await openAsShared(page, '/upload')
+
+  const titleInput = page.getByTestId('prompt-title')
+  await expect(titleInput).toBeVisible()
+  await titleInput.fill(title)
+  await page.getByTestId('prompt-body').fill('开发者可见的提示词正文。')
+
+  await page.getByTestId('prompt-category').locator('.el-select__wrapper').click()
+  await page.getByRole('option').first().click()
+
+  await page.getByTestId('prompt-visibility').locator('.el-select__wrapper').click()
+  await page.getByRole('option', { name: visibilityLabel(visibility) }).click()
+
+  await page.getByTestId('prompt-submit').click()
+  await expect(page).toHaveURL(/\/prompts\/\d+$/)
+
+  const match = page.url().match(/\/prompts\/(\d+)$/)
+  if (match?.[1] === undefined) {
+    throw new Error(`发布后未跳转到详情页，当前地址 ${page.url()}`)
+  }
+  return Number.parseInt(match[1], 10)
+}
+
+/** visibilityLabel 返回可见性选项在中文界面下的文案。 */
+function visibilityLabel(visibility: 'public' | 'private' | 'developer'): string {
+  switch (visibility) {
+    case 'public':
+      return '公开'
+    case 'private':
+      return '私有'
+    default:
+      return '开发者可见'
+  }
 }

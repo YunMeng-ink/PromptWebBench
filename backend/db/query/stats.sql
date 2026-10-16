@@ -203,8 +203,9 @@ SELECT GREATEST(
 
 -- 快照重算的事务入口：锁定该提示词的评分写入，使快照与它反映的评分集合一致。
 -- 评分提交路径在写评分前同样先取本锁，两侧因此互斥。
+-- 锁键 = 命名空间 << 32 + 对象标识。命名空间：1 收藏夹、2 统计重算、3 题库。
 -- name: LockPromptStatsRecompute :exec
-SELECT pg_advisory_xact_lock(sqlc.arg(prompt_id)::bigint);
+SELECT pg_advisory_xact_lock((2::bigint << 32) + sqlc.arg(prompt_id)::bigint);
 
 -- 统计快照记录的提示词当前版本，使快照与它反映的评分所属版本可对照（需求 §7.1）。
 -- name: GetPromptStatsVersion :one

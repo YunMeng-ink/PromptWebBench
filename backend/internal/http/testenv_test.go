@@ -24,6 +24,7 @@ import (
 	"github.com/promptbench/backend/internal/security"
 	"github.com/promptbench/backend/internal/service/admin"
 	"github.com/promptbench/backend/internal/service/auth"
+	"github.com/promptbench/backend/internal/service/library"
 	"github.com/promptbench/backend/internal/service/prompt"
 	"github.com/promptbench/backend/internal/service/rating"
 	"github.com/promptbench/backend/internal/service/social"
@@ -39,14 +40,15 @@ type testEnv struct {
 	server *api.Server
 	ts     *httptest.Server
 
-	auth   *auth.Service
-	admin  *admin.Service
-	prompt *prompt.Service
-	rating *rating.Service
-	stats  *stats.Service
-	social *social.Service
-	repo   *repo.Queries
-	signer *security.Signer
+	auth    *auth.Service
+	admin   *admin.Service
+	prompt  *prompt.Service
+	rating  *rating.Service
+	stats   *stats.Service
+	social  *social.Service
+	library *library.Service
+	repo    *repo.Queries
+	signer  *security.Signer
 }
 
 // Deps 返回构造接口层所需的依赖，供需要自定义配置的用例复用。
@@ -65,6 +67,7 @@ func (e *testEnv) Deps(t *testing.T) api.Deps {
 		Rating:  e.rating,
 		Stats:   e.stats,
 		Social:  e.social,
+		Library: e.library,
 		Signer:  e.signer,
 	}
 }
@@ -101,6 +104,10 @@ func newTestEnv(t *testing.T) *testEnv {
 	statsService := stats.New(stats.Deps{Pool: pool, Config: cfgStore, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	socialService := social.New(social.Deps{Pool: pool, Config: cfgStore, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
 	socialService.SetStatsHook(statsService)
+	libraryService := library.New(library.Deps{
+		Pool: pool, Config: cfgStore, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Notifier: socialService,
+	})
 	ratingService := rating.New(rating.Deps{
 		Pool: pool, Config: cfgStore,
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -108,18 +115,19 @@ func newTestEnv(t *testing.T) *testEnv {
 	})
 
 	env := testEnv{
-		Env:    testEnvConfig(),
-		pool:   pool,
-		config: cfgStore,
-		mail:   mailServer,
-		auth:   authService,
-		admin:  adminService,
-		prompt: promptService,
-		rating: ratingService,
-		stats:  statsService,
-		social: socialService,
-		repo:   repo.New(pool),
-		signer: signer,
+		Env:     testEnvConfig(),
+		pool:    pool,
+		config:  cfgStore,
+		mail:    mailServer,
+		auth:    authService,
+		admin:   adminService,
+		prompt:  promptService,
+		rating:  ratingService,
+		stats:   statsService,
+		social:  socialService,
+		library: libraryService,
+		repo:    repo.New(pool),
+		signer:  signer,
 	}
 
 	srv, err := api.New(api.Deps{
@@ -135,6 +143,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		Rating:  ratingService,
 		Stats:   statsService,
 		Social:  socialService,
+		Library: libraryService,
 		Signer:  signer,
 	})
 	if err != nil {

@@ -15,11 +15,13 @@ import (
 
 	"github.com/promptbench/backend/internal/apperr"
 	"github.com/promptbench/backend/internal/config"
+	"github.com/promptbench/backend/internal/domain"
 	"github.com/promptbench/backend/internal/metrics"
 	"github.com/promptbench/backend/internal/repo"
 	"github.com/promptbench/backend/internal/security"
 	"github.com/promptbench/backend/internal/service/admin"
 	"github.com/promptbench/backend/internal/service/auth"
+	"github.com/promptbench/backend/internal/service/library"
 	"github.com/promptbench/backend/internal/service/prompt"
 	"github.com/promptbench/backend/internal/service/rating"
 	"github.com/promptbench/backend/internal/service/social"
@@ -38,13 +40,14 @@ type Deps struct {
 	Metrics *metrics.Metrics
 	Repo    *repo.Queries
 
-	Auth   *auth.Service
-	Admin  *admin.Service
-	Prompt *prompt.Service
-	Rating *rating.Service
-	Stats  *stats.Service
-	Social *social.Service
-	Signer *security.Signer
+	Auth    *auth.Service
+	Admin   *admin.Service
+	Prompt  *prompt.Service
+	Rating  *rating.Service
+	Stats   *stats.Service
+	Social  *social.Service
+	Library *library.Service
+	Signer  *security.Signer
 }
 
 // RouteRecord 记录一个已登记路由及其限流规则，供启动日志与自检使用。
@@ -63,6 +66,9 @@ type Server struct {
 	signer  *security.Signer
 	trusted []netip.Prefix
 	routes  []RouteRecord
+
+	// questionLimit 是题库题目容量，取自配置表，供响应中回显容量上限。
+	questionLimit int32
 }
 
 func New(deps Deps) (*Server, error) {
@@ -81,6 +87,9 @@ func New(deps Deps) (*Server, error) {
 	if deps.Social == nil {
 		return nil, fmt.Errorf("接口层依赖不完整：Social 不可为空")
 	}
+	if deps.Library == nil {
+		return nil, fmt.Errorf("接口层依赖不完整：Library 不可为空")
+	}
 	trusted, err := ParseTrustedProxies(deps.Env.TrustedProxies)
 	if err != nil {
 		return nil, fmt.Errorf("解析 TRUSTED_PROXIES: %w", err)
@@ -93,12 +102,15 @@ func New(deps Deps) (*Server, error) {
 	e.Logger = deps.Logger
 	e.HTTPErrorHandler = EchoErrorHandler(deps.Logger)
 
+	questionLimit := libraryQuestionLimit(deps)
+
 	s := &Server{
-		deps:    deps,
-		echo:    e,
-		limiter: NewLimiter(trusted, DefaultRules()),
-		signer:  deps.Signer,
-		trusted: trusted,
+		deps:          deps,
+		echo:          e,
+		limiter:       NewLimiter(trusted, DefaultRules()),
+		signer:        deps.Signer,
+		trusted:       trusted,
+		questionLimit: questionLimit,
 	}
 	if deps.Env.AuthRateLimit > 0 {
 		if err := s.limiter.OverrideLimit("auth", deps.Env.AuthRateLimit); err != nil {
@@ -143,8 +155,23 @@ func New(deps Deps) (*Server, error) {
 	s.registerRatingRoutes()
 	s.registerStatsRoutes()
 	s.registerSocialRoutes()
+	s.registerLibraryRoutes()
 	s.registerDictionaryRoutes()
 	return s, nil
+}
+
+// libraryQuestionLimit 读取题库题目容量配置。
+//
+// 该取值只用于在响应中回显容量上限，读取失败时按需求默认值运行：
+// 配置表被写坏不应让整个接口层无法启动，真正生效的容量判定在服务层事务内完成。
+func libraryQuestionLimit(deps Deps) int32 {
+	limit, err := deps.Config.GetInt(context.Background(), "library_question_limit")
+	if err != nil {
+		deps.Logger.Warn("题库容量配置读取失败，按默认值运行",
+			slog.Int("fallback", domain.LibraryQuestionLimit), slog.String("error", err.Error()))
+		return int32(domain.LibraryQuestionLimit)
+	}
+	return int32(limit)
 }
 
 // humaConfig 构造 Huma 配置。

@@ -47,6 +47,8 @@ var defaultRules = map[string]Rule{
 	// 收藏夹与关注共用一个限额：都是同一类轻量社交写入，
 	// 分开计数只会让前端要把两个配额都展示出来，而它们的风险相同。
 	"favorite_write": {Name: "favorite_write", Limit: 60, Window: time.Minute, Scope: ScopeUser},
+	// 题库写入含导出与批量排序，按轻量写入的一半计数。
+	"library_write": {Name: "library_write", Limit: 30, Window: time.Minute, Scope: ScopeUser},
 }
 
 // DefaultRules 返回规则表的副本，供调用方按部署环境调整个别限额。

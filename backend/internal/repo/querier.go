@@ -25,8 +25,13 @@ type Querier interface {
 	CountFavoriteItems(ctx context.Context, favoriteID int64) (int64, error)
 	CountFavorites(ctx context.Context, userID int64) (int64, error)
 	CountFollowing(ctx context.Context, followerID int64) (int64, error)
+	CountLibraries(ctx context.Context, ownerID int64) (int64, error)
+	CountLibrariesForUser(ctx context.Context, userID int64) (int64, error)
+	// 题目容量计数只计引用题（C-22）：派生题不占题库容量，回收站中的引用题仍占。
+	CountLibraryQuotaQuestions(ctx context.Context, libraryID int64) (int64, error)
 	// 未撤回的公告总条数，用于分页。
 	CountLiveAnnouncements(ctx context.Context) (int64, error)
+	CountLiveLibraryQuestions(ctx context.Context, libraryID int64) (int64, error)
 	CountMyRatings(ctx context.Context, userID int64) (int64, error)
 	CountNotifications(ctx context.Context, arg CountNotificationsParams) (int64, error)
 	CountOwnPrompts(ctx context.Context, uploaderID int64) (int64, error)
@@ -66,18 +71,25 @@ type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DecrementCommentLikeCount(ctx context.Context, id int64) (int32, error)
 	DecrementFavoriteItemCount(ctx context.Context, id int64) error
+	// 只有彻底删除引用题才减少配额计数：软删除的题目仍在回收站中，仍占容量（C-22）。
+	DecrementLibraryQuestionCount(ctx context.Context, id int64) error
 	// 取消点赞用 :execrows 返回影响行数：0 行说明本来就没点过赞，
 	// 此时不能再递减计数，否则计数会与实际点赞记录脱节。
 	DeleteCommentLike(ctx context.Context, arg DeleteCommentLikeParams) (int64, error)
 	DeleteFavoriteItem(ctx context.Context, arg DeleteFavoriteItemParams) (int64, error)
 	DeleteFavoriteItems(ctx context.Context, favoriteID int64) error
 	DeleteFollow(ctx context.Context, arg DeleteFollowParams) error
+	DeleteLibraryMember(ctx context.Context, arg DeleteLibraryMemberParams) (int64, error)
+	DeleteLibraryQuestionTag(ctx context.Context, arg DeleteLibraryQuestionTagParams) error
+	DeleteLibraryQuestionTags(ctx context.Context, questionID int64) error
 	// 删除某提示词下已不在启用模型列表中的统计行，避免快照无限增长。
 	DeletePromptModelStatsExcept(ctx context.Context, arg DeletePromptModelStatsExceptParams) error
 	DeletePromptModelStatsForMajorChange(ctx context.Context, promptID int64) error
 	DeletePromptRatingsForMajorChange(ctx context.Context, promptID int64) ([]int64, error)
 	// 重大修改使统计快照失效，阶段 3 会按新版本重算（需求 §7.3 第 6 步）。
 	DeletePromptStatsForMajorChange(ctx context.Context, promptID int64) error
+	// 引用题被修改时原地转为派生题：保留来源提示词标识供追溯，正文改存副本。
+	DeriveLibraryQuestion(ctx context.Context, arg DeriveLibraryQuestionParams) (LibraryQuestion, error)
 	// 提示词被删除或彻底删除时，推荐标签一律转已过期（C-14）。
 	ExpireRecommendTagsByPrompt(ctx context.Context, promptID int64) error
 	GetAbility(ctx context.Context, id int64) (Ability, error)
@@ -97,6 +109,15 @@ type Querier interface {
 	// 邀请码的读取与占用。占用走条件更新，保证并发下不重复消耗（C-21）。
 	GetInviteCodeByCode(ctx context.Context, code string) (InviteCode, error)
 	GetLatestPromptVersion(ctx context.Context, promptID int64) (PromptVersion, error)
+	GetLibrary(ctx context.Context, id int64) (Library, error)
+	GetLibraryForUpdate(ctx context.Context, id int64) (Library, error)
+	// 回收站中的题库需要按标识直接读到，恢复与彻底删除都以此为入口。
+	GetLibraryIncludingDeleted(ctx context.Context, id int64) (Library, error)
+	GetLibraryMember(ctx context.Context, arg GetLibraryMemberParams) (LibraryMember, error)
+	// 只按标识定位题目所属题库，用于把「题目 ID」路由到题库后做成员与角色判定。
+	// 内容读取统一走 ListLibraryQuestions，避免出现第二份字段解析。
+	GetLibraryQuestionRef(ctx context.Context, arg GetLibraryQuestionRefParams) (GetLibraryQuestionRefRow, error)
+	GetLiveRecycleBinEntry(ctx context.Context, arg GetLiveRecycleBinEntryParams) (RecycleBin, error)
 	GetModel(ctx context.Context, id int64) (Model, error)
 	GetOAuthAccount(ctx context.Context, arg GetOAuthAccountParams) (OauthAccount, error)
 	GetPrompt(ctx context.Context, id int64) (GetPromptRow, error)
@@ -118,6 +139,11 @@ type Querier interface {
 	// users 表的读取与写入。
 	GetUserByEmail(ctx context.Context, lower string) (User, error)
 	GetUserByID(ctx context.Context, id int64) (User, error)
+	// 邀请协作者按用户名定位账户。封禁账户仍可被查到，由服务层拒绝：
+	// 把「不存在」与「已封禁」分成两种错误，前端才能给出可读提示。
+	GetUserForLibraryInvite(ctx context.Context, username string) (GetUserForLibraryInviteRow, error)
+	HardDeleteLibrary(ctx context.Context, id int64) error
+	HardDeleteLibraryQuestion(ctx context.Context, id int64) error
 	// 区分度回升时把已存在的待确认过时标签转已忽略并记录审计日志（C-15）。
 	// 条件里带 state = 'pending'：已确认的标签由管理员显式处理，系统不代为改动。
 	IgnorePendingTags(ctx context.Context, arg IgnorePendingTagsParams) ([]RecommendTag, error)
@@ -125,6 +151,9 @@ type Querier interface {
 	IncrementCommentLikeCount(ctx context.Context, id int64) (int32, error)
 	// 条目计数与插入同事务：条件 WHERE 让计数不会在并发下越过上限。
 	IncrementFavoriteItemCount(ctx context.Context, arg IncrementFavoriteItemCountParams) (int32, error)
+	// 引用题插入后同步题库的配额计数。条件 WHERE 让并发添加不会越过容量上限：
+	// 即便两个请求同时读到未满，也只有一个能命中 increment。
+	IncrementLibraryQuestionCount(ctx context.Context, arg IncrementLibraryQuestionCountParams) (int32, error)
 	// ---------- 公告 ----------
 	InsertAnnouncement(ctx context.Context, arg InsertAnnouncementParams) (Announcement, error)
 	// 评论、点赞与举报的读写。
@@ -140,6 +169,11 @@ type Querier interface {
 	InsertFavoriteItem(ctx context.Context, arg InsertFavoriteItemParams) (FavoriteItem, error)
 	// ---------- 关注 ----------
 	InsertFollow(ctx context.Context, arg InsertFollowParams) (Follow, error)
+	InsertLibrary(ctx context.Context, arg InsertLibraryParams) (Library, error)
+	InsertLibraryMember(ctx context.Context, arg InsertLibraryMemberParams) (int64, error)
+	InsertLibraryQuestion(ctx context.Context, arg InsertLibraryQuestionParams) (LibraryQuestion, error)
+	InsertLibraryQuestionRevision(ctx context.Context, arg InsertLibraryQuestionRevisionParams) error
+	InsertLibraryQuestionTag(ctx context.Context, arg InsertLibraryQuestionTagParams) error
 	// 通知与公告的读写。
 	//
 	// 公告分发采用「共享条目 + 每用户水位线」（C-33）：公告只存一份，
@@ -157,6 +191,9 @@ type Querier interface {
 	// 唯一索引在该状态下约束，重算时冲突即视为标签已存在（C-13）。
 	//
 	InsertRecommendTag(ctx context.Context, arg InsertRecommendTagParams) (RecommendTag, error)
+	// 回收站条目：同一对象同时只允许一条未恢复未清除的记录，
+	// 由 recycle_bin_live_uniq 唯一索引兜底。
+	InsertRecycleBinEntry(ctx context.Context, arg InsertRecycleBinEntryParams) (RecycleBin, error)
 	// ---------- 举报 ----------
 	InsertReport(ctx context.Context, arg InsertReportParams) (Report, error)
 	InsertTransferLog(ctx context.Context, arg InsertTransferLogParams) error
@@ -173,6 +210,8 @@ type Querier interface {
 	// 详情页展示已确认的推荐标签。忽略、过期与待确认的推荐不进前台。
 	ListConfirmedRecommendTags(ctx context.Context, promptID int64) ([]RecommendTag, error)
 	ListDifficulties(ctx context.Context) ([]Difficulty, error)
+	// 回收站自动清理：到期且未恢复的记录（需求 §11.3）。
+	ListExpiredRecycleBinEntries(ctx context.Context, limitCount int32) ([]RecycleBin, error)
 	// 收藏夹条目列表。可见性复查在应用层完成：条目里的提示词可能已被改为私有或
 	// 高风险，此时不能再展示（开发方案 §6.5 验收标准）。
 	// 这里取出判定所需的全部列，由 repo.FilterVisibleItems 逐条过 domain.Viewer。
@@ -181,6 +220,21 @@ type Querier interface {
 	// 可见性谓词由应用层经 ListScope 派生后作为参数传入，此处只做取值绑定。
 	ListFavorites(ctx context.Context, arg ListFavoritesParams) ([]ListFavoritesRow, error)
 	ListFollowing(ctx context.Context, arg ListFollowingParams) ([]ListFollowingRow, error)
+	// 每道题的最近一次修改说明，供导出时写出派生题目的修改说明（需求 §10.8 末项）。
+	ListLatestLibraryQuestionRevisionNotes(ctx context.Context, questionIds []int64) ([]ListLatestLibraryQuestionRevisionNotesRow, error)
+	// 用户参与的全部题库，含所有者与协作者两种身份，带出本人在库中的角色。
+	ListLibrariesForUser(ctx context.Context, arg ListLibrariesForUserParams) ([]ListLibrariesForUserRow, error)
+	ListLibraryMembers(ctx context.Context, libraryID int64) ([]ListLibraryMembersRow, error)
+	ListLibraryQuestionRevisions(ctx context.Context, questionID int64) ([]ListLibraryQuestionRevisionsRow, error)
+	ListLibraryQuestionTags(ctx context.Context, questionID int64) ([]string, error)
+	ListLibraryQuestionTagsByQuestions(ctx context.Context, questionIds []int64) ([]ListLibraryQuestionTagsByQuestionsRow, error)
+	// 题目的来源提示词字段：引用题的正文取自来源提示词当前版本，
+	// source_* 全为空表示来源提示词已被删除，此时引用题无正文可读。
+	// 题库内全部题目（可按需带上回收站中的题目）。回收站列表与正常列表共用这一条语句，
+	// 使两者的可见性判定与字段解析只有一份实现。
+	// include_deleted 为真时回收站中的题目一并返回，调用方按 deleted_at 区分。
+	ListLibraryQuestions(ctx context.Context, arg ListLibraryQuestionsParams) ([]ListLibraryQuestionsRow, error)
+	ListLibraryRecycleBin(ctx context.Context, libraryID int64) ([]RecycleBin, error)
 	// 未撤回的公告按发布时间倒序。撤回后该条立即从本查询结果中消失（C-33）。
 	ListLiveAnnouncements(ctx context.Context, arg ListLiveAnnouncementsParams) ([]Announcement, error)
 	ListLiveRecommendTagsByKind(ctx context.Context, arg ListLiveRecommendTagsByKindParams) ([]RecommendTag, error)
@@ -191,6 +245,7 @@ type Querier interface {
 	// 通知列表与筛选。kinds 为空数组时不过滤类型。
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
 	ListOwnPrompts(ctx context.Context, arg ListOwnPromptsParams) ([]ListOwnPromptsRow, error)
+	ListOwnedLibraryRecycleBin(ctx context.Context, ownerID int64) ([]RecycleBin, error)
 	// 统计域的读写：prompt_stats、prompt_model_stats、recommend_tags。
 	//
 	// 时间窗口边界一律由应用层按 UTC 自然日计算后作为参数传入（C-03、开发方案 §3.4）：
@@ -235,19 +290,41 @@ type Querier interface {
 	//
 	// 配额判定一律在事务内完成（C-21）：锁定 → 计数 → 判定 → 写入。
 	// 事务外计数后插入会让并发请求各自读到未超限的计数，双双写入成功而突破上限。
+	// 锁键 = 命名空间 << 32 + 对象标识。命名空间：1 收藏夹、2 统计重算、3 题库。
+	// 高位命名空间使不同域的同号对象不再互相阻塞。
 	LockFavoriteOwner(ctx context.Context, ownerID int64) error
+	// 私有题库、成员、题目、题目标签、题目修订与题库回收站的读写。
+	//
+	// 容量判定一律在事务内完成（C-21）：锁定 → 计数 → 判定 → 写入。
+	// 题目读取时联出来源提示词的可见性要素，使「引用题是否对当前身份可见」
+	// 能在应用层用与提示词同一套谓词判定（C-20）。
+	// 锁键 = 命名空间 << 32 + 对象标识。命名空间：1 收藏夹、2 统计重算、3 题库。
+	// 高位置命名空间使不同域的同号对象不再互相阻塞。
+	LockLibraryOwner(ctx context.Context, ownerID int64) error
 	LockPrompt(ctx context.Context, id int64) (LockPromptRow, error)
 	// 快照重算的事务入口：锁定该提示词的评分写入，使快照与它反映的评分集合一致。
 	// 评分提交路径在写评分前同样先取本锁，两侧因此互斥。
+	// 锁键 = 命名空间 << 32 + 对象标识。命名空间：1 收藏夹、2 统计重算、3 题库。
 	LockPromptStatsRecompute(ctx context.Context, promptID int64) error
 	LockRating(ctx context.Context, id int64) (Rating, error)
 	LockUser(ctx context.Context, id int64) (User, error)
 	MarkAllNotificationsRead(ctx context.Context, userID int64) error
+	// 彻底删除题库时，库内题目在回收站中的记录一并结清，
+	// 否则库已不存在而题目条目仍挂着，回收站会累积无法恢复的孤儿记录。
+	MarkLibraryRecycleBinPurged(ctx context.Context, libraryID int64) error
 	// 标记单条已读。条件里带 user_id，避免越权读改他人通知。
 	MarkNotificationRead(ctx context.Context, arg MarkNotificationReadParams) (Notification, error)
+	MarkRecycleBinPurged(ctx context.Context, arg MarkRecycleBinPurgedParams) error
+	MarkRecycleBinRestored(ctx context.Context, id int64) error
+	MaxLibraryQuestionSortOrder(ctx context.Context, libraryID int64) (int32, error)
 	// 重大修改：过时标签转待复核，训练饱和标签转待复核（C-12）。
 	MoveTagsToReview(ctx context.Context, arg MoveTagsToReviewParams) error
+	// 按给定顺序重排题目：orders 与 ids 按位置对应，只影响本库内未删除的题目。
+	// 用 WITH ORDINALITY 把两个数组按下标配对，避免逐条 UPDATE 在一个事务里往返多次。
+	ReorderLibraryQuestions(ctx context.Context, arg ReorderLibraryQuestionsParams) error
 	ReplacePromptTags(ctx context.Context, promptID int64) error
+	RestoreLibrary(ctx context.Context, id int64) (Library, error)
+	RestoreLibraryQuestion(ctx context.Context, id int64) (LibraryQuestion, error)
 	RevokeActiveAPITokens(ctx context.Context, userID int64) error
 	SetPromptCurrentVersion(ctx context.Context, arg SetPromptCurrentVersionParams) (Prompt, error)
 	SetUserRole(ctx context.Context, arg SetUserRoleParams) (User, error)
@@ -255,6 +332,9 @@ type Querier interface {
 	SoftDeleteComment(ctx context.Context, id int64) (int64, error)
 	// 初版收藏夹删除为直接删除，但必须记录日志（需求 §11.2）。
 	SoftDeleteFavorite(ctx context.Context, id int64) (int64, error)
+	// 删除题库进入回收站（需求 §11.2），由软删除加一条回收站记录两步完成。
+	SoftDeleteLibrary(ctx context.Context, id int64) (Library, error)
+	SoftDeleteLibraryQuestion(ctx context.Context, id int64) (LibraryQuestion, error)
 	SoftDeleteNotification(ctx context.Context, arg SoftDeleteNotificationParams) (int64, error)
 	SoftDeletePrompt(ctx context.Context, id int64) (int64, error)
 	SoftDeleteRating(ctx context.Context, id int64) (int64, error)
@@ -262,6 +342,12 @@ type Querier interface {
 	TouchAPIToken(ctx context.Context, tokenHash string) error
 	TransferPrompts(ctx context.Context, arg TransferPromptsParams) ([]int64, error)
 	UpdateFavorite(ctx context.Context, arg UpdateFavoriteParams) (Favorite, error)
+	UpdateLibraryDescription(ctx context.Context, arg UpdateLibraryDescriptionParams) (Library, error)
+	// 题库名称由所有者修改，描述由所有者与协作者修改：调用方按能力拆出两个入口，
+	// 因此这里分别给出只改名称与只改描述的语句，避免协作者借道改到名称。
+	UpdateLibraryName(ctx context.Context, arg UpdateLibraryNameParams) (Library, error)
+	// 派生题的修改只改自身内容，来源提示词不受影响（C-28）。
+	UpdateLibraryQuestionContent(ctx context.Context, arg UpdateLibraryQuestionContentParams) (LibraryQuestion, error)
 	// prompts 表自身冗余保存当前版本的全部字段，供列表筛选与判定直接使用，
 	// 不必每次联表 prompt_versions。每次修改都要同步，否则列表与详情会给出不同取值。
 	UpdatePromptContent(ctx context.Context, arg UpdatePromptContentParams) (Prompt, error)

@@ -24,6 +24,13 @@ const (
 	// 因此这两条日志是删除行为的唯一留痕（需求 §11.2）。
 	ActionCommentDelete  = "comment_delete"
 	ActionFavoriteDelete = "favorite_delete"
+
+	// 题库域的审计动作。删除题目是需求 §17.8 列明的 18 类操作之一，
+	// 恢复与彻底删除取自回收站操作（需求 §11.3）。
+	ActionLibraryQuestionDelete  = "library_question_delete"
+	ActionLibraryQuestionRestore = "library_question_restore"
+	ActionRecycleRestore         = "recycle_restore"
+	ActionRecyclePurge           = "recycle_purge"
 )
 
 // Entry 是一条待写入的操作日志。

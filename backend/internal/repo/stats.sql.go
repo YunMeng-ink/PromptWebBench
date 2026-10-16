@@ -305,11 +305,12 @@ func (q *Queries) ListPromptWindowScores(ctx context.Context, arg ListPromptWind
 }
 
 const lockPromptStatsRecompute = `-- name: LockPromptStatsRecompute :exec
-SELECT pg_advisory_xact_lock($1::bigint)
+SELECT pg_advisory_xact_lock((2::bigint << 32) + $1::bigint)
 `
 
 // 快照重算的事务入口：锁定该提示词的评分写入，使快照与它反映的评分集合一致。
 // 评分提交路径在写评分前同样先取本锁，两侧因此互斥。
+// 锁键 = 命名空间 << 32 + 对象标识。命名空间：1 收藏夹、2 统计重算、3 题库。
 func (q *Queries) LockPromptStatsRecompute(ctx context.Context, promptID int64) error {
 	_, err := q.db.Exec(ctx, lockPromptStatsRecompute, promptID)
 	return err

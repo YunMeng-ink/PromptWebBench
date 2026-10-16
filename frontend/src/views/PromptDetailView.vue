@@ -8,8 +8,10 @@ import { type Favorite, socialApi } from '@/api/social'
 import { type PromptStats, statsApi } from '@/api/stats'
 import CommentSection from '@/components/CommentSection.vue'
 import ReportDialog from '@/components/ReportDialog.vue'
+import { useClipboard } from '@/composables/useClipboard'
 import { useErrorMessage } from '@/composables/useErrorMessage'
 import { useAuthStore } from '@/stores/auth'
+import { type CopyLabels, promptBodyText, promptFullText } from './libraryText'
 import { confidenceKey, discriminationOf, formatScore, meanOf, modelLabel } from './promptStats'
 
 const route = useRoute()
@@ -17,6 +19,7 @@ const router = useRouter()
 const { t, locale } = useI18n()
 const auth = useAuthStore()
 const { messageOf } = useErrorMessage()
+const { copied, copy } = useClipboard()
 
 const promptID = computed(() => {
   const parsed = Number.parseInt(String(route.params.id ?? ''), 10)
@@ -30,7 +33,6 @@ const statsFailure = ref('')
 const loading = ref(true)
 const failure = ref('')
 const notice = ref('')
-const copied = ref(false)
 
 /** 收藏与举报。收藏需要先选收藏夹，因此把列表一并取回。 */
 const favorited = ref(false)
@@ -152,17 +154,47 @@ async function deleteRating(item: PromptModelRating): Promise<void> {
   }
 }
 
+/** copyLabels 是复制文本里的字段名，全部取自语言包。 */
+const copyLabels = computed<CopyLabels>(() => ({
+  title: t('library.fieldTitle'),
+  category: t('library.fieldCategory'),
+  version: t('library.fieldVersion'),
+  tags: t('library.fieldTags'),
+  description: t('library.fieldDescription'),
+  kind: t('library.fieldKind'),
+  source: t('library.fieldSource'),
+  body: t('library.fieldBody'),
+}))
+
+/** copyBody 复制提示词正文（需求 §10.8「复制提示词」）。 */
 async function copyBody(): Promise<void> {
   if (detail.value === null) {
     return
   }
-  try {
-    await navigator.clipboard.writeText(detail.value.version.body)
-    copied.value = true
-  } catch {
-    copied.value = false
-    notice.value = detail.value.version.body
+  await copy(promptBodyText(detail.value.version.body), t('home.copied'))
+}
+
+/** copyFull 复制带字段名的完整信息（需求 §10.8「复制完整信息」）。 */
+async function copyFull(): Promise<void> {
+  if (detail.value === null) {
+    return
   }
+  const current = detail.value
+  const categoryName = locale.value === 'en' ? current.category.name_en : current.category.name_zh
+  await copy(
+    promptFullText(
+      {
+        title: current.version.title,
+        category: categoryName,
+        versionNo: current.version.version_no,
+        tags: current.tags.map((tag) => (locale.value === 'en' ? tag.name_en : tag.name_zh)),
+        description: current.version.description,
+        body: current.version.body,
+      },
+      copyLabels.value,
+    ),
+    t('home.copied'),
+  )
 }
 
 async function removePrompt(): Promise<void> {
@@ -303,7 +335,10 @@ onMounted(async () => {
         </h1>
         <div class="pb-prompt-detail__actions">
           <el-button size="small" data-testid="detail-copy" @click="copyBody">
-            {{ copied ? t('home.copied') : t('home.copyBody') }}
+            {{ t('home.copyBody') }}
+          </el-button>
+          <el-button size="small" data-testid="detail-copy-full" @click="copyFull">
+            {{ t('home.copyFull') }}
           </el-button>
           <el-button
             v-if="auth.isAuthenticated"
@@ -570,6 +605,7 @@ onMounted(async () => {
       {{ failure || t('prompt.notFound') }}
     </p>
 
+    <p v-if="copied" class="pb-prompt-detail__notice" data-testid="detail-copied">{{ copied }}</p>
     <p v-if="notice" class="pb-prompt-detail__notice" data-testid="detail-notice">{{ notice }}</p>
     <p v-if="failure && detail" class="pb-prompt-detail__error" data-testid="detail-action-error">
       {{ failure }}

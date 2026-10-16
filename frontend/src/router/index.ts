@@ -8,6 +8,9 @@ import {
 import { useAuthStore } from '@/stores/auth'
 import FavoritesView from '@/views/FavoritesView.vue'
 import HomeView from '@/views/HomeView.vue'
+import LibraryDetailView from '@/views/LibraryDetailView.vue'
+import LibraryListView from '@/views/LibraryListView.vue'
+import LibraryQuestionView from '@/views/LibraryQuestionView.vue'
 import LoginView from '@/views/LoginView.vue'
 import MeView from '@/views/MeView.vue'
 import NotFoundView from '@/views/NotFoundView.vue'
@@ -77,6 +80,24 @@ const routes: RouteRecordRaw[] = [
     path: '/favorites',
     name: 'favorites',
     component: FavoritesView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/libraries',
+    name: 'libraries',
+    component: LibraryListView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/libraries/:id',
+    name: 'library-detail',
+    component: LibraryDetailView,
+    meta: { requiresAuth: true },
+  },
+  {
+    path: '/library-questions/:id',
+    name: 'library-question',
+    component: LibraryQuestionView,
     meta: { requiresAuth: true },
   },
   {

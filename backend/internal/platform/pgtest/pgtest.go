@@ -153,21 +153,49 @@ func SeedUser(t *testing.T, pool *pgxpool.Pool, opts UserOptions) int64 {
 	return id
 }
 
+// PromptOptions 描述一条测试提示词。留空字段取默认值。
+type PromptOptions struct {
+	UploaderID   int64
+	Title        string
+	Body         string
+	Visibility   string
+	CategorySlug string
+}
+
 // SeedPrompt 插入一条公开提示词及其首个版本，用于验证提示词转移等流程。
 func SeedPrompt(t *testing.T, pool *pgxpool.Pool, uploaderID int64, title string) int64 {
 	t.Helper()
+	return SeedPromptWith(t, pool, PromptOptions{UploaderID: uploaderID, Title: title})
+}
+
+// SeedPromptWith 插入一条提示词及其首个版本，可指定正文、可见性与类别。
+func SeedPromptWith(t *testing.T, pool *pgxpool.Pool, opts PromptOptions) int64 {
+	t.Helper()
 	ctx := context.Background()
 
+	body := opts.Body
+	if body == "" {
+		body = "测试正文"
+	}
+	visibility := opts.Visibility
+	if visibility == "" {
+		visibility = "public"
+	}
+	slug := opts.CategorySlug
+	if slug == "" {
+		slug = "reasoning"
+	}
+
 	var categoryID int64
-	if err := pool.QueryRow(ctx, `SELECT id FROM categories WHERE slug = 'reasoning'`).Scan(&categoryID); err != nil {
+	if err := pool.QueryRow(ctx, `SELECT id FROM categories WHERE slug = $1`, slug).Scan(&categoryID); err != nil {
 		t.Fatalf("读取类别失败: %v", err)
 	}
 
 	var promptID int64
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO prompts (title, body, category_id, visibility, uploader_id)
-		VALUES ($1, '测试正文', $2, 'public', $3)
-		RETURNING id`, title, categoryID, uploaderID).Scan(&promptID); err != nil {
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id`, opts.Title, body, categoryID, visibility, opts.UploaderID).Scan(&promptID); err != nil {
 		t.Fatalf("创建测试提示词失败: %v", err)
 	}
 
@@ -176,8 +204,8 @@ func SeedPrompt(t *testing.T, pool *pgxpool.Pool, uploaderID int64, title string
 		INSERT INTO prompt_versions (
 			prompt_id, version_no, major, minor, title, body,
 			category_id, visibility, sensitive_level, author_id
-		) VALUES ($1, 'v1.0', 1, 0, $2, '测试正文', $3, 'public', 'low', $4)
-		RETURNING id`, promptID, title, categoryID, uploaderID).Scan(&versionID); err != nil {
+		) VALUES ($1, 'v1.0', 1, 0, $2, $3, $4, $5, 'low', $6)
+		RETURNING id`, promptID, opts.Title, body, categoryID, visibility, opts.UploaderID).Scan(&versionID); err != nil {
 		t.Fatalf("创建测试提示词版本失败: %v", err)
 	}
 
