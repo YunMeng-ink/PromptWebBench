@@ -41,6 +41,14 @@ export default defineConfig({
       timeout: 180_000,
     },
     {
+      // models.dev 替身：模型导入用例走它，避免端到端测试访问外部网络。
+      command: 'go run ./cmd/modelsdevsink -addr 127.0.0.1:2526',
+      cwd: backendDir,
+      port: 2526,
+      reuseExistingServer: false,
+      timeout: 180_000,
+    },
+    {
       command: 'go run ./cmd/server -env-file .env.e2e',
       cwd: backendDir,
       url: API_HEALTH,

@@ -42,6 +42,9 @@ var defaultRules = map[string]Rule{
 	"report_write":  {Name: "report_write", Limit: 5, Window: time.Minute, Scope: ScopeUser},
 	"auth":          {Name: "auth", Limit: 10, Window: time.Minute, Scope: ScopeIP},
 	"admin_write":   {Name: "admin_write", Limit: 120, Window: time.Minute, Scope: ScopeUser},
+	// 模型导入每次都外呼 models.dev，限额取普通后台写操作的一个零头：
+	// 上游不可用时，连续失败会在几次之内触顶，避免把故障放大成对外流量。
+	"admin_import":  {Name: "admin_import", Limit: 5, Window: time.Minute, Scope: ScopeUser},
 	"profile_write": {Name: "profile_write", Limit: 10, Window: time.Minute, Scope: ScopeUser},
 	"token_write":   {Name: "token_write", Limit: 5, Window: time.Minute, Scope: ScopeUser},
 	// 收藏夹与关注共用一个限额：都是同一类轻量社交写入，

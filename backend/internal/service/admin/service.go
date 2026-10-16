@@ -1,275 +1,149 @@
-// Package admin 承载管理后台的用例编排。阶段 1 覆盖账户治理部分。
+// Package admin 承载管理后台的用例编排：统计仪表盘、提示词管理、模型管理、
+// 用户管理、标签管理、举报管理、注册与邀请码管理、操作日志、公告管理、
+// 回收站管理与系统设置（需求第 17 章、C-42）。
+//
+// 结构约束：
+//   - 后台可见全部对象，因此本包的读取不套用前台的可见性谓词；
+//     准入由接口层的 requireAdmin 与限流规则共同把关。
+//   - 一切会改变数据的动作都写入操作日志，且与业务变更处于同一事务（C-43）。
+//   - 破坏性操作先做引用检查：模型被评分引用、提示词被题库引用时拒绝删除。
+//   - 密钥类配置项经 security.SecretBox 加密；未配置主密钥时拒绝保存。
 package admin
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/promptbench/backend/internal/apperr"
+	"github.com/promptbench/backend/internal/config"
 	"github.com/promptbench/backend/internal/domain"
+	"github.com/promptbench/backend/internal/mail"
+	"github.com/promptbench/backend/internal/modelsdev"
 	"github.com/promptbench/backend/internal/oplog"
 	"github.com/promptbench/backend/internal/repo"
+	"github.com/promptbench/backend/internal/security"
+	"github.com/promptbench/backend/internal/service/prompt"
 )
 
 type Deps struct {
-	Pool   *pgxpool.Pool
-	Logger *slog.Logger
+	Pool    *pgxpool.Pool
+	Config  *config.Store
+	Logger  *slog.Logger
+	Oplog   *oplog.Recorder
+	Secrets *security.SecretBox
+
+	// Mail 是环境变量提供的 SMTP 取值。系统设置中保存过同名配置项时以配置表为准。
+	Mail mail.Config
+
+	// ModelsDev 读取 models.dev 的模型目录（需求 §13.3）。
+	ModelsDev *modelsdev.Client
+
+	// Prompts 提供提示词写入能力。后台的「强制标记重大修改」复用前台的
+	// 重大修改流程，删除与恢复也复用同一条路径，使评分归档、统计清空、
+	// 回收站记录与推荐标签过期只有一处实现（需求 §7.3、§11）。
+	Prompts PromptWriter
+
+	// Moderation 提供被举报评论的删除能力，由社交服务实现。
+	Moderation ContentModerator
+
+	// Stats 是统计缓存失效入口，提示词被修改或彻底删除后调用。
+	Stats StatsHook
+}
+
+// PromptWriter 是管理端用到的提示词写入能力声明，由 prompt.Service 实现。
+type PromptWriter interface {
+	Update(ctx context.Context, actor domain.User, id int64, in prompt.Input) (prompt.Result, error)
+	Delete(ctx context.Context, actor domain.User, id int64, ip string) error
+	Restore(ctx context.Context, actor domain.User, id int64, ip string) (domain.Prompt, error)
+	Purge(ctx context.Context, actor domain.User, id int64, ip string) error
+}
+
+// ContentModerator 是内容处置能力的声明，由 social.Service 实现。
+type ContentModerator interface {
+	DeleteComment(ctx context.Context, v domain.Viewer, commentID int64, ip string) error
+}
+
+// StatsHook 是统计缓存失效入口的依赖声明。只声明用到的方法，
+// 使 admin 与 stats 两个包之间不产生包级循环依赖。
+type StatsHook interface {
+	MarkStale(promptID int64)
 }
 
 type Service struct {
-	pool   *pgxpool.Pool
-	oplog  *oplog.Recorder
-	logger *slog.Logger
+	pool      *pgxpool.Pool
+	config    *config.Store
+	logger    *slog.Logger
+	oplog     *oplog.Recorder
+	secrets   *security.SecretBox
+	mail      mail.Config
+	modelsDev *modelsdev.Client
+	prompts   PromptWriter
+	moderate  ContentModerator
+	stats     StatsHook
 
 	now func() time.Time
 }
 
 func New(deps Deps) *Service {
-	return &Service{pool: deps.Pool, oplog: oplog.NewRecorder(), logger: deps.Logger, now: time.Now}
-}
-
-// BanResult 描述一次封禁的结果。
-type BanResult struct {
-	User                domain.User
-	TransferredPrompts  int
-	TransferredToSystem bool
-}
-
-// BanUser 封禁账户：提升令牌版本使既有会话失效（C-24），
-// 并把其名下提示词转移到系统账户「沧海遗粟」，保留原上传者与转移日志（C-25、需求 §15.2）。
-func (s *Service) BanUser(ctx context.Context, operator domain.User, targetID int64, reason, ip string) (BanResult, error) {
-	if targetID == operator.ID {
-		return BanResult{}, apperr.New(apperr.CodeInvalidState, "不能封禁自己")
+	recorder := deps.Oplog
+	if recorder == nil {
+		recorder = oplog.NewRecorder()
 	}
+	box := deps.Secrets
+	if box == nil {
+		box = security.NewSecretBox("")
+	}
+	client := deps.ModelsDev
+	if client == nil {
+		client = modelsdev.NewClient("")
+	}
+	return &Service{
+		pool:      deps.Pool,
+		config:    deps.Config,
+		logger:    deps.Logger,
+		oplog:     recorder,
+		secrets:   box,
+		mail:      deps.Mail,
+		modelsDev: client,
+		prompts:   deps.Prompts,
+		moderate:  deps.Moderation,
+		stats:     deps.Stats,
+		now:       time.Now,
+	}
+}
 
-	var result BanResult
-	err := repo.InTx(ctx, s.pool, func(q *repo.Queries) error {
-		target, err := lockTarget(ctx, q, targetID)
-		if err != nil {
-			return err
-		}
-		if target.IsSystem {
-			return apperr.New(apperr.CodeInvalidState, "系统账户不可封禁")
-		}
-		if target.IsBanned() {
-			return apperr.New(apperr.CodeInvalidState, "账户已处于封禁状态")
-		}
+// ensure 断言依赖齐备，避免空指针在运行期才暴露。
+func (s *Service) ensure() error {
+	if s.pool == nil || s.config == nil {
+		return fmt.Errorf("管理后台依赖不完整：Pool 与 Config 不可为空")
+	}
+	return nil
+}
 
-		system, err := q.GetSystemUser(ctx)
-		if err != nil {
-			return fmt.Errorf("读取系统账户: %w", err)
-		}
+// record 写入一条操作日志。写入与业务变更处于同一事务，避免有业务无日志。
+func (s *Service) record(ctx context.Context, q *repo.Queries, entry oplog.Entry) error {
+	if entry.OperatorName == "" {
+		entry.OperatorName = s.operatorName(ctx, q, entry.OperatorID)
+	}
+	return s.oplog.Record(ctx, q, entry)
+}
 
-		updated, err := q.SetUserStatus(ctx, repo.SetUserStatusParams{
-			ID:           targetID,
-			Status:       string(domain.StatusBanned),
-			BannedAt:     repo.Timestamptz(s.now()),
-			BannedReason: reason,
-		})
-		if err != nil {
-			return fmt.Errorf("更新账户状态: %w", err)
-		}
-
-		moved, err := q.TransferPrompts(ctx, repo.TransferPromptsParams{
-			FromUploader: targetID,
-			ToUploader:   system.ID,
-		})
-		if err != nil {
-			return fmt.Errorf("转移提示词: %w", err)
-		}
-		for _, promptID := range moved {
-			if err := q.InsertTransferLog(ctx, repo.InsertTransferLogParams{
-				PromptID:   promptID,
-				FromUserID: targetID,
-				ToUserID:   system.ID,
-				Reason:     "user_banned",
-				OperatorID: repo.Int8(operator.ID),
-			}); err != nil {
-				return fmt.Errorf("记录提示词转移: %w", err)
-			}
-		}
-
-		if err := s.oplog.Record(ctx, q, oplog.Entry{
-			OperatorID:   operator.ID,
-			OperatorName: operator.Username,
-			Action:       oplog.ActionUserBan,
-			ObjectType:   "user",
-			ObjectID:     targetID,
-			Before:       map[string]any{"status": target.Status},
-			After:        map[string]any{"status": domain.StatusBanned, "reason": reason},
-			IP:           ip,
-		}); err != nil {
-			return err
-		}
-		if len(moved) > 0 {
-			if err := s.oplog.Record(ctx, q, oplog.Entry{
-				OperatorID:   operator.ID,
-				OperatorName: operator.Username,
-				Action:       oplog.ActionUserTransferPrompts,
-				ObjectType:   "user",
-				ObjectID:     targetID,
-				After:        map[string]any{"to_user_id": system.ID, "prompt_count": len(moved)},
-				IP:           ip,
-			}); err != nil {
-				return err
-			}
-		}
-
-		user, err := repo.UserFromRow(updated)
-		if err != nil {
-			return err
-		}
-		result = BanResult{User: user, TransferredPrompts: len(moved), TransferredToSystem: len(moved) > 0}
-		return nil
-	})
+// operatorName 读取操作人昵称，供日志的冗余字段使用。
+//
+// 读取失败不阻断写入：日志的主体是操作类型与对象，昵称缺失时留空仍可追溯，
+// 让一次读失败毁掉整个业务动作是更大的损失。
+func (s *Service) operatorName(ctx context.Context, q *repo.Queries, operatorID int64) string {
+	if operatorID == 0 {
+		return ""
+	}
+	row, err := q.GetUserByID(ctx, operatorID)
 	if err != nil {
-		return BanResult{}, err
+		s.logger.Warn("读取操作人昵称失败",
+			slog.Int64("user_id", operatorID), slog.String("error", err.Error()))
+		return ""
 	}
-	return result, nil
-}
-
-// UnbanUser 解封账户。转移过的提示词不自动转回原用户（C-25），
-// 账户状态按邮箱是否已验证恢复到正常或未验证。
-func (s *Service) UnbanUser(ctx context.Context, operator domain.User, targetID int64, ip string) (domain.User, error) {
-	var result domain.User
-	err := repo.InTx(ctx, s.pool, func(q *repo.Queries) error {
-		target, err := lockTarget(ctx, q, targetID)
-		if err != nil {
-			return err
-		}
-		if !target.IsBanned() {
-			return apperr.New(apperr.CodeInvalidState, "账户未处于封禁状态")
-		}
-
-		restored := domain.StatusUnverified
-		if target.EmailVerifiedAt != nil {
-			restored = domain.StatusNormal
-		}
-
-		updated, err := q.SetUserStatus(ctx, repo.SetUserStatusParams{
-			ID:           targetID,
-			Status:       string(restored),
-			BannedAt:     repo.TimestamptzOrNull(nil),
-			BannedReason: "",
-		})
-		if err != nil {
-			return fmt.Errorf("更新账户状态: %w", err)
-		}
-
-		if err := s.oplog.Record(ctx, q, oplog.Entry{
-			OperatorID:   operator.ID,
-			OperatorName: operator.Username,
-			Action:       oplog.ActionUserUnban,
-			ObjectType:   "user",
-			ObjectID:     targetID,
-			Before:       map[string]any{"status": target.Status},
-			After:        map[string]any{"status": restored},
-			IP:           ip,
-		}); err != nil {
-			return err
-		}
-
-		user, err := repo.UserFromRow(updated)
-		if err != nil {
-			return err
-		}
-		result = user
-		return nil
-	})
-	if err != nil {
-		return domain.User{}, err
-	}
-	return result, nil
-}
-
-// SetDeveloper 授予或撤销开发者身份（需求 §2.3、§17.4）。
-func (s *Service) SetDeveloper(ctx context.Context, operator domain.User, targetID int64, enabled bool, ip string) (domain.User, error) {
-	if targetID == operator.ID {
-		return domain.User{}, apperr.New(apperr.CodeInvalidState, "不能变更自己的身份组")
-	}
-
-	var result domain.User
-	err := repo.InTx(ctx, s.pool, func(q *repo.Queries) error {
-		target, err := lockTarget(ctx, q, targetID)
-		if err != nil {
-			return err
-		}
-		if target.IsSystem {
-			return apperr.New(apperr.CodeInvalidState, "系统账户不可变更身份组")
-		}
-		if target.IsBanned() {
-			return apperr.New(apperr.CodeInvalidState, "封禁账户不可变更身份组")
-		}
-		if target.IsAdmin() {
-			return apperr.New(apperr.CodeInvalidState, "管理员账户不可变更身份组")
-		}
-
-		next := domain.RoleUser
-		action := oplog.ActionDeveloperRevoke
-		if enabled {
-			next = domain.RoleDeveloper
-			action = oplog.ActionDeveloperGrant
-		}
-		if target.Role == next {
-			return apperr.New(apperr.CodeInvalidState, "账户已处于目标身份组")
-		}
-
-		updated, err := q.SetUserRole(ctx, repo.SetUserRoleParams{ID: targetID, Role: string(next)})
-		if err != nil {
-			return fmt.Errorf("更新身份组: %w", err)
-		}
-
-		if err := s.oplog.Record(ctx, q, oplog.Entry{
-			OperatorID:   operator.ID,
-			OperatorName: operator.Username,
-			Action:       action,
-			ObjectType:   "user",
-			ObjectID:     targetID,
-			Before:       map[string]any{"role": target.Role},
-			After:        map[string]any{"role": next},
-			IP:           ip,
-		}); err != nil {
-			return err
-		}
-
-		user, err := repo.UserFromRow(updated)
-		if err != nil {
-			return err
-		}
-		result = user
-		return nil
-	})
-	if err != nil {
-		return domain.User{}, err
-	}
-	return result, nil
-}
-
-// UserByID 查询账户，供后台查看。
-func (s *Service) UserByID(ctx context.Context, id int64) (domain.User, error) {
-	row, err := repo.New(s.pool).GetUserByID(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return domain.User{}, apperr.New(apperr.CodeNotFound, "")
-		}
-		return domain.User{}, fmt.Errorf("查询账户: %w", err)
-	}
-	return repo.UserFromRow(row)
-}
-
-func lockTarget(ctx context.Context, q *repo.Queries, id int64) (domain.User, error) {
-	row, err := q.LockUser(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return domain.User{}, apperr.New(apperr.CodeNotFound, "")
-		}
-		return domain.User{}, fmt.Errorf("锁定账户: %w", err)
-	}
-	return repo.UserFromRow(row)
+	return row.Username
 }

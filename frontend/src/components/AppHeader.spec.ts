@@ -72,4 +72,17 @@ describe('顶栏', () => {
     expect(wrapper.find('[data-testid="header-user"]').text()).toBe('alice')
     expect(wrapper.find('[data-testid="header-login"]').exists()).toBe(false)
   })
+
+  it('后台入口只对管理员出现', async () => {
+    const { wrapper, auth } = setup()
+    auth.markAuthenticated({ ...(currentUserFixture() as object), role: 'user' } as never)
+    await nextTick()
+    expect(wrapper.find('[data-testid="header-admin"]').exists()).toBe(false)
+
+    auth.markAuthenticated({ ...(currentUserFixture() as object), role: 'admin' } as never)
+    await nextTick()
+    const link = wrapper.find('[data-testid="header-admin"]')
+    expect(link.exists()).toBe(true)
+    expect(link.attributes('href')).toBe('/admin')
+  })
 })

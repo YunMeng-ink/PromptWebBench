@@ -12,6 +12,7 @@ import (
 	"github.com/promptbench/backend/internal/apperr"
 	"github.com/promptbench/backend/internal/config"
 	"github.com/promptbench/backend/internal/domain"
+	"github.com/promptbench/backend/internal/oplog"
 	"github.com/promptbench/backend/internal/repo"
 )
 
@@ -19,18 +20,58 @@ type Deps struct {
 	Pool   *pgxpool.Pool
 	Config *config.Store
 	Logger *slog.Logger
+
+	// Oplog 写入操作日志。删除、恢复与彻底删除提示词都要留痕（需求 §17.8），
+	// 无论动作来自作者本人还是管理后台。
+	Oplog *oplog.Recorder
+
+	// Stats 是统计缓存失效入口。提示词被修改、删除或彻底删除后调用，
+	// 使下一次读取重新计算而不是返回旧快照。
+	Stats StatsHook
+}
+
+// StatsHook 是统计缓存失效入口的依赖声明，只声明用到的方法，
+// 使 prompt 与 stats 两个包之间不产生包级循环依赖。
+type StatsHook interface {
+	MarkStale(promptID int64)
 }
 
 type Service struct {
 	pool   *pgxpool.Pool
 	config *config.Store
 	logger *slog.Logger
+	oplog  *oplog.Recorder
+	stats  StatsHook
 
 	now func() time.Time
 }
 
 func New(deps Deps) *Service {
-	return &Service{pool: deps.Pool, config: deps.Config, logger: deps.Logger, now: time.Now}
+	recorder := deps.Oplog
+	if recorder == nil {
+		recorder = oplog.NewRecorder()
+	}
+	return &Service{
+		pool:   deps.Pool,
+		config: deps.Config,
+		logger: deps.Logger,
+		oplog:  recorder,
+		stats:  deps.Stats,
+		now:    time.Now,
+	}
+}
+
+// markStale 作废提示词的统计缓存。未注入统计服务时什么也不做。
+func (s *Service) markStale(promptID int64) {
+	if s.stats != nil {
+		s.stats.MarkStale(promptID)
+	}
+}
+
+// majorChangeTagKinds 是重大修改时需要转入待复核的推荐标签类型（C-12）：
+// 过时与训练饱和两族标签都要由管理员重新决策。
+func majorChangeTagKinds() []string {
+	return domain.RecommendTagKindStrings()
 }
 
 // Input 是创建与更新共用的字段集合。两条路径共用同一套校验与权限判定函数，
@@ -252,6 +293,14 @@ func (s *Service) Update(ctx context.Context, actor domain.User, id int64, in In
 			if err := q.DeletePromptModelStatsForMajorChange(ctx, locked.ID); err != nil {
 				return fmt.Errorf("清空模型统计快照: %w", err)
 			}
+			// 需求 §7.3 第 7 步、C-12：已有的过时与训练饱和标签转待复核，
+			// 由管理员决定是否继续展示。转待复核而不是删除，保留判定依据。
+			if err := q.MoveTagsToReview(ctx, repo.MoveTagsToReviewParams{
+				PromptID: locked.ID,
+				Kinds:    majorChangeTagKinds(),
+			}); err != nil {
+				return fmt.Errorf("推荐标签转待复核: %w", err)
+			}
 			archived = int64(len(ids))
 		}
 
@@ -287,6 +336,8 @@ func (s *Service) Update(ctx context.Context, actor domain.User, id int64, in In
 	if err != nil {
 		return Result{}, err
 	}
+	// 修改后快照与评分集合都已改变，作废进程内缓存，使下一次读取重新计算。
+	s.markStale(id)
 	return result, nil
 }
 

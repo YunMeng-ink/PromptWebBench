@@ -7,8 +7,28 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-// 阶段 1 只提供账户治理所需的后台端点：封禁、解封、身份组授予与撤销，
-// 以及按 ID 查看账户。用户列表与其余后台模块在阶段 6 提供。
+// registerAdminRoutes 注册管理后台的全部端点（C-42 的 11 个模块）。
+//
+// 后台与业务 API 共用 /api/v1 前缀（C-39），鉴权级别由限流规则与
+// requireAdmin 判定共同表达：读走 admin_read，写走 admin_write，
+// 模型导入单独走 admin_import（外呼上游，限额更低）。
+func (s *Server) registerAdminRoutes() {
+	s.registerAdminAccountRoutes()
+	s.registerAdminDashboardRoutes()
+	s.registerAdminPromptRoutes()
+	s.registerAdminModelRoutes()
+	s.registerAdminUserRoutes()
+	s.registerAdminTagRoutes()
+	s.registerAdminReportRoutes()
+	s.registerAdminInviteRoutes()
+	s.registerAdminOperationLogRoutes()
+	s.registerAdminAnnouncementRoutes()
+	s.registerAdminRecycleRoutes()
+	s.registerAdminSettingRoutes()
+}
+
+// registerAdminAccountRoutes 注册账户治理端点：封禁、解封、身份组授予与撤销，
+// 以及按 ID 查看账户。
 func (s *Server) registerAdminAccountRoutes() {
 	Register(s, "admin_read", huma.Operation{
 		Method: http.MethodGet, Path: APIPrefix + "/admin/users/{id}",

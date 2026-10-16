@@ -226,3 +226,101 @@ describe('PromptFormView 权限相关的选项', () => {
     expect(wrapper.find('[data-testid="prompt-submit"]').exists()).toBe(true)
   })
 })
+
+describe('PromptFormView 编辑表单的加载门禁', () => {
+  it('详情返回前禁用提交，返回后才可提交', async () => {
+    let release: (() => void) | undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const path = url.replace(/^https?:\/\/[^/]+/, '').split('?')[0] ?? ''
+        if (path.endsWith('/categories')) {
+          return stubResponse({ status: 200, body: { items: categoryFixtures } })
+        }
+        if (path.endsWith('/abilities') || path.endsWith('/difficulties')) {
+          return stubResponse({ status: 200, body: { items: [] } })
+        }
+        if (path.endsWith('/tags') || path.endsWith('/models')) {
+          return stubResponse({ status: 200, body: { items: [] } })
+        }
+        if (path.endsWith('/session')) {
+          return stubResponse({
+            status: 401,
+            body: { error: { code: 'unauthorized', message: '' } },
+          })
+        }
+        if (/\/prompts\/7$/.test(path)) {
+          // 详情返回前挂起，模拟表单已渲染但数据尚未到达的时刻。
+          await gate
+          return stubResponse({
+            status: 200,
+            body: {
+              prompt: {
+                id: 7,
+                title: '待编辑提示词',
+                description: '',
+                category_id: 1,
+                visibility: 'public',
+                sensitive_level: 'low',
+                uploader_id: 1,
+                version_no: 'v1.0',
+                major_modified: false,
+                comment_count: 0,
+                favorite_count: 0,
+                created_at: '2026-01-01T00:00:00Z',
+                updated_at: '2026-01-01T00:00:00Z',
+              },
+              version: {
+                id: 70,
+                version_no: 'v1.0',
+                title: '待编辑提示词',
+                body: '正文',
+                description: '',
+                category_id: 1,
+                visibility: 'public',
+                sensitive_level: 'low',
+                is_major: false,
+                change_note: '',
+                author_id: 1,
+                created_at: '2026-01-01T00:00:00Z',
+              },
+              versions: [],
+              category: {
+                id: 1,
+                slug: 'reasoning',
+                name_zh: '逻辑推理',
+                name_en: 'Reasoning',
+                is_high_risk: false,
+              },
+              tags: [],
+              uploader: 'alice',
+            },
+          })
+        }
+        return stubResponse({ status: 404, body: { error: { code: 'not_found', message: '' } } })
+      }),
+    )
+
+    const router = memoryRouter()
+    await router.push('/prompts/7/edit')
+    await router.isReady()
+    const wrapper = mountView(PromptFormView, { router })
+    await flushPromises()
+
+    // 详情未到达：提交入口被禁用，避免把占位取值（空正文、类别 0）发给后端。
+    expect(wrapper.find('[data-testid="prompt-submit"]').attributes('disabled')).toBeDefined()
+
+    release?.()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="prompt-submit"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('input[data-testid="prompt-title"]').element).toHaveProperty(
+      'value',
+      '待编辑提示词',
+    )
+  })
+})

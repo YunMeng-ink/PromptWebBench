@@ -95,6 +95,14 @@ async function onLogout(): Promise<void> {
           <RouterLink class="pb-header__link" to="/favorites" data-testid="header-favorites">
             {{ t('prompt.favoriteManage') }}
           </RouterLink>
+          <RouterLink
+            v-if="auth.hasRole('admin')"
+            class="pb-header__link"
+            to="/admin"
+            data-testid="header-admin"
+          >
+            {{ t('admin.entry') }}
+          </RouterLink>
           <RouterLink class="pb-header__link" to="/notifications" data-testid="header-notifications">
             {{ t('notifications.title') }}
             <span v-if="notifications.hasUnread" class="pb-header__badge" data-testid="header-unread">

@@ -319,7 +319,7 @@ func (s *Server) handleDeletePrompt(ctx context.Context, in *deletePromptInput) 
 	if err != nil {
 		return nil, err
 	}
-	if err := s.deps.Prompt.Delete(ctx, actor, in.ID); err != nil {
+	if err := s.deps.Prompt.Delete(ctx, actor, in.ID, clientIP(ctx)); err != nil {
 		return nil, err
 	}
 	return &struct{}{}, nil

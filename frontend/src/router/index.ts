@@ -6,6 +6,7 @@ import {
   type RouterHistory,
 } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
+import AdminLayout from '@/views/admin/AdminLayout.vue'
 import FavoritesView from '@/views/FavoritesView.vue'
 import HomeView from '@/views/HomeView.vue'
 import LibraryDetailView from '@/views/LibraryDetailView.vue'
@@ -112,6 +113,71 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
+    // 管理后台（需求第 17 章）。各模块按需加载：后台不是常用入口，
+    // 静态引入会让首屏包体带上全部管理界面。
+    path: '/admin',
+    component: AdminLayout,
+    meta: { requiresAuth: true, requiresAdmin: true },
+    children: [
+      { path: '', redirect: '/admin/dashboard' },
+      {
+        path: 'dashboard',
+        name: 'admin-dashboard',
+        component: () => import('@/views/admin/AdminDashboardView.vue'),
+      },
+      {
+        path: 'prompts',
+        name: 'admin-prompts',
+        component: () => import('@/views/admin/AdminPromptsView.vue'),
+      },
+      {
+        path: 'models',
+        name: 'admin-models',
+        component: () => import('@/views/admin/AdminModelsView.vue'),
+      },
+      {
+        path: 'users',
+        name: 'admin-users',
+        component: () => import('@/views/admin/AdminUsersView.vue'),
+      },
+      {
+        path: 'tags',
+        name: 'admin-tags',
+        component: () => import('@/views/admin/AdminTagsView.vue'),
+      },
+      {
+        path: 'reports',
+        name: 'admin-reports',
+        component: () => import('@/views/admin/AdminReportsView.vue'),
+      },
+      {
+        path: 'invites',
+        name: 'admin-invites',
+        component: () => import('@/views/admin/AdminInvitesView.vue'),
+      },
+      {
+        path: 'logs',
+        name: 'admin-logs',
+        component: () => import('@/views/admin/AdminLogsView.vue'),
+      },
+      {
+        path: 'announcements',
+        name: 'admin-announcements',
+        component: () => import('@/views/admin/AdminAnnouncementsView.vue'),
+      },
+      {
+        path: 'recycle',
+        name: 'admin-recycle',
+        component: () => import('@/views/admin/AdminRecycleView.vue'),
+      },
+      {
+        path: 'settings',
+        name: 'admin-settings',
+        component: () => import('@/views/admin/AdminSettingsView.vue'),
+      },
+    ],
+  },
+  {
     path: '/:pathMatch(.*)*',
     name: 'not-found',
     component: NotFoundView,
@@ -130,6 +196,9 @@ export function createAppRouter(history: RouterHistory = createWebHistory()): Ro
    * 需要登录的页面在进入前先解析登录态；未登录时带 redirect 参数跳到登录页。
    * ensureSession 与应用启动时的探测共享同一次请求，因此守卫不会在
    * 探测尚未返回时就把已登录用户判为游客（开发方案 §3.6）。
+   *
+   * 后台路由在此再加一道身份判定：非管理员跳到首页。
+   * 后端仍会按 admin 中间件独立拦截，前端守卫只避免把无权用户带进空页面。
    */
   router.beforeEach(async (to) => {
     if (to.meta.requiresAuth !== true) {
@@ -141,6 +210,9 @@ export function createAppRouter(history: RouterHistory = createWebHistory()): Ro
 
     if (!auth.isAuthenticated) {
       return { name: 'login', query: { redirect: to.fullPath } }
+    }
+    if (to.meta.requiresAdmin === true && !auth.hasRole('admin')) {
+      return { name: 'home' }
     }
     return true
   })

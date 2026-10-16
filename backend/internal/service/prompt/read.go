@@ -72,10 +72,10 @@ func (s *Service) Get(ctx context.Context, v domain.Viewer, id int64) (Detail, e
 
 	return Detail{
 		Prompt:   prompt,
-		Version:  versionFromRow(current),
+		Version:  VersionFromRow(current),
 		Category: category,
 		Tags:     tagsFromRows(tags),
-		Versions: versionListFromRows(versions),
+		Versions: VersionsFromRows(versions),
 		Uploader: uploader.Username,
 	}, nil
 }
@@ -94,27 +94,6 @@ func lockPrompt(ctx context.Context, q *repo.Queries, id int64) (domain.Prompt, 
 		return domain.Prompt{}, err
 	}
 	return prompt, nil
-}
-
-// Delete 软删除提示词，进入回收站（需求 §11）。仅所有者或管理员可删除（C-18）。
-func (s *Service) Delete(ctx context.Context, actor domain.User, id int64) error {
-	viewer := domain.ViewerFor(actor)
-	if !viewer.CanWrite() {
-		return apperr.New(apperr.CodeEmailNotVerified, "")
-	}
-	return repo.InTx(ctx, s.pool, func(q *repo.Queries) error {
-		locked, err := lockPrompt(ctx, q, id)
-		if err != nil {
-			return err
-		}
-		if !viewer.CanManage(locked.Access()) {
-			return apperr.New(apperr.CodeNotFound, "")
-		}
-		if _, err := q.SoftDeletePrompt(ctx, id); err != nil {
-			return fmt.Errorf("软删除提示词: %w", err)
-		}
-		return nil
-	})
 }
 
 // List 返回公开列表。可见性谓词由 domain.Viewer.ListScope 生成并注入查询，
@@ -151,7 +130,8 @@ func (s *Service) ListOwn(ctx context.Context, v domain.Viewer, page, pageSize i
 	return repo.PromptList{Items: items, Page: page, PageSize: pageSize, Total: total}, nil
 }
 
-func versionFromRow(row repo.PromptVersion) domain.PromptVersion {
+// VersionFromRow 把版本行映射为版本实体。导出供管理后台复用同一映射规则。
+func VersionFromRow(row repo.PromptVersion) domain.PromptVersion {
 	out := domain.PromptVersion{
 		ID:          row.ID,
 		PromptID:    row.PromptID,
@@ -178,10 +158,11 @@ func versionFromRow(row repo.PromptVersion) domain.PromptVersion {
 	return out
 }
 
-func versionListFromRows(rows []repo.PromptVersion) []domain.PromptVersion {
+// VersionsFromRows 批量映射版本行。
+func VersionsFromRows(rows []repo.PromptVersion) []domain.PromptVersion {
 	out := make([]domain.PromptVersion, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, versionFromRow(row))
+		out = append(out, VersionFromRow(row))
 	}
 	return out
 }

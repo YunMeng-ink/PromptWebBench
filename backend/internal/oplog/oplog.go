@@ -31,7 +31,84 @@ const (
 	ActionLibraryQuestionRestore = "library_question_restore"
 	ActionRecycleRestore         = "recycle_restore"
 	ActionRecyclePurge           = "recycle_purge"
+
+	// 提示词域的审计动作（需求 §17.2、§17.8）。
+	ActionPromptDelete    = "prompt_delete"
+	ActionPromptRestore   = "prompt_restore"
+	ActionPromptPurge     = "prompt_purge"
+	ActionPromptTagUpdate = "prompt_tag_update"
+	ActionPromptMajorMark = "prompt_major_mark"
+
+	// 推荐标签的处置动作（需求 §6.3、§17.5）。
+	ActionRecommendTagConfirm = "recommend_tag_confirm"
+	ActionRecommendTagIgnore  = "recommend_tag_ignore"
+
+	// 注册与邀请码（需求 §17.7）。
+	ActionRegistrationPolicyUpdate = "registration_policy_update"
+	ActionInviteCodeGenerate       = "invite_code_generate"
+
+	// 模型管理（需求 §13.3、§13.4）。
+	ActionModelImport    = "model_import"
+	ActionModelOverwrite = "model_overwrite"
+
+	// 举报与公告（需求 §17.6、§2.4）。
+	ActionReportHandle         = "report_handle"
+	ActionAnnouncementPublish  = "announcement_publish"
+	ActionAnnouncementWithdraw = "announcement_withdraw"
+
+	// 系统设置（需求 §20）。
+	ActionConfigUpdate = "config_update"
+	ActionEmailTest    = "email_test"
+
+	// 统计与评分域的审计动作（需求 §4.3、§3.4）。
+	ActionRatingUpdate           = "rating_update"
+	ActionRatingDelete           = "rating_delete"
+	ActionDiscriminationRecovery = "discrimination_recovery"
 )
+
+// AllActions 返回 operation_logs.action 的全部合法取值，供筛选参数校验使用。
+func AllActions() []string {
+	return []string{
+		ActionAdminLogin, ActionPromptDelete, ActionPromptRestore, ActionPromptPurge,
+		ActionPromptTagUpdate, ActionPromptMajorMark,
+		ActionRecommendTagConfirm, ActionRecommendTagIgnore,
+		ActionUserBan, ActionUserUnban, ActionUserTransferPrompts,
+		ActionDeveloperGrant, ActionDeveloperRevoke,
+		ActionRegistrationPolicyUpdate, ActionInviteCodeGenerate,
+		ActionModelImport, ActionModelOverwrite,
+		ActionReportHandle, ActionAnnouncementPublish, ActionAnnouncementWithdraw,
+		ActionLibraryQuestionDelete, ActionLibraryQuestionRestore,
+		ActionAPITokenReset, ActionConfigUpdate, ActionEmailTest,
+		ActionRecycleRestore, ActionRecyclePurge,
+		ActionRatingUpdate, ActionRatingDelete, ActionCommentDelete,
+		ActionFavoriteDelete, ActionDiscriminationRecovery,
+	}
+}
+
+// RequiredActions 是需求 §17.8 逐条列出的操作类型（18 类），也是操作日志模块
+// 筛选器的取值来源。取值必须与 operation_logs.action 的 CHECK 约束一致。
+func RequiredActions() []string {
+	return []string{
+		ActionAdminLogin,
+		ActionPromptDelete,
+		ActionPromptRestore,
+		ActionPromptPurge,
+		ActionPromptTagUpdate,
+		ActionRecommendTagConfirm,
+		ActionRecommendTagIgnore,
+		ActionUserBan,
+		ActionUserUnban,
+		ActionDeveloperGrant,
+		ActionRegistrationPolicyUpdate,
+		ActionInviteCodeGenerate,
+		ActionModelImport,
+		ActionModelOverwrite,
+		ActionReportHandle,
+		ActionAnnouncementPublish,
+		ActionLibraryQuestionDelete,
+		ActionAPITokenReset,
+	}
+}
 
 // Entry 是一条待写入的操作日志。
 type Entry struct {

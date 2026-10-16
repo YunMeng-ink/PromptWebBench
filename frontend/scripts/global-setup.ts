@@ -38,6 +38,11 @@ const REPORTER_EMAIL = 'e2e-reporter@example.com'
  * 登录校验路径因此与真实用户一致。
  */
 const DEVELOPER_EMAIL = 'e2e-developer@example.com'
+/**
+ * 后台用例使用的初始管理员。账户由后端按 ADMIN_INIT_* 在启动时创建，
+ * 这里只把它的昵称写进账户文件，使用例登录后能确认身份确实是管理员。
+ */
+const ADMIN_EMAIL = 'e2e-admin@prompt-benchmark.local'
 
 async function waitForBackend(attempts = 60): Promise<void> {
   for (let i = 0; i < attempts; i += 1) {
@@ -185,7 +190,7 @@ export default async function globalSetup(_config: FullConfig): Promise<void> {
 /** writeAccountNames 把账户昵称写入 JSON 文件，供规格文件读取。 */
 function writeAccountNames(): void {
   const names: Record<string, string> = {}
-  for (const email of [SHARED_EMAIL, REPORTER_EMAIL, DEVELOPER_EMAIL]) {
+  for (const email of [SHARED_EMAIL, REPORTER_EMAIL, DEVELOPER_EMAIL, ADMIN_EMAIL]) {
     names[email] = psql(`SELECT username FROM users WHERE email = '${email}'`, true).trim()
   }
   writeFileSync(ACCOUNTS_FILE, `${JSON.stringify(names, null, 2)}\n`, 'utf8')

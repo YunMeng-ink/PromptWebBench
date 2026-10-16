@@ -49,6 +49,31 @@ FROM prompts p
 JOIN categories c ON c.id = p.category_id
 WHERE p.id = $1 AND p.deleted_at IS NULL;
 
+-- 后台读取提示词：包含回收站中的条目，并带出类别的中英名称供列表与详情直接展示。
+-- name: GetPromptIncludingDeleted :one
+SELECT p.*, c.is_high_risk, c.name_zh AS category_name_zh, c.name_en AS category_name_en
+FROM prompts p
+JOIN categories c ON c.id = p.category_id
+WHERE p.id = $1;
+
+-- 恢复回收站中的提示词（需求 §11.3）。
+-- name: RestorePrompt :one
+UPDATE prompts
+SET deleted_at = NULL, updated_at = now()
+WHERE id = $1 AND deleted_at IS NOT NULL
+RETURNING id;
+
+-- 彻底删除提示词前必须先确认没有题库题目引用它：引用题的外键为
+-- ON DELETE SET NULL，而 library_questions 的形状约束要求引用题必须有来源，
+-- 直接删除会违反约束。服务层据此返回 prompt_in_use。
+-- name: CountLibraryQuestionsByPrompt :one
+SELECT count(*)::bigint
+FROM library_questions
+WHERE source_prompt_id = $1::bigint;
+
+-- name: HardDeletePrompt :exec
+DELETE FROM prompts WHERE id = $1;
+
 -- name: LockPrompt :one
 SELECT p.*, c.is_high_risk
 FROM prompts p

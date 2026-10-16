@@ -60,6 +60,13 @@ function emptyForm(): Form {
 
 const form = ref<Form>(emptyForm())
 const submitting = ref(false)
+/**
+ * loaded 标记编辑表单已取回待修改的提示词。
+ *
+ * 表单在详情返回之前就已经渲染，此时提交会把占位取值（空正文、类别 0）发出去，
+ * 后端必然以字段校验失败拒绝。提交入口在详情到达前保持禁用，避免这种必然失败的请求。
+ */
+const loaded = ref(false)
 const notice = ref('')
 const failure = ref('')
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -128,6 +135,10 @@ function payload(): PromptPayload {
 }
 
 async function submit(): Promise<void> {
+  // 编辑模式下详情未到达时表单里是占位取值，提交必然被后端拒绝。
+  if (isEdit.value && !loaded.value) {
+    return
+  }
   submitting.value = true
   notice.value = ''
   failure.value = ''
@@ -169,6 +180,7 @@ onMounted(async () => {
       changeNote: '',
       isMajorChange: false,
     }
+    loaded.value = true
   } catch (error) {
     failure.value = messageOf(error)
   }
@@ -316,6 +328,7 @@ onMounted(async () => {
           type="primary"
           data-testid="prompt-submit"
           :loading="submitting"
+          :disabled="isEdit && !loaded"
           @click="submit"
         >
           {{ isEdit ? t('prompt.submitUpdate') : t('prompt.submitCreate') }}

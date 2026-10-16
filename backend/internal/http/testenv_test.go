@@ -19,6 +19,7 @@ import (
 	"github.com/promptbench/backend/internal/mail"
 	"github.com/promptbench/backend/internal/mail/mailtest"
 	"github.com/promptbench/backend/internal/metrics"
+	"github.com/promptbench/backend/internal/modelsdev"
 	"github.com/promptbench/backend/internal/platform/pgtest"
 	"github.com/promptbench/backend/internal/repo"
 	"github.com/promptbench/backend/internal/security"
@@ -39,6 +40,9 @@ type testEnv struct {
 	mail   *mailtest.Server
 	server *api.Server
 	ts     *httptest.Server
+
+	// modelsDev 是 models.dev 的本地替身：后台导入用例通过它切换上游的响应与状态码。
+	modelsDev *fakeModelsDev
 
 	auth    *auth.Service
 	admin   *admin.Service
@@ -79,6 +83,7 @@ func newTestEnv(t *testing.T) *testEnv {
 
 	pool := pgtest.MigratedDatabase(t)
 	mailServer := mailtest.New(t)
+	modelsDevServer := newFakeModelsDev(t)
 
 	cfgStore := config.NewStore(pool, config.DefaultCacheTTL)
 	if err := cfgStore.Refresh(t.Context()); err != nil {
@@ -99,10 +104,16 @@ func newTestEnv(t *testing.T) *testEnv {
 		StateSigner:   security.NewOAuthStateSigner(testJWTSecret, security.OAuthStateTTL),
 		PublicBaseURL: "http://127.0.0.1",
 	})
-	adminService := admin.New(admin.Deps{Pool: pool, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
-	promptService := prompt.New(prompt.Deps{Pool: pool, Config: cfgStore, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
-	statsService := stats.New(stats.Deps{Pool: pool, Config: cfgStore, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
-	socialService := social.New(social.Deps{Pool: pool, Config: cfgStore, Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	statsService := stats.New(stats.Deps{
+		Pool: pool, Config: cfgStore, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
+	promptService := prompt.New(prompt.Deps{
+		Pool: pool, Config: cfgStore, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Stats: statsService,
+	})
+	socialService := social.New(social.Deps{
+		Pool: pool, Config: cfgStore, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 	socialService.SetStatsHook(statsService)
 	libraryService := library.New(library.Deps{
 		Pool: pool, Config: cfgStore, Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -113,21 +124,33 @@ func newTestEnv(t *testing.T) *testEnv {
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Stats:  statsService,
 	})
+	adminService := admin.New(admin.Deps{
+		Pool:       pool,
+		Config:     cfgStore,
+		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Secrets:    security.NewSecretBox(testConfigSecret),
+		Mail:       mail.Config{Host: mailServer.Host(), Port: mailServer.Port(), From: "noreply@prompt-benchmark.local"},
+		ModelsDev:  modelsdev.NewClient(modelsDevServer.URL()),
+		Prompts:    promptService,
+		Moderation: socialService,
+		Stats:      statsService,
+	})
 
 	env := testEnv{
-		Env:     testEnvConfig(),
-		pool:    pool,
-		config:  cfgStore,
-		mail:    mailServer,
-		auth:    authService,
-		admin:   adminService,
-		prompt:  promptService,
-		rating:  ratingService,
-		stats:   statsService,
-		social:  socialService,
-		library: libraryService,
-		repo:    repo.New(pool),
-		signer:  signer,
+		Env:       testEnvConfig(),
+		pool:      pool,
+		config:    cfgStore,
+		mail:      mailServer,
+		modelsDev: modelsDevServer,
+		auth:      authService,
+		admin:     adminService,
+		prompt:    promptService,
+		rating:    ratingService,
+		stats:     statsService,
+		social:    socialService,
+		library:   libraryService,
+		repo:      repo.New(pool),
+		signer:    signer,
 	}
 
 	srv, err := api.New(api.Deps{

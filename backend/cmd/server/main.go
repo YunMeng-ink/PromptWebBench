@@ -20,6 +20,7 @@ import (
 	api "github.com/promptbench/backend/internal/http"
 	"github.com/promptbench/backend/internal/mail"
 	"github.com/promptbench/backend/internal/metrics"
+	"github.com/promptbench/backend/internal/modelsdev"
 	"github.com/promptbench/backend/internal/oauth"
 	"github.com/promptbench/backend/internal/platform"
 	"github.com/promptbench/backend/internal/platform/migrate"
@@ -113,9 +114,12 @@ func run(envFile string) error {
 		StateSigner:   security.NewOAuthStateSigner(env.JWTSecret, security.OAuthStateTTL),
 		PublicBaseURL: env.PublicBaseURL,
 	})
-	adminService := admin.New(admin.Deps{Pool: pool, Logger: logger})
-	promptService := prompt.New(prompt.Deps{Pool: pool, Config: cfgStore, Logger: logger})
 	statsService := stats.New(stats.Deps{Pool: pool, Config: cfgStore, Logger: logger})
+	// 提示词域的写入会改变统计快照与评分集合，因此注入统计缓存失效入口；
+	// 删除、恢复与彻底删除还须留痕，因此同时注入操作日志写入器。
+	promptService := prompt.New(prompt.Deps{
+		Pool: pool, Config: cfgStore, Logger: logger, Stats: statsService,
+	})
 	socialService := social.New(social.Deps{Pool: pool, Config: cfgStore, Logger: logger})
 	// 社交动作会改变提示词的派生数据（评论数、收藏数），注入统计缓存失效入口。
 	socialService.SetStatsHook(statsService)
@@ -125,6 +129,19 @@ func run(envFile string) error {
 	})
 	ratingService := rating.New(rating.Deps{
 		Pool: pool, Config: cfgStore, Logger: logger, Stats: statsService,
+	})
+	// 管理后台复用提示词域与社交域的写入路径：强制标记重大修改、删除与恢复提示词、
+	// 删除被举报评论都在各自的域内实现一次，后台只做编排与留痕。
+	adminService := admin.New(admin.Deps{
+		Pool:       pool,
+		Config:     cfgStore,
+		Logger:     logger,
+		Secrets:    security.NewSecretBox(env.ConfigSecret),
+		Mail:       mailConfig,
+		ModelsDev:  modelsdev.NewClient(env.ModelsDevURL),
+		Prompts:    promptService,
+		Moderation: socialService,
+		Stats:      statsService,
 	})
 
 	srv, err := api.New(api.Deps{
@@ -147,7 +164,7 @@ func run(envFile string) error {
 		return err
 	}
 
-	go runBackgroundTasks(ctx, logger, srv.Limiter())
+	go runBackgroundTasks(ctx, logger, srv.Limiter(), libraryService, adminService)
 
 	sc := echo.StartConfig{Address: ":" + env.Port, GracefulTimeout: 10 * time.Second, HideBanner: true, HidePort: true}
 	if err := sc.Start(ctx, srv.Handler()); err != nil && !errors.Is(err, http.ErrServerClosed) {
@@ -157,9 +174,17 @@ func run(envFile string) error {
 	return nil
 }
 
-// runBackgroundTasks 承载低频定时任务：限流窗口清理，以及后续阶段的
-// 回收站到期清理与推荐标签重算。
-func runBackgroundTasks(ctx context.Context, logger *slog.Logger, limiter *api.Limiter) {
+// runBackgroundTasks 承载低频定时任务：限流窗口清理与回收站到期清理。
+//
+// 回收站清理按对象类型分工：题库与题库题目由题库域处理，提示词由管理后台的服务处理
+// （提示词的彻底删除还要做题库引用检查）。两者都是幂等的，重复执行不会重复删除。
+func runBackgroundTasks(
+	ctx context.Context,
+	logger *slog.Logger,
+	limiter *api.Limiter,
+	libraryService *library.Service,
+	adminService *admin.Service,
+) {
 	ticker := time.NewTicker(time.Minute)
 	defer ticker.Stop()
 
@@ -169,7 +194,29 @@ func runBackgroundTasks(ctx context.Context, logger *slog.Logger, limiter *api.L
 			return
 		case <-ticker.C:
 			limiter.Cleanup()
-			logger.Debug("已完成限流窗口清理")
+			purgeExpiredRecycleBin(ctx, logger, libraryService, adminService)
 		}
+	}
+}
+
+// purgeExpiredRecycleBin 清理到期的回收站记录（需求 §11.3：到期自动彻底删除）。
+func purgeExpiredRecycleBin(
+	ctx context.Context,
+	logger *slog.Logger,
+	libraryService *library.Service,
+	adminService *admin.Service,
+) {
+	const batch = 100
+	libraryPurged, err := libraryService.PurgeExpired(ctx, batch)
+	if err != nil {
+		logger.Error("清理到期题库回收站记录失败", slog.String("error", err.Error()))
+	}
+	promptPurged, err := adminService.PurgeExpiredPrompts(ctx, batch)
+	if err != nil {
+		logger.Error("清理到期提示词回收站记录失败", slog.String("error", err.Error()))
+	}
+	if libraryPurged > 0 || promptPurged > 0 {
+		logger.Info("已清理到期回收站记录",
+			slog.Int("library_entries", libraryPurged), slog.Int("prompt_entries", promptPurged))
 	}
 }

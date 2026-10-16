@@ -83,6 +83,20 @@ func fieldsOfGetPrompt(r repo.GetPromptRow) promptFields {
 	}
 }
 
+// fieldsOfIncludingDeleted 映射包含回收站条目的读取行。类别名称不入 promptFields：
+// 它们只服务于后台列表的展示，映射到实体上会被后续写入路径误当成可写字段。
+func fieldsOfIncludingDeleted(r repo.GetPromptIncludingDeletedRow) promptFields {
+	return promptFields{
+		ID: r.ID, Title: r.Title, Body: r.Body, Description: r.Description,
+		CategoryID: r.CategoryID, AbilityID: r.AbilityID, DifficultyID: r.DifficultyID,
+		Visibility: r.Visibility, SensitiveLevel: r.SensitiveLevel, UploaderID: r.UploaderID,
+		OriginalUploaderID: r.OriginalUploaderID, CurrentVersionID: r.CurrentVersionID,
+		LatestVersionNo: r.LatestVersionNo, MajorModified: r.MajorModified,
+		CommentCount: r.CommentCount, FavoriteCount: r.FavoriteCount,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, IsHighRisk: r.IsHighRisk,
+	}
+}
+
 func fieldsOfLockPrompt(r repo.LockPromptRow) promptFields {
 	return promptFields{
 		ID: r.ID, Title: r.Title, Body: r.Body, Description: r.Description,

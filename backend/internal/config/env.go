@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/promptbench/backend/internal/modelsdev"
 )
 
 // Env 是启动时的环境变量配置，进程生命周期内不变。
@@ -32,6 +34,10 @@ type Env struct {
 
 	GitHubClientID     string
 	GitHubClientSecret string
+
+	// ModelsDevURL 是模型目录地址。默认指向 models.dev 正式地址，
+	// 可替换为镜像或本地服务，便于端到端测试与离线部署。
+	ModelsDevURL string
 
 	TrustedProxies []string
 	StaticDir      string
@@ -86,6 +92,8 @@ func Load() (Env, error) {
 
 		GitHubClientID:     os.Getenv("GITHUB_CLIENT_ID"),
 		GitHubClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
+
+		ModelsDevURL: getenv("MODELS_DEV_URL", modelsdev.DefaultURL),
 
 		StaticDir: os.Getenv("STATIC_DIR"),
 		LogLevel:  getenv("LOG_LEVEL", "info"),

@@ -122,6 +122,25 @@ func (s *Store) Set(ctx context.Context, key string, value any, description stri
 	return nil
 }
 
+// SetSecret 写入密钥类配置项。入参已是密文：加密由调用方在主密钥存在时完成，
+// 本层不接触明文，也不接受空密文（config 表的 CHECK 要求两个字段同时存在）。
+func (s *Store) SetSecret(ctx context.Context, key, ciphertext, description string, updatedBy int64) error {
+	if ciphertext == "" {
+		return fmt.Errorf("配置项 %s 的密文不可为空", key)
+	}
+	q := repo.New(s.pool)
+	if err := q.UpsertSecretConfig(ctx, repo.UpsertSecretConfigParams{
+		Key:              key,
+		SecretCiphertext: repo.Text(ciphertext),
+		Description:      description,
+		UpdatedBy:        repo.Int8OrNull(updatedBy),
+	}); err != nil {
+		return fmt.Errorf("写入密钥配置项 %s: %w", key, err)
+	}
+	s.invalidate()
+	return nil
+}
+
 // Refresh 强制刷新缓存，供管理端保存后立即生效。
 func (s *Store) Refresh(ctx context.Context) error {
 	rows, err := repo.New(s.pool).ListConfig(ctx)

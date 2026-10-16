@@ -27,9 +27,11 @@ func (c Config) Configured() bool {
 	return c.Host != "" && c.From != ""
 }
 
-// Sender 发送验证码邮件。
+// Sender 发送平台邮件。
 type Sender interface {
 	SendVerificationCode(ctx context.Context, to, code string, purpose domain.VerificationPurpose) error
+	// SendTestEmail 发送一封测试邮件，供管理端的系统设置验证 SMTP 配置（需求 §20）。
+	SendTestEmail(ctx context.Context, to string) error
 }
 
 // SMTPSender 是标准库 SMTP 实现。
@@ -42,11 +44,24 @@ func NewSMTPSender(cfg Config) *SMTPSender {
 }
 
 func (s *SMTPSender) SendVerificationCode(ctx context.Context, to, code string, purpose domain.VerificationPurpose) error {
+	subject, body := composeVerificationCode(code, purpose)
+	return s.send(ctx, to, subject, body)
+}
+
+// SendTestEmail 发送固定文案的测试邮件。它走与验证码邮件完全相同的发送路径，
+// 因此能真实反映当前 SMTP 配置是否可用。
+func (s *SMTPSender) SendTestEmail(ctx context.Context, to string) error {
+	return s.send(ctx, to, "Prompt Benchmark SMTP 测试邮件",
+		"这是一封来自 Prompt Benchmark 的测试邮件，用于验证 SMTP 配置。\r\n\r\n"+
+			"This is a test email from Prompt Benchmark to verify your SMTP settings.")
+}
+
+// send 执行一次 SMTP 投递。未配置主机或发件人时直接失败，不静默丢弃。
+func (s *SMTPSender) send(ctx context.Context, to, subject, body string) error {
 	if !s.cfg.Configured() {
-		return fmt.Errorf("SMTP 未配置，无法发送验证码邮件")
+		return fmt.Errorf("SMTP 未配置，无法发送邮件")
 	}
 
-	subject, body := composeVerificationCode(code, purpose)
 	addr := net.JoinHostPort(s.cfg.Host, s.cfg.Port)
 
 	var auth smtp.Auth
@@ -62,11 +77,11 @@ func (s *SMTPSender) SendVerificationCode(ctx context.Context, to, code string, 
 	select {
 	case err := <-done:
 		if err != nil {
-			return fmt.Errorf("发送验证码邮件到 %s: %w", to, err)
+			return fmt.Errorf("发送邮件到 %s: %w", to, err)
 		}
 		return nil
 	case <-ctx.Done():
-		return fmt.Errorf("发送验证码邮件到 %s: %w", to, ctx.Err())
+		return fmt.Errorf("发送邮件到 %s: %w", to, ctx.Err())
 	}
 }
 

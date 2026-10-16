@@ -11,6 +11,106 @@ import (
 )
 
 type Querier interface {
+	AdminCountAnnouncements(ctx context.Context, state string) (int64, error)
+	AdminCountInviteCodeUsages(ctx context.Context, inviteCodeID int64) (int64, error)
+	AdminCountInviteCodes(ctx context.Context, arg AdminCountInviteCodesParams) (int64, error)
+	AdminCountModelImportLogs(ctx context.Context, action string) (int64, error)
+	AdminCountModelPrompts(ctx context.Context, modelID int64) (int64, error)
+	AdminCountModelStats(ctx context.Context, modelID int64) (int64, error)
+	AdminCountModels(ctx context.Context, arg AdminCountModelsParams) (int64, error)
+	AdminCountOperationLogs(ctx context.Context, arg AdminCountOperationLogsParams) (int64, error)
+	AdminCountPromptComments(ctx context.Context, promptID int64) (int64, error)
+	AdminCountPromptRatings(ctx context.Context, promptID int64) (int64, error)
+	AdminCountPrompts(ctx context.Context, arg AdminCountPromptsParams) (int64, error)
+	AdminCountRecommendTags(ctx context.Context, arg AdminCountRecommendTagsParams) (int64, error)
+	AdminCountRecycleBin(ctx context.Context, objectType string) (int64, error)
+	AdminCountReports(ctx context.Context, arg AdminCountReportsParams) (int64, error)
+	AdminCountTags(ctx context.Context, keyword string) (int64, error)
+	AdminCountUserComments(ctx context.Context, userID int64) (int64, error)
+	AdminCountUserLibraries(ctx context.Context, ownerID int64) (int64, error)
+	AdminCountUserRatings(ctx context.Context, userID int64) (int64, error)
+	AdminCountUserReports(ctx context.Context, reporterID int64) (int64, error)
+	AdminCountUsers(ctx context.Context, arg AdminCountUsersParams) (int64, error)
+	// 管理后台的读取与写入（需求第 17 章、C-42 的 11 个模块）。
+	//
+	// 约定：
+	//   * 后台可见全部对象，因此本文件的查询一律不带可见性谓词；
+	//     可见性判定（domain.Viewer）只服务于前台，后台的准入由 admin 中间件把关。
+	//   * 可空的数值列一律 COALESCE 后强制转为 float8，可空的计数一律 COALESCE 后转 bigint，
+	//     避免 sqlc 生成无法扫描 NULL 的类型（开发方案 §6.4 的 COALESCE 纪律）。
+	//   * 用于「留空即不筛选」的文本参数显式转 ::text，使 sqlc 按非空 string 生成参数。
+	// ============================================================
+	// 模块 1：统计仪表盘
+	// ============================================================
+	AdminDashboardCounts(ctx context.Context, todayStart pgtype.Timestamptz) (AdminDashboardCountsRow, error)
+	AdminGetAnnouncement(ctx context.Context, id int64) (Announcement, error)
+	AdminGetConfig(ctx context.Context, key string) (AdminGetConfigRow, error)
+	AdminGetInviteCode(ctx context.Context, id int64) (InviteCode, error)
+	AdminGetModel(ctx context.Context, id int64) (Model, error)
+	// 重复判断基于「模型标识 + 模型厂商」（需求 §13.4），与 models_identity_active_uniq
+	// 唯一索引的列一致。软删除的模型不参与判断，与索引条件保持一致。
+	AdminGetModelByIdentity(ctx context.Context, arg AdminGetModelByIdentityParams) (Model, error)
+	AdminGetReport(ctx context.Context, id int64) (Report, error)
+	AdminGetTag(ctx context.Context, id int64) (Tag, error)
+	// 热门提示词按「收藏数 + 评论数」降序取前若干条，再以 ID 升序保证取值确定。
+	AdminHotPrompts(ctx context.Context, limitCount int32) ([]AdminHotPromptsRow, error)
+	// ============================================================
+	// 模块 9：公告管理
+	// ============================================================
+	// 后台列表包含已撤回的公告：管理员需要看到完整的发布历史。
+	AdminListAnnouncements(ctx context.Context, arg AdminListAnnouncementsParams) ([]AdminListAnnouncementsRow, error)
+	// ============================================================
+	// 模块 11：系统设置
+	// ============================================================
+	AdminListConfig(ctx context.Context) ([]AdminListConfigRow, error)
+	AdminListInviteCodeUsages(ctx context.Context, arg AdminListInviteCodeUsagesParams) ([]AdminListInviteCodeUsagesRow, error)
+	AdminListInviteCodes(ctx context.Context, arg AdminListInviteCodesParams) ([]AdminListInviteCodesRow, error)
+	AdminListModelImportLogs(ctx context.Context, arg AdminListModelImportLogsParams) ([]AdminListModelImportLogsRow, error)
+	AdminListModelPrompts(ctx context.Context, arg AdminListModelPromptsParams) ([]AdminListModelPromptsRow, error)
+	// 模型的完成度统计：逐提示词给出双窗口计数与校准完成度。
+	AdminListModelStats(ctx context.Context, arg AdminListModelStatsParams) ([]AdminListModelStatsRow, error)
+	// ============================================================
+	// 模块 3：模型管理
+	// ============================================================
+	AdminListModels(ctx context.Context, arg AdminListModelsParams) ([]AdminListModelsRow, error)
+	// ============================================================
+	// 模块 8：操作日志（只增不改不删，C-43 只提供读取）
+	// ============================================================
+	AdminListOperationLogs(ctx context.Context, arg AdminListOperationLogsParams) ([]OperationLog, error)
+	AdminListPromptComments(ctx context.Context, arg AdminListPromptCommentsParams) ([]AdminListPromptCommentsRow, error)
+	AdminListPromptRatings(ctx context.Context, arg AdminListPromptRatingsParams) ([]AdminListPromptRatingsRow, error)
+	// ============================================================
+	// 模块 2：提示词管理
+	// ============================================================
+	// 后台提示词列表：不取正文，避免把长文本拉进列表响应。
+	// 回收站中的提示词默认也在结果内，由 deleted 参数区分（'' 表示不限）。
+	AdminListPrompts(ctx context.Context, arg AdminListPromptsParams) ([]AdminListPromptsRow, error)
+	// 推荐标签的后台列表带上提示词标题与模型名称，管理员不必逐条跳转详情页。
+	AdminListRecommendTags(ctx context.Context, arg AdminListRecommendTagsParams) ([]AdminListRecommendTagsRow, error)
+	// ============================================================
+	// 模块 10：回收站管理
+	// ============================================================
+	AdminListRecycleBin(ctx context.Context, arg AdminListRecycleBinParams) ([]AdminListRecycleBinRow, error)
+	// ============================================================
+	// 模块 6：举报管理
+	// ============================================================
+	// 举报列表连带给出被举报对象的摘要：提示词举报给出标题，评论举报给出正文与所属提示词。
+	AdminListReports(ctx context.Context, arg AdminListReportsParams) ([]AdminListReportsRow, error)
+	// ============================================================
+	// 模块 5：标签管理与推荐标签
+	// ============================================================
+	AdminListTags(ctx context.Context, arg AdminListTagsParams) ([]AdminListTagsRow, error)
+	AdminListUserComments(ctx context.Context, arg AdminListUserCommentsParams) ([]AdminListUserCommentsRow, error)
+	// 后台查看用户题库时包含回收站中的题库：管理员需要看到完整的归属关系。
+	AdminListUserLibraries(ctx context.Context, arg AdminListUserLibrariesParams) ([]AdminListUserLibrariesRow, error)
+	// 后台查看某用户的评分、评论、题库与举报记录，四类各一页。
+	AdminListUserRatings(ctx context.Context, arg AdminListUserRatingsParams) ([]AdminListUserRatingsRow, error)
+	AdminListUserReports(ctx context.Context, arg AdminListUserReportsParams) ([]AdminListUserReportsRow, error)
+	// ============================================================
+	// 模块 4：用户管理
+	// ============================================================
+	AdminListUsers(ctx context.Context, arg AdminListUsersParams) ([]AdminListUsersRow, error)
+	AdminRecentPrompts(ctx context.Context, limitCount int32) ([]AdminRecentPromptsRow, error)
 	// 已读全部公告：把水位线推到当前时刻。窗口边界由应用层给出，
 	// SQL 中不出现依赖会话时区的表达式（开发方案 §3.4）。
 	AdvanceAnnouncementWatermark(ctx context.Context, arg AdvanceAnnouncementWatermarkParams) error
@@ -27,11 +127,17 @@ type Querier interface {
 	CountFollowing(ctx context.Context, followerID int64) (int64, error)
 	CountLibraries(ctx context.Context, ownerID int64) (int64, error)
 	CountLibrariesForUser(ctx context.Context, userID int64) (int64, error)
+	// 彻底删除提示词前必须先确认没有题库题目引用它：引用题的外键为
+	// ON DELETE SET NULL，而 library_questions 的形状约束要求引用题必须有来源，
+	// 直接删除会违反约束。服务层据此返回 prompt_in_use。
+	CountLibraryQuestionsByPrompt(ctx context.Context, dollar_1 int64) (int64, error)
 	// 题目容量计数只计引用题（C-22）：派生题不占题库容量，回收站中的引用题仍占。
 	CountLibraryQuotaQuestions(ctx context.Context, libraryID int64) (int64, error)
 	// 未撤回的公告总条数，用于分页。
 	CountLiveAnnouncements(ctx context.Context) (int64, error)
 	CountLiveLibraryQuestions(ctx context.Context, libraryID int64) (int64, error)
+	// 删除模型前的引用检查：存在有效评分即视为被引用（错误码 model_in_use）。
+	CountModelRatings(ctx context.Context, modelID int64) (int64, error)
 	CountMyRatings(ctx context.Context, userID int64) (int64, error)
 	CountNotifications(ctx context.Context, arg CountNotificationsParams) (int64, error)
 	CountOwnPrompts(ctx context.Context, uploaderID int64) (int64, error)
@@ -52,6 +158,7 @@ type Querier interface {
 	CountRecentEmailVerifications(ctx context.Context, arg CountRecentEmailVerificationsParams) (int64, error)
 	CountRecommendTagsByState(ctx context.Context, states []string) (int64, error)
 	CountReplies(ctx context.Context, parentID pgtype.Int8) (int64, error)
+	CountTagPrompts(ctx context.Context, tagID int64) (int64, error)
 	// 未读公告数：只统计发布时间晚于水位线的条目。
 	// 没有水位线的账户（从未读过公告）看到全部公告为未读。
 	CountUnreadAnnouncements(ctx context.Context, id int64) (int64, error)
@@ -88,8 +195,10 @@ type Querier interface {
 	DeletePromptRatingsForMajorChange(ctx context.Context, promptID int64) ([]int64, error)
 	// 重大修改使统计快照失效，阶段 3 会按新版本重算（需求 §7.3 第 6 步）。
 	DeletePromptStatsForMajorChange(ctx context.Context, promptID int64) error
+	DeleteTag(ctx context.Context, id int64) error
 	// 引用题被修改时原地转为派生题：保留来源提示词标识供追溯，正文改存副本。
 	DeriveLibraryQuestion(ctx context.Context, arg DeriveLibraryQuestionParams) (LibraryQuestion, error)
+	DetachPromptTag(ctx context.Context, arg DetachPromptTagParams) error
 	// 提示词被删除或彻底删除时，推荐标签一律转已过期（C-14）。
 	ExpireRecommendTagsByPrompt(ctx context.Context, promptID int64) error
 	GetAbility(ctx context.Context, id int64) (Ability, error)
@@ -101,6 +210,7 @@ type Querier interface {
 	// 举报对象的存在性与可见性在服务层判定：评论与提示词的可见性规则不同，
 	// 这里只提供按类型取对象的读取。
 	GetCommentForReport(ctx context.Context, id int64) (Comment, error)
+	GetCommentIncludingDeleted(ctx context.Context, id int64) (Comment, error)
 	GetConfig(ctx context.Context, key string) (GetConfigRow, error)
 	GetDifficulty(ctx context.Context, id int64) (Difficulty, error)
 	GetFavorite(ctx context.Context, id int64) (Favorite, error)
@@ -118,9 +228,12 @@ type Querier interface {
 	// 内容读取统一走 ListLibraryQuestions，避免出现第二份字段解析。
 	GetLibraryQuestionRef(ctx context.Context, arg GetLibraryQuestionRefParams) (GetLibraryQuestionRefRow, error)
 	GetLiveRecycleBinEntry(ctx context.Context, arg GetLiveRecycleBinEntryParams) (RecycleBin, error)
+	GetLiveRecycleBinEntryByObject(ctx context.Context, arg GetLiveRecycleBinEntryByObjectParams) (RecycleBin, error)
 	GetModel(ctx context.Context, id int64) (Model, error)
 	GetOAuthAccount(ctx context.Context, arg GetOAuthAccountParams) (OauthAccount, error)
 	GetPrompt(ctx context.Context, id int64) (GetPromptRow, error)
+	// 后台读取提示词：包含回收站中的条目，并带出类别的中英名称供列表与详情直接展示。
+	GetPromptIncludingDeleted(ctx context.Context, id int64) (GetPromptIncludingDeletedRow, error)
 	GetPromptStats(ctx context.Context, promptID int64) (PromptStat, error)
 	// 统计快照记录的提示词当前版本，使快照与它反映的评分所属版本可对照（需求 §7.1）。
 	GetPromptStatsVersion(ctx context.Context, promptID int64) (pgtype.Int8, error)
@@ -142,8 +255,10 @@ type Querier interface {
 	// 邀请协作者按用户名定位账户。封禁账户仍可被查到，由服务层拒绝：
 	// 把「不存在」与「已封禁」分成两种错误，前端才能给出可读提示。
 	GetUserForLibraryInvite(ctx context.Context, username string) (GetUserForLibraryInviteRow, error)
+	HandleReport(ctx context.Context, arg HandleReportParams) (Report, error)
 	HardDeleteLibrary(ctx context.Context, id int64) error
 	HardDeleteLibraryQuestion(ctx context.Context, id int64) error
+	HardDeletePrompt(ctx context.Context, id int64) error
 	// 区分度回升时把已存在的待确认过时标签转已忽略并记录审计日志（C-15）。
 	// 条件里带 state = 'pending'：已确认的标签由管理员显式处理，系统不代为改动。
 	IgnorePendingTags(ctx context.Context, arg IgnorePendingTagsParams) ([]RecommendTag, error)
@@ -169,11 +284,18 @@ type Querier interface {
 	InsertFavoriteItem(ctx context.Context, arg InsertFavoriteItemParams) (FavoriteItem, error)
 	// ---------- 关注 ----------
 	InsertFollow(ctx context.Context, arg InsertFollowParams) (Follow, error)
+	// ============================================================
+	// 模块 7：注册与邀请码管理
+	// ============================================================
+	InsertInviteCode(ctx context.Context, arg InsertInviteCodeParams) (InviteCode, error)
 	InsertLibrary(ctx context.Context, arg InsertLibraryParams) (Library, error)
 	InsertLibraryMember(ctx context.Context, arg InsertLibraryMemberParams) (int64, error)
 	InsertLibraryQuestion(ctx context.Context, arg InsertLibraryQuestionParams) (LibraryQuestion, error)
 	InsertLibraryQuestionRevision(ctx context.Context, arg InsertLibraryQuestionRevisionParams) error
 	InsertLibraryQuestionTag(ctx context.Context, arg InsertLibraryQuestionTagParams) error
+	InsertModel(ctx context.Context, arg InsertModelParams) (Model, error)
+	InsertModelImportLog(ctx context.Context, arg InsertModelImportLogParams) (int64, error)
+	InsertModelSnapshot(ctx context.Context, arg InsertModelSnapshotParams) (int64, error)
 	// 通知与公告的读写。
 	//
 	// 公告分发采用「共享条目 + 每用户水位线」（C-33）：公告只存一份，
@@ -196,6 +318,7 @@ type Querier interface {
 	InsertRecycleBinEntry(ctx context.Context, arg InsertRecycleBinEntryParams) (RecycleBin, error)
 	// ---------- 举报 ----------
 	InsertReport(ctx context.Context, arg InsertReportParams) (Report, error)
+	InsertTag(ctx context.Context, arg InsertTagParams) (Tag, error)
 	InsertTransferLog(ctx context.Context, arg InsertTransferLogParams) error
 	IsFollowing(ctx context.Context, arg IsFollowingParams) (bool, error)
 	IsPromptFavorited(ctx context.Context, arg IsPromptFavoritedParams) (bool, error)
@@ -238,6 +361,9 @@ type Querier interface {
 	// 未撤回的公告按发布时间倒序。撤回后该条立即从本查询结果中消失（C-33）。
 	ListLiveAnnouncements(ctx context.Context, arg ListLiveAnnouncementsParams) ([]Announcement, error)
 	ListLiveRecommendTagsByKind(ctx context.Context, arg ListLiveRecommendTagsByKindParams) ([]RecommendTag, error)
+	// 导入预览与执行都按身份列比对，一次取出全部在用模型，避免逐条查询。
+	ListModelIdentities(ctx context.Context) ([]ListModelIdentitiesRow, error)
+	ListModelSnapshots(ctx context.Context, arg ListModelSnapshotsParams) ([]ModelSnapshot, error)
 	ListModels(ctx context.Context) ([]Model, error)
 	ListMyRatings(ctx context.Context, arg ListMyRatingsParams) ([]ListMyRatingsRow, error)
 	// 当前用户的评分：详情页展示「我已评过的模型」。
@@ -325,7 +451,11 @@ type Querier interface {
 	ReplacePromptTags(ctx context.Context, promptID int64) error
 	RestoreLibrary(ctx context.Context, id int64) (Library, error)
 	RestoreLibraryQuestion(ctx context.Context, id int64) (LibraryQuestion, error)
+	// 恢复回收站中的提示词（需求 §11.3）。
+	RestorePrompt(ctx context.Context, id int64) (int64, error)
 	RevokeActiveAPITokens(ctx context.Context, userID int64) error
+	SetInviteCodeDisabled(ctx context.Context, arg SetInviteCodeDisabledParams) (InviteCode, error)
+	SetModelEnabled(ctx context.Context, arg SetModelEnabledParams) (Model, error)
 	SetPromptCurrentVersion(ctx context.Context, arg SetPromptCurrentVersionParams) (Prompt, error)
 	SetUserRole(ctx context.Context, arg SetUserRoleParams) (User, error)
 	SetUserStatus(ctx context.Context, arg SetUserStatusParams) (User, error)
@@ -335,12 +465,15 @@ type Querier interface {
 	// 删除题库进入回收站（需求 §11.2），由软删除加一条回收站记录两步完成。
 	SoftDeleteLibrary(ctx context.Context, id int64) (Library, error)
 	SoftDeleteLibraryQuestion(ctx context.Context, id int64) (LibraryQuestion, error)
+	SoftDeleteModel(ctx context.Context, id int64) (int64, error)
 	SoftDeleteNotification(ctx context.Context, arg SoftDeleteNotificationParams) (int64, error)
 	SoftDeletePrompt(ctx context.Context, id int64) (int64, error)
 	SoftDeleteRating(ctx context.Context, id int64) (int64, error)
 	SupersedeEmailVerifications(ctx context.Context, arg SupersedeEmailVerificationsParams) error
 	TouchAPIToken(ctx context.Context, tokenHash string) error
 	TransferPrompts(ctx context.Context, arg TransferPromptsParams) ([]int64, error)
+	// 公告的建立复用 notifications.sql 的 InsertAnnouncement：创建即发布（需求 §17.8「发布公告」）。
+	UpdateAnnouncement(ctx context.Context, arg UpdateAnnouncementParams) (Announcement, error)
 	UpdateFavorite(ctx context.Context, arg UpdateFavoriteParams) (Favorite, error)
 	UpdateLibraryDescription(ctx context.Context, arg UpdateLibraryDescriptionParams) (Library, error)
 	// 题库名称由所有者修改，描述由所有者与协作者修改：调用方按能力拆出两个入口，
@@ -348,6 +481,7 @@ type Querier interface {
 	UpdateLibraryName(ctx context.Context, arg UpdateLibraryNameParams) (Library, error)
 	// 派生题的修改只改自身内容，来源提示词不受影响（C-28）。
 	UpdateLibraryQuestionContent(ctx context.Context, arg UpdateLibraryQuestionContentParams) (LibraryQuestion, error)
+	UpdateModel(ctx context.Context, arg UpdateModelParams) (Model, error)
 	// prompts 表自身冗余保存当前版本的全部字段，供列表筛选与判定直接使用，
 	// 不必每次联表 prompt_versions。每次修改都要同步，否则列表与详情会给出不同取值。
 	UpdatePromptContent(ctx context.Context, arg UpdatePromptContentParams) (Prompt, error)
@@ -356,6 +490,7 @@ type Querier interface {
 	UpdateRatingScore(ctx context.Context, arg UpdateRatingScoreParams) (Rating, error)
 	// 管理员处置：确认、忽略、修改文案。转移条件与状态由服务层校验。
 	UpdateRecommendTag(ctx context.Context, arg UpdateRecommendTagParams) (RecommendTag, error)
+	UpdateTag(ctx context.Context, arg UpdateTagParams) (Tag, error)
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) (User, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	UpsertConfig(ctx context.Context, arg UpsertConfigParams) error
@@ -370,6 +505,7 @@ type Querier interface {
 	UpsertSecretConfig(ctx context.Context, arg UpsertSecretConfigParams) error
 	UsernameExists(ctx context.Context, lower string) (bool, error)
 	VerifyUserEmail(ctx context.Context, id int64) (User, error)
+	WithdrawAnnouncement(ctx context.Context, id int64) (Announcement, error)
 }
 
 var _ Querier = (*Queries)(nil)

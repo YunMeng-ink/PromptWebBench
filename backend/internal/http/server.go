@@ -150,7 +150,7 @@ func New(deps Deps) (*Server, error) {
 	s.registerInfraRoutes()
 	s.registerAuthRoutes()
 	s.registerMeRoutes()
-	s.registerAdminAccountRoutes()
+	s.registerAdminRoutes()
 	s.registerPromptRoutes()
 	s.registerRatingRoutes()
 	s.registerStatsRoutes()

@@ -18,6 +18,13 @@ export const BASE_URL = 'http://127.0.0.1:4173'
 export const SHARED_BASE_URL = BASE_URL
 export const PASSWORD = 'E2ePassw0rd!'
 
+/**
+ * ADMIN_EMAIL 与 ADMIN_PASSWORD 是后端启动时按 ADMIN_INIT_* 建立的初始管理员。
+ * 它的身份不由注册流程产生，因此走独立的口令常量。
+ */
+export const ADMIN_EMAIL = 'e2e-admin@prompt-benchmark.local'
+export const ADMIN_PASSWORD = 'E2eAdminPassw0rd!'
+
 /** SHARED_EMAIL 是整个套件共用的账户，各规格文件都用它。 */
 export const SHARED_EMAIL = 'e2e-shared@example.com'
 
@@ -44,7 +51,11 @@ export const DEVELOPER_EMAIL = 'e2e-developer@example.com'
  * 账户，等待会立刻通过，随后的导航会把尚未完成的登录请求取消掉，用例就在
  * 上一个身份下继续执行。因此这里按昵称比对，等的是登录真正完成。
  */
-export async function loginAs(page: Page, email: string): Promise<void> {
+export async function loginAs(
+  page: Page,
+  email: string,
+  password: string = PASSWORD,
+): Promise<void> {
   await page.goto('/login')
 
   // 等表单渲染完成再填值：页面刚导航时组件尚未挂载，直接 fill 会落空。
@@ -52,7 +63,7 @@ export async function loginAs(page: Page, email: string): Promise<void> {
   await expect(emailInput).toBeVisible()
   await emailInput.fill(email)
 
-  await page.getByTestId('login-password').fill(PASSWORD)
+  await page.getByTestId('login-password').fill(password)
   await page.getByTestId('login-submit').click()
 
   const hero = page.getByTestId('header-user')
@@ -80,6 +91,18 @@ export async function loginReporter(page: Page): Promise<void> {
 /** loginDeveloper 用开发者账户登录，供开发者可见内容的用例使用。 */
 export async function loginDeveloper(page: Page): Promise<void> {
   await loginAs(page, DEVELOPER_EMAIL)
+}
+
+/** loginAdmin 用初始管理员登录，供管理后台用例使用。 */
+export async function loginAdmin(page: Page): Promise<void> {
+  await loginAs(page, ADMIN_EMAIL, ADMIN_PASSWORD)
+}
+
+/** openAdmin 以管理员身份打开后台的某个模块。 */
+export async function openAdmin(page: Page, path: string): Promise<void> {
+  await loginAdmin(page)
+  await page.goto(path)
+  await expect(page.getByTestId('admin-nav')).toBeVisible()
 }
 
 /**

@@ -66,6 +66,22 @@ func (q *Queries) AttachPromptTag(ctx context.Context, arg AttachPromptTagParams
 	return err
 }
 
+const countLibraryQuestionsByPrompt = `-- name: CountLibraryQuestionsByPrompt :one
+SELECT count(*)::bigint
+FROM library_questions
+WHERE source_prompt_id = $1::bigint
+`
+
+// 彻底删除提示词前必须先确认没有题库题目引用它：引用题的外键为
+// ON DELETE SET NULL，而 library_questions 的形状约束要求引用题必须有来源，
+// 直接删除会违反约束。服务层据此返回 prompt_in_use。
+func (q *Queries) CountLibraryQuestionsByPrompt(ctx context.Context, dollar_1 int64) (int64, error) {
+	row := q.db.QueryRow(ctx, countLibraryQuestionsByPrompt, dollar_1)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countOwnPrompts = `-- name: CountOwnPrompts :one
 SELECT count(*)::bigint
 FROM prompts
@@ -230,6 +246,69 @@ func (q *Queries) GetPrompt(ctx context.Context, id int64) (GetPromptRow, error)
 	return i, err
 }
 
+const getPromptIncludingDeleted = `-- name: GetPromptIncludingDeleted :one
+SELECT p.id, p.title, p.body, p.description, p.category_id, p.ability_id, p.difficulty_id, p.visibility, p.sensitive_level, p.uploader_id, p.original_uploader_id, p.current_version_id, p.latest_version_no, p.major_modified, p.comment_count, p.favorite_count, p.deleted_at, p.created_at, p.updated_at, c.is_high_risk, c.name_zh AS category_name_zh, c.name_en AS category_name_en
+FROM prompts p
+JOIN categories c ON c.id = p.category_id
+WHERE p.id = $1
+`
+
+type GetPromptIncludingDeletedRow struct {
+	ID                 int64
+	Title              string
+	Body               string
+	Description        string
+	CategoryID         int64
+	AbilityID          pgtype.Int8
+	DifficultyID       pgtype.Int8
+	Visibility         string
+	SensitiveLevel     string
+	UploaderID         int64
+	OriginalUploaderID pgtype.Int8
+	CurrentVersionID   pgtype.Int8
+	LatestVersionNo    string
+	MajorModified      bool
+	CommentCount       int32
+	FavoriteCount      int32
+	DeletedAt          pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+	IsHighRisk         bool
+	CategoryNameZh     string
+	CategoryNameEn     string
+}
+
+// 后台读取提示词：包含回收站中的条目，并带出类别的中英名称供列表与详情直接展示。
+func (q *Queries) GetPromptIncludingDeleted(ctx context.Context, id int64) (GetPromptIncludingDeletedRow, error) {
+	row := q.db.QueryRow(ctx, getPromptIncludingDeleted, id)
+	var i GetPromptIncludingDeletedRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Body,
+		&i.Description,
+		&i.CategoryID,
+		&i.AbilityID,
+		&i.DifficultyID,
+		&i.Visibility,
+		&i.SensitiveLevel,
+		&i.UploaderID,
+		&i.OriginalUploaderID,
+		&i.CurrentVersionID,
+		&i.LatestVersionNo,
+		&i.MajorModified,
+		&i.CommentCount,
+		&i.FavoriteCount,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IsHighRisk,
+		&i.CategoryNameZh,
+		&i.CategoryNameEn,
+	)
+	return i, err
+}
+
 const getPromptVersion = `-- name: GetPromptVersion :one
 SELECT id, prompt_id, version_no, major, minor, title, body, description, category_id, ability_id, difficulty_id, visibility, sensitive_level, is_major, change_note, author_id, created_at FROM prompt_versions
 WHERE prompt_id = $1 AND version_no = $2
@@ -263,6 +342,15 @@ func (q *Queries) GetPromptVersion(ctx context.Context, arg GetPromptVersionPara
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const hardDeletePrompt = `-- name: HardDeletePrompt :exec
+DELETE FROM prompts WHERE id = $1
+`
+
+func (q *Queries) HardDeletePrompt(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, hardDeletePrompt, id)
+	return err
 }
 
 const insertPrompt = `-- name: InsertPrompt :one
@@ -651,6 +739,21 @@ DELETE FROM prompt_tags WHERE prompt_id = $1
 func (q *Queries) ReplacePromptTags(ctx context.Context, promptID int64) error {
 	_, err := q.db.Exec(ctx, replacePromptTags, promptID)
 	return err
+}
+
+const restorePrompt = `-- name: RestorePrompt :one
+UPDATE prompts
+SET deleted_at = NULL, updated_at = now()
+WHERE id = $1 AND deleted_at IS NOT NULL
+RETURNING id
+`
+
+// 恢复回收站中的提示词（需求 §11.3）。
+func (q *Queries) RestorePrompt(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRow(ctx, restorePrompt, id)
+	var id_2 int64
+	err := row.Scan(&id_2)
+	return id_2, err
 }
 
 const setPromptCurrentVersion = `-- name: SetPromptCurrentVersion :one
