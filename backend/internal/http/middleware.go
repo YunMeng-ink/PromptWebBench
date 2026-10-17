@@ -29,13 +29,23 @@ const (
 // Huma 侧的错误由 humaecho 直接写响应，不经此处。
 func EchoErrorHandler(logger *slog.Logger) echo.HTTPErrorHandler {
 	return func(c *echo.Context, err error) {
+		// 响应已提交后（如中间件在处理器写出响应后才返回错误）不得再写响应，
+		// 与 Echo 内置错误处理器的行为一致；错误本身仍照常记录。
+		committed := false
+		if r, _ := echo.UnwrapResponse(c.Response()); r != nil && r.Committed {
+			committed = true
+		}
 		var apiErr *APIError
 		var appErr *apperr.Error
 		switch {
 		case errors.As(err, &apiErr):
-			writeAPIError(c, apiErr)
+			if !committed {
+				writeAPIError(c, apiErr)
+			}
 		case errors.As(err, &appErr):
-			writeAPIError(c, FromAppError(appErr))
+			if !committed {
+				writeAPIError(c, FromAppError(appErr))
+			}
 		default:
 			var sc echo.HTTPStatusCoder
 			status := http.StatusInternalServerError
@@ -49,7 +59,9 @@ func EchoErrorHandler(logger *slog.Logger) echo.HTTPErrorHandler {
 					slog.String("error", err.Error()),
 				)
 			}
-			writeAPIError(c, NewError(codeForStatus(status), ""))
+			if !committed {
+				writeAPIError(c, NewError(codeForStatus(status), ""))
+			}
 		}
 	}
 }
@@ -92,17 +104,27 @@ func EchoRequestLogger(logger *slog.Logger) echo.MiddlewareFunc {
 		LogRemoteIP:  true,
 		LogStatus:    true,
 		LogValuesFunc: func(c *echo.Context, v middleware.RequestLoggerValues) error {
+			// 处理器返回错误时响应尚未写出，中间件给出的状态不可信：
+			// 从错误推导真实状态码，只有 5xx 才记「请求失败」。
+			status := v.Status
+			if v.Error != nil {
+				status = errorStatus(v.Error)
+			}
 			attrs := []slog.Attr{
 				slog.String("request_id", v.RequestID),
 				slog.String("method", v.Method),
 				slog.String("path", v.URIPath),
 				slog.String("route", v.RoutePath),
 				slog.String("ip", v.RemoteIP),
-				slog.Int("status", v.Status),
+				slog.Int("status", status),
 				slog.Duration("latency", v.Latency),
 			}
-			if v.Error != nil {
-				attrs = append(attrs, slog.String("error", v.Error.Error()))
+			if status >= http.StatusInternalServerError {
+				// v.Error 可能为空：处理器自行写出 5xx 响应时（如 Huma 写出错误信封）
+				// 中间件收到的状态来自响应本身，此时只记录状态码。
+				if v.Error != nil {
+					attrs = append(attrs, slog.String("error", v.Error.Error()))
+				}
 				logger.LogAttrs(c.Request().Context(), slog.LevelError, "请求失败", attrs...)
 				return nil
 			}
@@ -164,12 +186,7 @@ func EchoMetrics(m *metrics.Metrics) echo.MiddlewareFunc {
 				status = res.Status
 			}
 			if err != nil {
-				var sc echo.HTTPStatusCoder
-				if errors.As(err, &sc) && sc.StatusCode() != 0 {
-					status = sc.StatusCode()
-				} else {
-					status = http.StatusInternalServerError
-				}
+				status = errorStatus(err)
 			}
 			route := c.Path()
 			if route == "" {
@@ -180,4 +197,19 @@ func EchoMetrics(m *metrics.Metrics) echo.MiddlewareFunc {
 			return err
 		}
 	}
+}
+
+// errorStatus 从处理器返回的错误推导真实响应状态码，与 EchoErrorHandler 的
+// 判定顺序一致：*APIError 自带状态；其余按 echo.HTTPStatusCoder 取值；
+// 都不匹配时按 500 处理。
+func errorStatus(err error) int {
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		return apiErr.GetStatus()
+	}
+	var sc echo.HTTPStatusCoder
+	if errors.As(err, &sc) && sc.StatusCode() != 0 {
+		return sc.StatusCode()
+	}
+	return http.StatusInternalServerError
 }

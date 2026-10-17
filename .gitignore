@@ -33,6 +33,11 @@ frontend/.e2e-accounts.json
 .env
 .env.local
 *.local.env
+deploy/pb.env
+
+# 打包产物与本地运行文件（deploy/pb.sh）
+dist/
+backend/internal/web/dist/
 
 # 编辑器与系统
 .idea/

@@ -3,9 +3,14 @@ package api
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"os"
+	"path"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -26,6 +31,7 @@ import (
 	"github.com/promptbench/backend/internal/service/rating"
 	"github.com/promptbench/backend/internal/service/social"
 	"github.com/promptbench/backend/internal/service/stats"
+	"github.com/promptbench/backend/internal/web"
 )
 
 // APIPrefix 是全部业务端点的前缀（G-17）。
@@ -157,6 +163,7 @@ func New(deps Deps) (*Server, error) {
 	s.registerSocialRoutes()
 	s.registerLibraryRoutes()
 	s.registerDictionaryRoutes()
+	s.registerWebRoutes()
 	return s, nil
 }
 
@@ -283,4 +290,76 @@ func (s *Server) metricsReachable(c *echo.Context) bool {
 	}
 	client, err := netip.ParseAddr(ClientIP(c.Request().RemoteAddr, forwarded, s.trusted))
 	return err == nil && client.IsLoopback()
+}
+
+// registerWebRoutes 挂载前端静态资源与 SPA 回落路由。
+//
+// 优先使用 STATIC_DIR 指定的磁盘目录（本地调试），否则使用编译期内嵌的前端
+// 构建产物（deploy/pb.sh build 打包，embedweb 构建标签）。两者都不可用时跳过
+// 注册，前端由 Vite 开发服务器服务。
+func (s *Server) registerWebRoutes() {
+	var (
+		root   fs.FS
+		source string
+	)
+	switch {
+	case s.deps.Env.StaticDir != "":
+		index := filepath.Join(s.deps.Env.StaticDir, "index.html")
+		if _, err := os.Stat(index); err != nil {
+			s.deps.Logger.Error("STATIC_DIR 目录缺少 index.html，静态服务未启用",
+				slog.String("dir", s.deps.Env.StaticDir), slog.String("error", err.Error()))
+			return
+		}
+		root = os.DirFS(s.deps.Env.StaticDir)
+		source = "STATIC_DIR=" + s.deps.Env.StaticDir
+	case web.HasIndex():
+		root = web.FS()
+		source = "内嵌构建产物"
+	default:
+		s.deps.Logger.Info("未找到前端构建产物，静态服务未启用")
+		return
+	}
+	s.echo.GET("/*", s.webHandler(root))
+	s.deps.Logger.Info("前端静态服务已启用", slog.String("source", source))
+}
+
+// webHandler 服务前端静态资源：未命中文件的路径回落到 index.html（SPA 路由）。
+// 带扩展名的路径视为真实文件，未命中直接 404，避免资源请求拿到 HTML。
+func (s *Server) webHandler(root fs.FS) echo.HandlerFunc {
+	return func(c *echo.Context) error {
+		p := c.Request().URL.Path
+		if strings.HasPrefix(p, APIPrefix+"/") {
+			return NewError(apperr.CodeNotFound, "")
+		}
+		c.Response().Header().Set(echo.HeaderCacheControl, webCacheControl(p))
+
+		// 去掉前导斜杠：os.DirFS 不接受根路径；path.Clean 同时消除路径穿越。
+		name := strings.TrimPrefix(path.Clean(p), "/")
+		if name == "" || name == "." {
+			name = "index.html"
+		}
+		if !fs.ValidPath(name) {
+			return NewError(apperr.CodeNotFound, "")
+		}
+		// Echo v5 的 FileFS 对目录请求自动回落该目录的 index.html，
+		// 并自带 MIME、Range 与 Last-Modified 处理。
+		if err := c.FileFS(name, root); err == nil {
+			return nil
+		}
+		if path.Ext(name) != "" {
+			return NewError(apperr.CodeNotFound, "")
+		}
+		if err := c.FileFS("index.html", root); err == nil {
+			return nil
+		}
+		return NewError(apperr.CodeNotFound, "")
+	}
+}
+
+// webCacheControl 为页面入口与带哈希的静态资源区分缓存策略。
+func webCacheControl(p string) string {
+	if strings.HasPrefix(p, "/assets/") {
+		return "public, max-age=31536000, immutable"
+	}
+	return "no-cache"
 }

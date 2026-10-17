@@ -14,6 +14,7 @@
 | 单元与集成测试 | `go test` + 真实 PostgreSQL；Vitest 5 |
 | 端到端测试 | Playwright 1.64（Chrome、Edge、Firefox、WebKit 四浏览器） |
 | 静态检查 | gofmt、go vet、biome 2.5、shellcheck、shfmt |
+| 打包部署 | 前端产物内嵌后端单二进制（`embedweb` 构建标签）+ `deploy/pb.sh` 控制脚本 |
 
 ## 文档
 
@@ -37,11 +38,13 @@
 | `backend/internal/domain` | 实体与业务规则，不依赖上层 |
 | `backend/internal/formula` | 纯数值计算，零依赖、无 I/O |
 | `backend/internal/service` | 用例编排与事务边界 |
-| `backend/internal/http` | Echo 与 Huma 装配、统一错误模型、限流、中间件 |
+| `backend/internal/http` | Echo 与 Huma 装配、统一错误模型、限流、中间件、前端静态服务 |
 | `backend/internal/repo` | sqlc 生成代码与手写转换 |
 | `backend/internal/platform` | 连接池、日志、迁移 runner、集成测试环境 |
+| `backend/internal/web` | 打包模式下内嵌的前端构建产物（`embedweb` 构建标签） |
 | `frontend/src` | 视图、组件、状态、语言包、接口封装 |
 | `frontend/e2e` | Playwright 用例 |
+| `deploy/pb.sh` | 一键打包与进程控制（build/start/stop/restart/status/logs） |
 | `deploy/backup.sh` | 每日逻辑备份（保留 7 天） |
 | `docs/` | 架构、追溯、部署、测试与验收文档 |
 

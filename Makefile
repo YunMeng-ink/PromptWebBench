@@ -3,11 +3,15 @@ SHELL := /bin/sh
 # 集成测试所需：指向一个可建库的维护库。用例各自建库并在结束时销毁。
 TEST_DATABASE_URL ?= postgres://postgres@127.0.0.1:5432/postgres?sslmode=disable
 
-.PHONY: gate backend-gate frontend-gate \
+.PHONY: gate backend-gate frontend-gate build \
         backend-fmt backend-build backend-vet backend-test backend-generate \
         frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e
 
 gate: backend-gate frontend-gate
+
+# 一键打包：构建前端、内嵌进后端、编译单文件二进制（dist/prompt-benchmark）
+build:
+	deploy/pb.sh build
 
 # ---------- 后端 ----------
 
