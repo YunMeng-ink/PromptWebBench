@@ -22,7 +22,7 @@ func auditRows(t *testing.T, f *fixture, action string) []repo.OperationLog {
 	return rows
 }
 
-// Test高风险内容访问写入审计日志 验证 G-12：高风险类别内容的每次访问都留痕，
+// Test高风险内容访问写入审计日志 验证 G-12：高风险考察目的内容的每次访问都留痕，
 // 授予与拒绝两种结果分别记录。
 func Test高风险内容访问写入审计日志(t *testing.T) {
 	f := newFixture(t)
@@ -30,7 +30,7 @@ func Test高风险内容访问写入审计日志(t *testing.T) {
 	dev := f.developer(t)
 	normal := f.normalUser(t)
 
-	created, err := f.svc.Create(ctx, dev, baseInput(f.categoryID(t, "jailbreak"), domain.VisibilityPublic))
+	created, err := f.svc.Create(ctx, dev, f.baseInput(t, f.purposeID(t, "adversarial"), domain.VisibilityPublic))
 	if err != nil {
 		t.Fatalf("创建高风险提示词失败: %v", err)
 	}
@@ -67,14 +67,14 @@ func usernameOf(t *testing.T, f *fixture, userID int64) string {
 	return name
 }
 
-// Test非高风险内容不写审计 确认审计只针对高风险类别内容（G-12），
+// Test非高风险内容不写审计 确认审计只针对高风险考察目的内容（G-12），
 // 普通内容的访问不产生记录。
 func Test非高风险内容不写审计(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	user := f.normalUser(t)
 
-	created, err := f.svc.Create(ctx, user, baseInput(f.categoryID(t, "reasoning"), domain.VisibilityPublic))
+	created, err := f.svc.Create(ctx, user, f.baseInput(t, f.purposeID(t, "capability_boundary"), domain.VisibilityPublic))
 	if err != nil {
 		t.Fatalf("创建普通提示词失败: %v", err)
 	}

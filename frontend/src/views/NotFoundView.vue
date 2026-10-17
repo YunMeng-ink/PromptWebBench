@@ -17,28 +17,43 @@ const { t } = useI18n()
 
 <style scoped>
 .pb-not-found {
-  padding: var(--pb-space-xl) 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--pb-space-3xl) 0;
   text-align: center;
 }
 
 .pb-not-found__code {
-  color: var(--pb-color-text-faint);
-  font-size: 48px;
-  font-weight: 600;
+  font-family: var(--pb-font-display);
+  font-size: 96px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.04em;
   margin: 0;
+  color: var(--pb-accent);
 }
 
 .pb-not-found__title {
-  font-size: 22px;
-  margin: var(--pb-space-sm) 0;
+  margin: var(--pb-space-md) 0 var(--pb-space-sm);
+  font-size: 24px;
+  font-weight: 600;
 }
 
 .pb-not-found__description {
-  color: var(--pb-color-text-soft);
-  margin: 0 0 var(--pb-space-lg);
+  margin: 0 0 var(--pb-space-xl);
+  color: var(--pb-ink-soft);
+  font-size: 14.5px;
 }
 
 .pb-not-found__back {
-  color: var(--pb-color-primary);
+  padding-bottom: 2px;
+  border-bottom: 1px solid currentColor;
+  color: var(--pb-accent);
+  font-size: 13.5px;
+}
+
+.pb-not-found__back:hover {
+  color: var(--pb-accent-strong);
 }
 </style>

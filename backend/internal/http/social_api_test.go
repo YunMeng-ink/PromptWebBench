@@ -11,12 +11,13 @@ import (
 // socialPrompt 建立一条公开提示词并返回其 ID。
 func socialPrompt(t *testing.T, env *testEnv, client *apiClient, title string) int64 {
 	t.Helper()
+	purposeID, capabilityID := defaultClassification(t, env)
 	created := decodeBody[struct {
 		Prompt struct {
 			ID int64 `json:"id"`
 		} `json:"prompt"`
 	}](t, client.post(api.APIPrefix+"/prompts", map[string]any{
-		"title": title, "body": "正文", "category_id": 1,
+		"title": title, "body": "正文", "purpose_id": purposeID, "capability_id": capabilityID,
 	}))
 	return created.Prompt.ID
 }
@@ -223,6 +224,7 @@ func TestFavoriteItemVisibilityRecheckedOverHTTP(t *testing.T) {
 	owner := env.newClient(t)
 	owner.prime()
 	user := registerVerifyLogin(t, env, owner, "favorite-recheck@example.com", httpTestPassword)
+	purposeID, capabilityID := defaultClassification(t, env)
 
 	promptID := socialPrompt(t, env, owner, "将被改为私有")
 	created := decodeBody[struct {
@@ -247,7 +249,8 @@ func TestFavoriteItemVisibilityRecheckedOverHTTP(t *testing.T) {
 
 	// 把提示词改为私有：条目仍在夹内，但对外不再可见。
 	expectStatus(t, owner.patch(fmt.Sprintf("%s/prompts/%d", api.APIPrefix, promptID), map[string]any{
-		"title": "将被改为私有", "body": "正文", "category_id": 1, "visibility": "private",
+		"title": "将被改为私有", "body": "正文", "purpose_id": purposeID,
+		"capability_id": capabilityID, "visibility": "private",
 	}), http.StatusOK)
 
 	after := decodeBody[struct {

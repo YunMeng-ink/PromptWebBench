@@ -1,83 +1,211 @@
-/* 设计令牌：全局唯一的样式取值来源。组件只引用 --pb-* 变量。 */
+/* 设计令牌：全局唯一的样式取值来源。组件只引用 --pb-* 变量。
+ *
+ * 视觉方向：编辑排版风格（editorial）。暖纸底色、墨色正文、单一莓红强调色；
+ * 大留白、细边框、极轻阴影；衬线字体仅用于品牌字与数字，正文保持无衬线。
+ */
 
 :root {
-  --pb-color-bg: #ffffff;
-  --pb-color-bg-soft: #f5f7fa;
-  --pb-color-surface: #ffffff;
-  --pb-color-text: #303133;
-  --pb-color-text-soft: #606266;
-  --pb-color-text-faint: #909399;
-  --pb-color-border: #dcdfe6;
-  --pb-color-primary: #409eff;
+  /* 底色与表面 */
+  --pb-paper: #f7f6f3;
+  --pb-surface: #ffffff;
+  --pb-surface-muted: #f1efe9;
+  --pb-surface-sunken: #ece9e2;
 
-  --pb-header-height: 60px;
-  --pb-content-max-width: 1200px;
+  /* 文字 */
+  --pb-ink: #1a1815;
+  --pb-ink-soft: #57524a;
+  --pb-ink-faint: #6f695f;
 
+  /* 线条 */
+  --pb-line: #e6e1d7;
+  --pb-line-strong: #d8d2c6;
+
+  /* 强调色：莓红，仅用于选中、焦点与点缀 */
+  --pb-accent: #a32a4c;
+  --pb-accent-strong: #8a2340;
+  --pb-accent-soft: #f6e9ed;
+  --pb-accent-ring: rgba(163, 42, 76, 0.24);
+
+  /* 语义色，压低饱和度以贴合暖纸底 */
+  --pb-success: #2f6b4f;
+  --pb-warning: #9a6a1f;
+  --pb-danger: #b42318;
+
+  /* 字体 */
+  --pb-font-body:
+    "Inter", "SF Pro Text", -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+  --pb-font-display:
+    "Iowan Old Style", "Palatino Linotype", "Palatino", "Georgia", "Noto Serif CJK SC",
+    "Source Han Serif SC", "Songti SC", "SimSun", serif;
+  --pb-font-mono: "SFMono-Regular", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+
+  /* 间距 */
   --pb-space-xs: 4px;
   --pb-space-sm: 8px;
   --pb-space-md: 16px;
   --pb-space-lg: 24px;
   --pb-space-xl: 32px;
+  --pb-space-2xl: 48px;
+  --pb-space-3xl: 64px;
 
-  --pb-radius-sm: 4px;
-  --pb-radius-md: 8px;
+  /* 圆角 */
+  --pb-radius-sm: 6px;
+  --pb-radius-md: 10px;
+  --pb-radius-lg: 16px;
+  --pb-radius-pill: 999px;
+
+  /* 阴影：暖色、极轻，避免厚重投影 */
+  --pb-shadow-sm: 0 1px 2px rgba(26, 24, 21, 0.05);
+  --pb-shadow-md: 0 10px 30px -18px rgba(26, 24, 21, 0.28);
+  --pb-shadow-lg: 0 28px 60px -32px rgba(26, 24, 21, 0.34);
+
+  /* 布局 */
+  --pb-header-height: 68px;
+  --pb-content-max-width: 1240px;
+  --pb-reading-width: 760px;
+
+  /* 动效 */
+  --pb-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --pb-duration: 200ms;
+
+  /* 兼容旧视图仍在引用的命名，统一映射到新令牌。 */
+  --pb-color-bg: var(--pb-paper);
+  --pb-color-bg-soft: var(--pb-surface-muted);
+  --pb-color-surface: var(--pb-surface);
+  --pb-color-surface-muted: var(--pb-surface-muted);
+  --pb-color-text: var(--pb-ink);
+  --pb-color-text-soft: var(--pb-ink-soft);
+  --pb-color-text-faint: var(--pb-ink-faint);
+  --pb-color-border: var(--pb-line);
+  --pb-color-primary: var(--pb-accent);
+
+  /* Element Plus 主题映射（浅色） */
+  --el-font-family: var(--pb-font-body);
+  --el-border-radius-base: var(--pb-radius-md);
+  --el-border-radius-small: var(--pb-radius-sm);
+  --el-border-radius-round: var(--pb-radius-pill);
+
+  --el-color-primary: #1a1815;
+  --el-color-primary-light-3: #48433b;
+  --el-color-primary-light-5: #7a7469;
+  --el-color-primary-light-7: #b3ada2;
+  --el-color-primary-light-8: #d3cec5;
+  --el-color-primary-light-9: #edeae4;
+  --el-color-primary-dark-2: #000000;
+
+  --el-color-success: #2f6b4f;
+  --el-color-success-light-9: #eaf2ed;
+  --el-color-warning: #9a6a1f;
+  --el-color-warning-light-9: #f6efe2;
+  --el-color-danger: #b42318;
+  --el-color-danger-light-9: #f9e9e7;
+  --el-color-error: #b42318;
+  --el-color-error-light-9: #f9e9e7;
+  --el-color-info: #6f695f;
+  --el-color-info-light-9: #f1efe9;
+
+  --el-bg-color: var(--pb-surface);
+  --el-bg-color-page: var(--pb-paper);
+  --el-bg-color-overlay: var(--pb-surface);
+
+  --el-text-color-primary: var(--pb-ink);
+  --el-text-color-regular: var(--pb-ink-soft);
+  --el-text-color-secondary: var(--pb-ink-faint);
+  --el-text-color-placeholder: #9a9387;
+  --el-text-color-disabled: #b5afa4;
+
+  --el-border-color: var(--pb-line);
+  --el-border-color-light: #ece8e0;
+  --el-border-color-lighter: #f1eee7;
+  --el-border-color-extra-light: #f5f2ec;
+  --el-border-color-dark: var(--pb-line-strong);
+  --el-border-color-darker: #c9c2b5;
+
+  --el-fill-color: var(--pb-surface-muted);
+  --el-fill-color-light: #f5f3ee;
+  --el-fill-color-lighter: #f8f6f1;
+  --el-fill-color-extra-light: #fbfaf7;
+  --el-fill-color-dark: #e9e5dd;
+  --el-fill-color-darker: #e0dbd1;
+  --el-fill-color-blank: var(--pb-surface);
+
+  --el-mask-color: rgba(26, 24, 21, 0.42);
+  --el-box-shadow: var(--pb-shadow-md);
+  --el-box-shadow-light: var(--pb-shadow-sm);
+  --el-box-shadow-lighter: var(--pb-shadow-sm);
+  --el-box-shadow-dark: var(--pb-shadow-lg);
 }
 
 html.dark {
-  --pb-color-bg: #141414;
-  --pb-color-bg-soft: #1d1e1f;
-  --pb-color-surface: #1d1e1f;
-  --pb-color-text: #e5eaf3;
-  --pb-color-text-soft: #cfd3dc;
-  --pb-color-text-faint: #a3a6ad;
-  --pb-color-border: #4c4d4f;
-}
+  --pb-paper: #0c0c0d;
+  --pb-surface: #151516;
+  --pb-surface-muted: #1c1c1e;
+  --pb-surface-sunken: #101011;
 
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
+  --pb-ink: #f3f1ec;
+  --pb-ink-soft: #b9b4ab;
+  --pb-ink-faint: #8e887e;
 
-html,
-body,
-#app {
-  height: 100%;
-  margin: 0;
-  padding: 0;
-}
+  --pb-line: #2a2a2c;
+  --pb-line-strong: #3a393b;
 
-body {
-  background-color: var(--pb-color-bg);
-  color: var(--pb-color-text);
-  font-family:
-    system-ui, -apple-system, "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei",
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-}
+  --pb-accent: #e06a88;
+  --pb-accent-strong: #f08aa5;
+  --pb-accent-soft: #2a1a20;
+  --pb-accent-ring: rgba(224, 106, 136, 0.32);
 
-a {
-  color: inherit;
-  text-decoration: none;
-}
+  --pb-success: #6fbf97;
+  --pb-warning: #d9a94f;
+  --pb-danger: #e5726b;
 
-.pb-shell {
-  display: flex;
-  flex-direction: column;
-  min-height: 100%;
-}
+  --pb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --pb-shadow-md: 0 12px 32px -20px rgba(0, 0, 0, 0.8);
+  --pb-shadow-lg: 0 30px 64px -32px rgba(0, 0, 0, 0.9);
 
-.pb-main {
-  flex: 1 1 auto;
-  width: 100%;
-  max-width: var(--pb-content-max-width);
-  margin: 0 auto;
-  padding: var(--pb-space-lg) var(--pb-space-md);
-}
+  /* Element Plus 主题映射（深色）：主色反转为浅墨，按钮文字随之压深。 */
+  --el-color-primary: #f3f1ec;
+  --el-color-primary-light-3: #c9c4ba;
+  --el-color-primary-light-5: #9e998f;
+  --el-color-primary-light-7: #6c675f;
+  --el-color-primary-light-8: #4a4640;
+  --el-color-primary-light-9: #2a2824;
+  --el-color-primary-dark-2: #ffffff;
 
-.pb-container {
-  width: 100%;
-  max-width: var(--pb-content-max-width);
-  margin: 0 auto;
-  padding: 0 var(--pb-space-md);
+  --el-color-success: #6fbf97;
+  --el-color-warning: #d9a94f;
+  --el-color-danger: #e5726b;
+  --el-color-error: #e5726b;
+  --el-color-info: #8e887e;
+
+  --el-bg-color: var(--pb-surface);
+  --el-bg-color-page: var(--pb-paper);
+  --el-bg-color-overlay: #1a1a1c;
+
+  --el-text-color-primary: var(--pb-ink);
+  --el-text-color-regular: var(--pb-ink-soft);
+  --el-text-color-secondary: var(--pb-ink-faint);
+  --el-text-color-placeholder: #6e6960;
+  --el-text-color-disabled: #565249;
+
+  --el-border-color: var(--pb-line);
+  --el-border-color-light: #242426;
+  --el-border-color-lighter: #202022;
+  --el-border-color-extra-light: #1c1c1e;
+  --el-border-color-dark: var(--pb-line-strong);
+  --el-border-color-darker: #4a494b;
+
+  --el-fill-color: var(--pb-surface-muted);
+  --el-fill-color-light: #1a1a1c;
+  --el-fill-color-lighter: #171718;
+  --el-fill-color-extra-light: #141415;
+  --el-fill-color-dark: #222224;
+  --el-fill-color-darker: #28282a;
+  --el-fill-color-blank: var(--pb-surface);
+
+  --el-mask-color: rgba(0, 0, 0, 0.6);
+  --el-box-shadow: var(--pb-shadow-md);
+  --el-box-shadow-light: var(--pb-shadow-sm);
+  --el-box-shadow-lighter: var(--pb-shadow-sm);
+  --el-box-shadow-dark: var(--pb-shadow-lg);
 }

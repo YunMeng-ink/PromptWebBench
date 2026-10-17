@@ -33,38 +33,21 @@ onMounted(async () => {
 
 <template>
   <section class="pb-auth">
-    <h1 class="pb-auth__title">{{ t('auth.oauthTitle') }}</h1>
-    <el-alert v-if="failed" type="error" :title="errorText" show-icon data-testid="oauth-error" />
-    <p v-else class="pb-auth__hint">{{ t('auth.oauthSuccess') }}</p>
+    <div class="pb-auth__card">
+      <span class="pb-auth__eyebrow" aria-hidden="true">Signing In</span>
+      <h1 class="pb-auth__title">{{ t('auth.oauthTitle') }}</h1>
+      <el-alert
+        v-if="failed"
+        type="error"
+        :title="errorText"
+        show-icon
+        data-testid="oauth-error"
+      />
+      <p v-else class="pb-auth__hint">{{ t('auth.oauthSuccess') }}</p>
 
-    <div class="pb-auth__links">
-      <RouterLink to="/login">{{ t('auth.toLogin') }}</RouterLink>
+      <div class="pb-auth__links">
+        <RouterLink to="/login">{{ t('auth.toLogin') }}</RouterLink>
+      </div>
     </div>
   </section>
 </template>
-
-<style scoped>
-.pb-auth {
-  max-width: 420px;
-  margin: 0 auto;
-  padding: var(--pb-space-xl) 0;
-}
-
-.pb-auth__title {
-  font-size: 24px;
-  margin: 0 0 var(--pb-space-lg);
-}
-
-.pb-auth__hint {
-  color: var(--pb-color-text-soft);
-}
-
-.pb-auth__links {
-  margin-top: var(--pb-space-md);
-  font-size: 14px;
-}
-
-.pb-auth__links a {
-  color: var(--pb-color-primary);
-}
-</style>

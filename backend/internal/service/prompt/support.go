@@ -16,8 +16,8 @@ import (
 // translatePermission 把领域层的权限判定失败翻译成错误码。
 // 领域层不依赖 apperr，错误码在此处统一产生。
 func translatePermission(err error) error {
-	if errors.Is(err, domain.ErrHighRiskCategoryForbidden) {
-		return apperr.New(apperr.CodeForbidden, "普通用户不能选择高风险类别")
+	if errors.Is(err, domain.ErrHighRiskPurposeForbidden) {
+		return apperr.New(apperr.CodeForbidden, "普通用户不能选择高风险考察目的")
 	}
 	if errors.Is(err, domain.ErrDeveloperVisibilityForbidden) {
 		return apperr.New(apperr.CodeForbidden, "普通用户不能选择开发者可见")
@@ -39,8 +39,8 @@ type promptFields struct {
 	Title              string
 	Body               string
 	Description        string
-	CategoryID         int64
-	AbilityID          pgtype.Int8
+	PurposeID          int64
+	CapabilityID       int64
 	DifficultyID       pgtype.Int8
 	Visibility         string
 	SensitiveLevel     string
@@ -62,7 +62,7 @@ type promptFields struct {
 func fieldsOfPrompt(r repo.Prompt) promptFields {
 	return promptFields{
 		ID: r.ID, Title: r.Title, Body: r.Body, Description: r.Description,
-		CategoryID: r.CategoryID, AbilityID: r.AbilityID, DifficultyID: r.DifficultyID,
+		PurposeID: r.PurposeID, CapabilityID: r.CapabilityID, DifficultyID: r.DifficultyID,
 		Visibility: r.Visibility, SensitiveLevel: r.SensitiveLevel, UploaderID: r.UploaderID,
 		OriginalUploaderID: r.OriginalUploaderID, CurrentVersionID: r.CurrentVersionID,
 		LatestVersionNo: r.LatestVersionNo, MajorModified: r.MajorModified,
@@ -74,7 +74,7 @@ func fieldsOfPrompt(r repo.Prompt) promptFields {
 func fieldsOfGetPrompt(r repo.GetPromptRow) promptFields {
 	return promptFields{
 		ID: r.ID, Title: r.Title, Body: r.Body, Description: r.Description,
-		CategoryID: r.CategoryID, AbilityID: r.AbilityID, DifficultyID: r.DifficultyID,
+		PurposeID: r.PurposeID, CapabilityID: r.CapabilityID, DifficultyID: r.DifficultyID,
 		Visibility: r.Visibility, SensitiveLevel: r.SensitiveLevel, UploaderID: r.UploaderID,
 		OriginalUploaderID: r.OriginalUploaderID, CurrentVersionID: r.CurrentVersionID,
 		LatestVersionNo: r.LatestVersionNo, MajorModified: r.MajorModified,
@@ -83,12 +83,12 @@ func fieldsOfGetPrompt(r repo.GetPromptRow) promptFields {
 	}
 }
 
-// fieldsOfIncludingDeleted 映射包含回收站条目的读取行。类别名称不入 promptFields：
+// fieldsOfIncludingDeleted 映射包含回收站条目的读取行。考察目的名称不入 promptFields：
 // 它们只服务于后台列表的展示，映射到实体上会被后续写入路径误当成可写字段。
 func fieldsOfIncludingDeleted(r repo.GetPromptIncludingDeletedRow) promptFields {
 	return promptFields{
 		ID: r.ID, Title: r.Title, Body: r.Body, Description: r.Description,
-		CategoryID: r.CategoryID, AbilityID: r.AbilityID, DifficultyID: r.DifficultyID,
+		PurposeID: r.PurposeID, CapabilityID: r.CapabilityID, DifficultyID: r.DifficultyID,
 		Visibility: r.Visibility, SensitiveLevel: r.SensitiveLevel, UploaderID: r.UploaderID,
 		OriginalUploaderID: r.OriginalUploaderID, CurrentVersionID: r.CurrentVersionID,
 		LatestVersionNo: r.LatestVersionNo, MajorModified: r.MajorModified,
@@ -100,7 +100,7 @@ func fieldsOfIncludingDeleted(r repo.GetPromptIncludingDeletedRow) promptFields 
 func fieldsOfLockPrompt(r repo.LockPromptRow) promptFields {
 	return promptFields{
 		ID: r.ID, Title: r.Title, Body: r.Body, Description: r.Description,
-		CategoryID: r.CategoryID, AbilityID: r.AbilityID, DifficultyID: r.DifficultyID,
+		PurposeID: r.PurposeID, CapabilityID: r.CapabilityID, DifficultyID: r.DifficultyID,
 		Visibility: r.Visibility, SensitiveLevel: r.SensitiveLevel, UploaderID: r.UploaderID,
 		OriginalUploaderID: r.OriginalUploaderID, CurrentVersionID: r.CurrentVersionID,
 		LatestVersionNo: r.LatestVersionNo, MajorModified: r.MajorModified,
@@ -113,7 +113,7 @@ func fieldsOfLockPrompt(r repo.LockPromptRow) promptFields {
 func fieldsOfLockIncludingDeleted(r repo.LockPromptIncludingDeletedRow) promptFields {
 	return promptFields{
 		ID: r.ID, Title: r.Title, Body: r.Body, Description: r.Description,
-		CategoryID: r.CategoryID, AbilityID: r.AbilityID, DifficultyID: r.DifficultyID,
+		PurposeID: r.PurposeID, CapabilityID: r.CapabilityID, DifficultyID: r.DifficultyID,
 		Visibility: r.Visibility, SensitiveLevel: r.SensitiveLevel, UploaderID: r.UploaderID,
 		OriginalUploaderID: r.OriginalUploaderID, CurrentVersionID: r.CurrentVersionID,
 		LatestVersionNo: r.LatestVersionNo, MajorModified: r.MajorModified,
@@ -125,7 +125,7 @@ func fieldsOfLockIncludingDeleted(r repo.LockPromptIncludingDeletedRow) promptFi
 func fieldsOfOwnPrompt(r repo.ListOwnPromptsRow) promptFields {
 	return promptFields{
 		ID: r.ID, Title: r.Title, Body: r.Body, Description: r.Description,
-		CategoryID: r.CategoryID, AbilityID: r.AbilityID, DifficultyID: r.DifficultyID,
+		PurposeID: r.PurposeID, CapabilityID: r.CapabilityID, DifficultyID: r.DifficultyID,
 		Visibility: r.Visibility, SensitiveLevel: r.SensitiveLevel, UploaderID: r.UploaderID,
 		OriginalUploaderID: r.OriginalUploaderID, CurrentVersionID: r.CurrentVersionID,
 		LatestVersionNo: r.LatestVersionNo, MajorModified: r.MajorModified,
@@ -155,7 +155,8 @@ func promptFromRow(f promptFields) (domain.Prompt, error) {
 		Title:         f.Title,
 		Body:          f.Body,
 		Description:   f.Description,
-		CategoryID:    f.CategoryID,
+		PurposeID:     f.PurposeID,
+		CapabilityID:  f.CapabilityID,
 		Visibility:    visibility,
 		Sensitive:     sensitive,
 		HighRisk:      f.IsHighRisk,
@@ -164,9 +165,6 @@ func promptFromRow(f promptFields) (domain.Prompt, error) {
 		MajorModified: f.MajorModified,
 		CommentCount:  f.CommentCount,
 		FavoriteCount: f.FavoriteCount,
-	}
-	if f.AbilityID.Valid {
-		out.AbilityID = &f.AbilityID.Int64
 	}
 	if f.DifficultyID.Valid {
 		out.DifficultyID = &f.DifficultyID.Int64
@@ -186,52 +184,72 @@ func promptFromRow(f promptFields) (domain.Prompt, error) {
 	return out, nil
 }
 
-func loadCategory(ctx context.Context, q *repo.Queries, id int64) (domain.Category, error) {
-	row, err := q.GetCategory(ctx, id)
+func loadPurpose(ctx context.Context, q *repo.Queries, id int64) (domain.Purpose, error) {
+	row, err := q.GetPurpose(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return domain.Category{}, apperr.New(apperr.CodeInvalidCategory, "类别不存在")
+			return domain.Purpose{}, apperr.New(apperr.CodeInvalidClassification, "考察目的不存在")
 		}
-		return domain.Category{}, fmt.Errorf("查询类别: %w", err)
+		return domain.Purpose{}, fmt.Errorf("查询考察目的: %w", err)
 	}
 	if !row.IsEnabled {
-		return domain.Category{}, apperr.New(apperr.CodeInvalidCategory, "类别已停用")
+		return domain.Purpose{}, apperr.New(apperr.CodeInvalidClassification, "考察目的已停用")
 	}
-	return domain.Category{
-		ID:         row.ID,
-		Slug:       row.Slug,
-		NameZh:     row.NameZh,
-		NameEn:     row.NameEn,
-		IsHighRisk: row.IsHighRisk,
-		IsEnabled:  row.IsEnabled,
-		SortOrder:  row.SortOrder,
+	return domain.Purpose{
+		ID:            row.ID,
+		Slug:          row.Slug,
+		NameZh:        row.NameZh,
+		NameEn:        row.NameEn,
+		DescriptionZh: row.DescriptionZh,
+		DescriptionEn: row.DescriptionEn,
+		IsHighRisk:    row.IsHighRisk,
+		IsEnabled:     row.IsEnabled,
+		SortOrder:     row.SortOrder,
 	}, nil
 }
 
-// validateReferences 校验可选字典项存在且启用。类别必填由 loadCategory 负责。
+func loadCapability(ctx context.Context, q *repo.Queries, id int64) (domain.Capability, error) {
+	row, err := q.GetCapability(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.Capability{}, apperr.New(apperr.CodeInvalidClassification, "考察维度不存在")
+		}
+		return domain.Capability{}, fmt.Errorf("查询考察维度: %w", err)
+	}
+	if !row.IsEnabled {
+		return domain.Capability{}, apperr.New(apperr.CodeInvalidClassification, "考察维度已停用")
+	}
+	return domain.Capability{
+		ID:            row.ID,
+		Slug:          row.Slug,
+		NameZh:        row.NameZh,
+		NameEn:        row.NameEn,
+		GroupKey:      row.GroupKey,
+		DescriptionZh: row.DescriptionZh,
+		DescriptionEn: row.DescriptionEn,
+		IsEnabled:     row.IsEnabled,
+		SortOrder:     row.SortOrder,
+	}, nil
+}
+
+// validateReferences 校验必填考察维度与可选字典项存在且启用。考察目的必填由 loadPurpose 负责。
 func (s *Service) validateReferences(ctx context.Context, q *repo.Queries, in Input) error {
-	if in.AbilityID != nil {
-		row, err := q.GetAbility(ctx, *in.AbilityID)
-		if err != nil {
-			if errors.Is(err, pgx.ErrNoRows) {
-				return apperr.New(apperr.CodeInvalidCategory, "能力维度不存在")
-			}
-			return fmt.Errorf("查询能力维度: %w", err)
-		}
-		if !row.IsEnabled {
-			return apperr.New(apperr.CodeInvalidCategory, "能力维度已停用")
-		}
+	if in.CapabilityID <= 0 {
+		return apperr.New(apperr.CodeInvalidClassification, "考察维度不可为空")
+	}
+	if _, err := loadCapability(ctx, q, in.CapabilityID); err != nil {
+		return err
 	}
 	if in.DifficultyID != nil {
 		row, err := q.GetDifficulty(ctx, *in.DifficultyID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return apperr.New(apperr.CodeInvalidCategory, "难度不存在")
+				return apperr.New(apperr.CodeInvalidClassification, "难度不存在")
 			}
 			return fmt.Errorf("查询难度: %w", err)
 		}
 		if !row.IsEnabled {
-			return apperr.New(apperr.CodeInvalidCategory, "难度已停用")
+			return apperr.New(apperr.CodeInvalidClassification, "难度已停用")
 		}
 	}
 	if len(in.TagIDs) > 0 {
@@ -240,11 +258,11 @@ func (s *Service) validateReferences(ctx context.Context, q *repo.Queries, in In
 			return fmt.Errorf("查询标签: %w", err)
 		}
 		if len(rows) != len(in.TagIDs) {
-			return apperr.New(apperr.CodeInvalidCategory, "标签不存在")
+			return apperr.New(apperr.CodeInvalidClassification, "标签不存在")
 		}
 		for _, row := range rows {
 			if !row.IsEnabled {
-				return apperr.New(apperr.CodeInvalidCategory, "标签已停用")
+				return apperr.New(apperr.CodeInvalidClassification, "标签已停用")
 			}
 		}
 	}

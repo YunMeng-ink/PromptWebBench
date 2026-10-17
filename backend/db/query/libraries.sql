@@ -125,7 +125,7 @@ WHERE library_id = $1 AND deleted_at IS NULL;
 -- name: InsertLibraryQuestion :one
 INSERT INTO library_questions (
     library_id, kind, source_prompt_id, source_prompt_version_id,
-    title, body, description, category_id, ability_id, difficulty_id,
+    title, body, description, purpose_id, capability_id, difficulty_id,
     sensitive_level, sort_order
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 RETURNING *;
@@ -156,8 +156,8 @@ SELECT
     p.title             AS source_title,
     p.body              AS source_body,
     p.description       AS source_description,
-    p.category_id       AS source_category_id,
-    p.ability_id        AS source_ability_id,
+    p.purpose_id        AS source_purpose_id,
+    p.capability_id     AS source_capability_id,
     p.difficulty_id     AS source_difficulty_id,
     p.visibility        AS source_visibility,
     p.sensitive_level   AS source_sensitive_level,
@@ -165,13 +165,17 @@ SELECT
     p.latest_version_no AS source_version_no,
     p.major_modified    AS source_major_modified,
     p.deleted_at        AS source_deleted_at,
-    COALESCE(pc.is_high_risk, false) AS source_is_high_risk,
-    COALESCE(pc.name_zh, dc.name_zh, '') AS category_name_zh,
-    COALESCE(pc.name_en, dc.name_en, '') AS category_name_en
+    COALESCE(pp.is_high_risk, false) AS source_is_high_risk,
+    COALESCE(pp.name_zh, qp.name_zh, '') AS purpose_name_zh,
+    COALESCE(pp.name_en, qp.name_en, '') AS purpose_name_en,
+    COALESCE(pcap.name_zh, qcap.name_zh, '') AS capability_name_zh,
+    COALESCE(pcap.name_en, qcap.name_en, '') AS capability_name_en
 FROM library_questions q
 LEFT JOIN prompts p ON p.id = q.source_prompt_id
-LEFT JOIN categories pc ON pc.id = p.category_id
-LEFT JOIN categories dc ON dc.id = q.category_id
+LEFT JOIN purposes pp ON pp.id = p.purpose_id
+LEFT JOIN capabilities pcap ON pcap.id = p.capability_id
+LEFT JOIN purposes qp ON qp.id = q.purpose_id
+LEFT JOIN capabilities qcap ON qcap.id = q.capability_id
 WHERE q.library_id = sqlc.arg(library_id)
   AND (sqlc.arg(include_deleted)::boolean OR q.deleted_at IS NULL)
 ORDER BY q.sort_order, q.id;
@@ -212,7 +216,7 @@ WHERE library_id = $1;
 -- name: UpdateLibraryQuestionContent :one
 UPDATE library_questions
 SET title = sqlc.arg(title), body = sqlc.arg(body), description = sqlc.arg(description),
-    category_id = sqlc.arg(category_id), ability_id = sqlc.arg(ability_id),
+    purpose_id = sqlc.arg(purpose_id), capability_id = sqlc.arg(capability_id),
     difficulty_id = sqlc.arg(difficulty_id), sensitive_level = sqlc.arg(sensitive_level),
     updated_at = now()
 WHERE id = sqlc.arg(id) AND deleted_at IS NULL
@@ -222,8 +226,8 @@ RETURNING *;
 -- name: DeriveLibraryQuestion :one
 UPDATE library_questions
 SET kind = 'derived', title = sqlc.arg(title), body = sqlc.arg(body),
-    description = sqlc.arg(description), category_id = sqlc.arg(category_id),
-    ability_id = sqlc.arg(ability_id), difficulty_id = sqlc.arg(difficulty_id),
+    description = sqlc.arg(description), purpose_id = sqlc.arg(purpose_id),
+    capability_id = sqlc.arg(capability_id), difficulty_id = sqlc.arg(difficulty_id),
     sensitive_level = sqlc.arg(sensitive_level), updated_at = now()
 WHERE id = sqlc.arg(id) AND deleted_at IS NULL
 RETURNING *;

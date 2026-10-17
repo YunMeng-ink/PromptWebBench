@@ -60,8 +60,11 @@ func addReferenceQuestionOverHTTP(t *testing.T, client *apiClient, libraryID, pr
 // developerPromptOverHTTP 以开发者身份上传一条开发者可见的提示词。
 func developerPromptOverHTTP(t *testing.T, developer *apiClient, title string) int64 {
 	t.Helper()
+	purposeID := purposeIDs(t, developer)["capability_boundary"]
+	capabilityID := capabilityIDs(t, developer)["reasoning"]
 	resp := developer.post(api.APIPrefix+"/prompts", map[string]any{
-		"title": title, "body": "开发者专属正文", "category_id": 1, "visibility": "developer",
+		"title": title, "body": "开发者专属正文", "purpose_id": purposeID,
+		"capability_id": capabilityID, "visibility": "developer",
 	})
 	expectStatus(t, resp, http.StatusOK)
 	return decodeBody[struct {
@@ -155,7 +158,7 @@ func TestLibraryLifecycleOverHTTP(t *testing.T) {
 		t.Fatalf("无标签题目的标签字段不是空列表：%s", raw)
 	}
 
-	// 导出：14 项要素齐全。
+	// 导出：15 项要素齐全。
 	export := decodeBody[struct {
 		Filename string `json:"filename"`
 		Content  string `json:"content"`
@@ -165,7 +168,7 @@ func TestLibraryLifecycleOverHTTP(t *testing.T) {
 	}
 	for _, marker := range []string{
 		"# 我的题库", "- 题库描述：题库描述", "- 创建者：", "- 导出时间：", "- 题目数量：2",
-		"## 1. 派生题", "- 题目类别：", "- 题目标签：", "- 来源提示词：",
+		"## 1. 派生题", "- 考察目的：", "- 考察维度：", "- 题目标签：", "- 来源提示词：",
 		"- 来源版本：", "- 修改说明：", "### 提示词正文", "### 题目说明",
 	} {
 		if !strings.Contains(export.Content, marker) {

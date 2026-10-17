@@ -157,7 +157,8 @@ async function deleteRating(item: PromptModelRating): Promise<void> {
 /** copyLabels 是复制文本里的字段名，全部取自语言包。 */
 const copyLabels = computed<CopyLabels>(() => ({
   title: t('library.fieldTitle'),
-  category: t('library.fieldCategory'),
+  purpose: t('library.fieldPurpose'),
+  capability: t('library.fieldCapability'),
   version: t('library.fieldVersion'),
   tags: t('library.fieldTags'),
   description: t('library.fieldDescription'),
@@ -180,12 +181,15 @@ async function copyFull(): Promise<void> {
     return
   }
   const current = detail.value
-  const categoryName = locale.value === 'en' ? current.category.name_en : current.category.name_zh
+  const purposeName = locale.value === 'en' ? current.purpose.name_en : current.purpose.name_zh
+  const capabilityName =
+    locale.value === 'en' ? current.capability.name_en : current.capability.name_zh
   await copy(
     promptFullText(
       {
         title: current.version.title,
-        category: categoryName,
+        purpose: purposeName,
+        capability: capabilityName,
         versionNo: current.version.version_no,
         tags: current.tags.map((tag) => (locale.value === 'en' ? tag.name_en : tag.name_zh)),
         description: current.version.description,
@@ -399,9 +403,21 @@ watch(promptID, () => {
           <dd data-testid="detail-version">{{ detail.prompt.version_no }}</dd>
         </div>
         <div>
-          <dt>{{ t('prompt.category') }}</dt>
-          <dd data-testid="detail-category">
-            {{ localized(detail.category.name_zh, detail.category.name_en) }}
+          <dt>{{ t('prompt.purpose') }}</dt>
+          <dd data-testid="detail-purpose">
+            {{ localized(detail.purpose.name_zh, detail.purpose.name_en) }}
+          </dd>
+        </div>
+        <div>
+          <dt>{{ t('prompt.capability') }}</dt>
+          <dd data-testid="detail-capability">
+            {{ localized(detail.capability.name_zh, detail.capability.name_en) }}
+          </dd>
+        </div>
+        <div v-if="detail.difficulty">
+          <dt>{{ t('prompt.difficulty') }}</dt>
+          <dd data-testid="detail-difficulty">
+            {{ localized(detail.difficulty.name_zh, detail.difficulty.name_en) }}
           </dd>
         </div>
         <div>
@@ -564,40 +580,42 @@ watch(promptID, () => {
           </dl>
 
           <h3 class="pb-stats__subtitle">{{ t('prompt.modelCompletion') }}</h3>
-          <table class="pb-stats__table" data-testid="stats-models">
-            <thead>
-              <tr>
-                <th scope="col">{{ t('prompt.model') }}</th>
-                <th scope="col">{{ t('prompt.historyMean') }}</th>
-                <th scope="col">{{ t('prompt.recentMean') }}</th>
-                <th scope="col">{{ t('prompt.historyRatingCount') }}</th>
-                <th scope="col">{{ t('prompt.recentRatingCount') }}</th>
-                <th scope="col">{{ t('prompt.adjustedScore') }}</th>
-                <th scope="col">{{ t('prompt.userCount') }}</th>
-                <th scope="col">{{ t('prompt.confidence') }}</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="model in stats.models" :key="model.model_id">
-                <td :data-testid="`stats-model-${model.model_id}`">
-                  {{ modelLabel(model.model_name, model.model_id) }}
-                </td>
-                <td>{{ meanText(model.history) }}</td>
-                <td>{{ meanText(model.recent) }}</td>
-                <td>{{ model.history.rating_count }}</td>
-                <td>{{ model.recent.rating_count }}</td>
-                <td>{{ model.recent.adjusted.toFixed(2) }}</td>
-                <td>{{ model.recent.user_count }}</td>
-                <td>
-                  {{
-                    model.recent.has_data
-                      ? confidenceText(model.recent.confidence)
-                      : t('prompt.noObservation')
-                  }}
-                </td>
-              </tr>
-            </tbody>
-          </table>
+          <div class="pb-stats__table-wrap">
+            <table class="pb-stats__table" data-testid="stats-models">
+              <thead>
+                <tr>
+                  <th scope="col">{{ t('prompt.model') }}</th>
+                  <th scope="col">{{ t('prompt.historyMean') }}</th>
+                  <th scope="col">{{ t('prompt.recentMean') }}</th>
+                  <th scope="col">{{ t('prompt.historyRatingCount') }}</th>
+                  <th scope="col">{{ t('prompt.recentRatingCount') }}</th>
+                  <th scope="col">{{ t('prompt.adjustedScore') }}</th>
+                  <th scope="col">{{ t('prompt.userCount') }}</th>
+                  <th scope="col">{{ t('prompt.confidence') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="model in stats.models" :key="model.model_id">
+                  <td :data-testid="`stats-model-${model.model_id}`">
+                    {{ modelLabel(model.model_name, model.model_id) }}
+                  </td>
+                  <td>{{ meanText(model.history) }}</td>
+                  <td>{{ meanText(model.recent) }}</td>
+                  <td>{{ model.history.rating_count }}</td>
+                  <td>{{ model.recent.rating_count }}</td>
+                  <td>{{ model.recent.adjusted.toFixed(2) }}</td>
+                  <td>{{ model.recent.user_count }}</td>
+                  <td>
+                    {{
+                      model.recent.has_data
+                        ? confidenceText(model.recent.confidence)
+                        : t('prompt.noObservation')
+                    }}
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </template>
       </section>
 
@@ -684,25 +702,35 @@ watch(promptID, () => {
 
 <style scoped>
 .pb-prompt-detail {
-  padding: var(--pb-space-lg) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-lg);
+  padding: var(--pb-space-xl) 0 var(--pb-space-2xl);
 }
 
 .pb-prompt-detail__head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--pb-space-md);
+  gap: var(--pb-space-lg);
+  padding-bottom: var(--pb-space-lg);
+  border-bottom: 1px solid var(--pb-line);
 }
 
 .pb-prompt-detail__title {
-  font-size: 24px;
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: 0.008em;
+  line-height: 1.22;
   margin: 0;
+  text-wrap: balance;
 }
 
 .pb-prompt-detail__actions {
   display: flex;
   gap: var(--pb-space-xs);
-  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 /*
@@ -715,61 +743,94 @@ watch(promptID, () => {
   }
 
   .pb-prompt-detail__actions {
-    flex-wrap: wrap;
-    flex-shrink: 1;
+    justify-content: flex-start;
     width: 100%;
   }
 }
 
 .pb-prompt-detail__warn {
-  background-color: var(--el-color-warning-light-9);
-  border-radius: var(--pb-radius-sm);
-  color: var(--el-color-warning-dark-2);
-  margin: var(--pb-space-md) 0 0;
-  padding: var(--pb-space-sm);
+  margin: 0;
+  padding: var(--pb-space-sm) var(--pb-space-md);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-md);
+  background: var(--el-color-warning-light-9);
+  color: var(--pb-warning);
+  font-size: 13.5px;
 }
 
 .pb-prompt-detail__meta {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--pb-space-sm);
-  margin: var(--pb-space-md) 0;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--pb-space-lg);
+  margin: 0;
+  padding: var(--pb-space-lg) var(--pb-space-xl);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-lg);
 }
 
 .pb-prompt-detail__meta dt {
-  color: var(--pb-color-text-faint);
-  font-size: 12px;
+  color: var(--pb-ink-faint);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .pb-prompt-detail__meta dd {
-  margin: 2px 0 0;
+  margin: 4px 0 0;
+  color: var(--pb-ink);
+  font-size: 14px;
 }
 
 .pb-prompt-detail__description {
-  color: var(--pb-color-text-soft);
+  max-width: 72ch;
+  margin: 0;
+  color: var(--pb-ink-soft);
+  font-size: 15px;
+  line-height: 1.75;
 }
 
 .pb-prompt-detail__body {
-  background-color: var(--pb-color-surface-muted);
-  border-radius: var(--pb-radius-md);
+  margin: 0;
+  padding: var(--pb-space-xl);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-left: 3px solid var(--pb-accent);
+  border-radius: var(--pb-radius-lg);
+  color: var(--pb-ink);
   font-family: var(--pb-font-mono);
-  margin: var(--pb-space-md) 0;
+  font-size: 13.5px;
+  line-height: 1.85;
   overflow-x: auto;
-  padding: var(--pb-space-md);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-.pb-ratings__title,
-.pb-versions__title {
-  font-size: 18px;
-  margin: var(--pb-space-lg) 0 var(--pb-space-xs);
+.pb-ratings,
+.pb-stats,
+.pb-versions {
+  margin: 0;
+  padding: var(--pb-space-lg) var(--pb-space-xl) var(--pb-space-xl);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-lg);
+  box-shadow: var(--pb-shadow-sm);
 }
 
-.pb-ratings__hint {
-  color: var(--pb-color-text-faint);
+.pb-ratings__title,
+.pb-versions__title,
+.pb-stats__title {
+  margin: 0 0 var(--pb-space-xs);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.pb-ratings__hint,
+.pb-stats__hint {
+  margin: 0 0 var(--pb-space-md);
+  color: var(--pb-ink-faint);
   font-size: 13px;
-  margin: 0 0 var(--pb-space-sm);
 }
 
 .pb-ratings__list,
@@ -780,125 +841,147 @@ watch(promptID, () => {
 }
 
 .pb-ratings__item {
-  border-top: 1px solid var(--pb-color-border);
-  padding: var(--pb-space-sm) 0;
+  padding: var(--pb-space-md) 0;
+  border-top: 1px solid var(--pb-line);
+}
+
+.pb-ratings__item:first-child {
+  padding-top: 0;
+  border-top: 0;
 }
 
 .pb-ratings__row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
+  flex-wrap: wrap;
   gap: var(--pb-space-md);
 }
 
 .pb-ratings__model {
-  font-weight: 600;
   min-width: 180px;
+  color: var(--pb-ink);
+  font-weight: 600;
 }
 
 .pb-ratings__count,
 .pb-ratings__mean,
 .pb-ratings__mine {
-  color: var(--pb-color-text-soft);
+  color: var(--pb-ink-soft);
+  font-family: var(--pb-font-mono);
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .pb-ratings__actions {
-  align-items: center;
   display: flex;
+  align-items: center;
   gap: var(--pb-space-xs);
   margin-top: var(--pb-space-xs);
 }
 
 .pb-ratings__edits {
-  color: var(--pb-color-text-faint);
+  color: var(--pb-ink-faint);
   font-size: 12px;
 }
 
 .pb-versions__item {
-  border-top: 1px solid var(--pb-color-border);
   display: flex;
+  align-items: baseline;
   gap: var(--pb-space-md);
-  padding: var(--pb-space-xs) 0;
+  padding: var(--pb-space-sm) 0;
+  border-top: 1px solid var(--pb-line);
 }
 
-.pb-stats__title {
-  font-size: 18px;
-  margin: var(--pb-space-lg) 0 var(--pb-space-xs);
-}
-
-.pb-stats__hint {
-  color: var(--pb-color-text-faint);
-  font-size: 13px;
-  margin: 0 0 var(--pb-space-sm);
+.pb-versions__item:first-child {
+  border-top: 0;
 }
 
 .pb-stats__subtitle {
-  font-size: 15px;
-  margin: var(--pb-space-md) 0 var(--pb-space-xs);
+  margin: var(--pb-space-lg) 0 var(--pb-space-sm);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .pb-stats__discrimination {
   display: grid;
-  gap: var(--pb-space-sm);
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--pb-space-md);
   margin: 0;
 }
 
 .pb-stats__discrimination dt {
-  color: var(--pb-color-text-faint);
-  font-size: 12px;
+  color: var(--pb-ink-faint);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .pb-stats__discrimination dd {
-  margin: 2px 0 0;
+  margin: 4px 0 0;
+  font-family: var(--pb-font-display);
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
 }
 
 .pb-stats__tags {
   display: flex;
   flex-direction: column;
-  gap: var(--pb-space-xs);
+  gap: var(--pb-space-sm);
   list-style: none;
-  margin: 0 0 var(--pb-space-sm);
+  margin: 0 0 var(--pb-space-md);
   padding: 0;
 }
 
 .pb-stats__tag {
-  align-items: baseline;
   display: flex;
+  align-items: baseline;
   flex-wrap: wrap;
   gap: var(--pb-space-sm);
 }
 
 .pb-stats__tag-label {
-  background-color: var(--el-color-primary-light-9);
-  border-radius: var(--pb-radius-sm);
-  color: var(--el-color-primary-dark-2);
+  padding: 2px 10px;
+  border-radius: var(--pb-radius-pill);
+  background: var(--pb-accent-soft);
+  color: var(--pb-accent-strong);
+  font-size: 12.5px;
   font-weight: 600;
-  padding: 2px var(--pb-space-xs);
 }
 
 .pb-stats__tag-confidence,
 .pb-stats__tag-reason {
-  color: var(--pb-color-text-soft);
+  color: var(--pb-ink-soft);
   font-size: 13px;
 }
 
+.pb-stats__table-wrap {
+  overflow-x: auto;
+}
+
 .pb-stats__table {
+  width: 100%;
   border-collapse: collapse;
   font-size: 13px;
-  width: 100%;
 }
 
 .pb-stats__table th,
 .pb-stats__table td {
-  border-bottom: 1px solid var(--pb-color-border);
-  padding: var(--pb-space-xs) var(--pb-space-sm);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--pb-line);
   text-align: left;
 }
 
 .pb-stats__table th {
-  color: var(--pb-color-text-faint);
-  font-weight: 500;
+  color: var(--pb-ink-faint);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pb-stats__table tbody tr:hover {
+  background: var(--pb-surface-muted);
 }
 
 .pb-prompt-detail__favorites {
@@ -908,31 +991,39 @@ watch(promptID, () => {
 }
 
 .pb-versions__no {
-  font-weight: 600;
   min-width: 56px;
+  font-family: var(--pb-font-mono);
+  font-weight: 600;
 }
 
 .pb-versions__major {
-  color: var(--el-color-warning);
+  color: var(--pb-accent-strong);
   font-size: 12px;
 }
 
 .pb-versions__date {
-  color: var(--pb-color-text-faint);
-  font-size: 12px;
   margin-left: auto;
+  color: var(--pb-ink-faint);
+  font-size: 12px;
 }
 
 .pb-prompt-detail__error {
-  color: var(--el-color-danger);
+  margin: 0;
+  padding: var(--pb-space-sm) var(--pb-space-md);
+  border-radius: var(--pb-radius-md);
+  background: var(--pb-accent-soft);
+  color: var(--pb-danger);
+  font-size: 13.5px;
 }
 
 .pb-prompt-detail__notice {
-  color: var(--pb-color-text-soft);
+  margin: 0;
+  color: var(--pb-ink-soft);
+  font-size: 13.5px;
   word-break: break-all;
 }
 
 .pb-prompt-detail__hint {
-  color: var(--pb-color-text-soft);
+  color: var(--pb-ink-soft);
 }
 </style>

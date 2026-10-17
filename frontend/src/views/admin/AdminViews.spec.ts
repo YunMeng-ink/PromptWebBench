@@ -1,4 +1,4 @@
-// 管理后台视图的单元测试：11 个模块各覆盖渲染与一次关键写入，
+// 管理后台视图的单元测试：各模块覆盖渲染与一次关键写入，
 // 外加一条词汇表校验——视图里引用的 admin.* 键必须在语言包中存在，
 // 否则界面会直接显示原始键名。
 
@@ -15,6 +15,7 @@ import { useAuthStore } from '@/stores/auth'
 import { errorEnvelope, mountView, resetLocale, stubResponse } from '@/testing/mount'
 import AdminAnnouncementsView from '@/views/admin/AdminAnnouncementsView.vue'
 import AdminDashboardView from '@/views/admin/AdminDashboardView.vue'
+import AdminDictionaryView from '@/views/admin/AdminDictionaryView.vue'
 import AdminInvitesView from '@/views/admin/AdminInvitesView.vue'
 import AdminLayout from '@/views/admin/AdminLayout.vue'
 import AdminLogsView from '@/views/admin/AdminLogsView.vue'
@@ -124,20 +125,10 @@ function stubAdminEndpoints(overrides: Record<string, unknown> = {}): RecordedRe
           email_verified: true,
         })
       }
-      if (path === '/api/v1/categories') {
-        return payload({
-          items: [
-            {
-              id: 1,
-              slug: 'reasoning',
-              name_zh: '逻辑推理',
-              name_en: 'Logical Reasoning',
-              is_high_risk: false,
-            },
-          ],
-        })
+      if (path === '/api/v1/purposes') {
+        return payload({ items: [] })
       }
-      if (path === '/api/v1/abilities' || path === '/api/v1/difficulties') {
+      if (path === '/api/v1/capabilities' || path === '/api/v1/difficulties') {
         return payload({ items: [] })
       }
       if (path === '/api/v1/tags') {
@@ -244,9 +235,12 @@ function stubAdminEndpoints(overrides: Record<string, unknown> = {}): RecordedRe
               id: 7,
               title: '后台提示词',
               description: '描述',
-              category_id: 1,
-              category_name_zh: '逻辑推理',
-              category_name_en: 'Logical Reasoning',
+              purpose_id: 1,
+              purpose_name_zh: '边界探测',
+              purpose_name_en: 'Capability Boundary',
+              capability_id: 1,
+              capability_name_zh: '推理',
+              capability_name_en: 'Reasoning',
               visibility: 'public',
               sensitive_level: 'low',
               uploader_id: 2,
@@ -272,9 +266,12 @@ function stubAdminEndpoints(overrides: Record<string, unknown> = {}): RecordedRe
             id: 7,
             title: '后台提示词',
             description: '',
-            category_id: 1,
-            category_name_zh: '逻辑推理',
-            category_name_en: 'Logical Reasoning',
+            purpose_id: 1,
+            purpose_name_zh: '边界探测',
+            purpose_name_en: 'Capability Boundary',
+            capability_id: 1,
+            capability_name_zh: '推理',
+            capability_name_en: 'Reasoning',
             visibility: 'public',
             sensitive_level: 'low',
             uploader_id: 2,
@@ -311,7 +308,7 @@ function stubAdminEndpoints(overrides: Record<string, unknown> = {}): RecordedRe
               release_date: '2025-01-31',
               context_length: 128000,
               is_enabled: true,
-              ability_tags: [],
+              capability_ids: [],
               note: '',
               import_source: 'models_dev',
               rating_count: 0,
@@ -359,7 +356,7 @@ function stubAdminEndpoints(overrides: Record<string, unknown> = {}): RecordedRe
           description: '',
           release_date: '',
           is_enabled: false,
-          ability_tags: [],
+          capability_ids: [],
           note: '',
           import_source: 'models_dev',
           rating_count: 0,
@@ -407,6 +404,46 @@ function stubAdminEndpoints(overrides: Record<string, unknown> = {}): RecordedRe
             email_verified: true,
           },
           transferred_prompt_count: 2,
+        })
+      }
+      if (path === '/api/v1/admin/capabilities') {
+        return payload({
+          items: [
+            {
+              id: 1,
+              slug: 'reasoning',
+              name_zh: '推理',
+              name_en: 'Reasoning',
+              group_key: 'cognitive',
+              description_zh: '多步演绎与约束求解',
+              description_en: 'Multi-step deduction',
+              is_enabled: true,
+              sort_order: 1,
+            },
+          ],
+          page: 1,
+          page_size: 100,
+          total: 1,
+        })
+      }
+      if (path === '/api/v1/admin/purposes') {
+        return payload({
+          items: [
+            {
+              id: 1,
+              slug: 'capability_boundary',
+              name_zh: '边界探测',
+              name_en: 'Capability Boundary',
+              description_zh: '模型是否具备该能力，边界在哪里',
+              description_en: 'Does the model have the capability?',
+              is_high_risk: false,
+              is_enabled: true,
+              sort_order: 1,
+            },
+          ],
+          page: 1,
+          page_size: 100,
+          total: 1,
         })
       }
       if (path === '/api/v1/admin/tags') {
@@ -629,13 +666,24 @@ afterEach(() => {
   document.body.innerHTML = ''
 })
 
+describe('分类字典管理', () => {
+  it('同时加载考察维度与考察目的', async () => {
+    const recorded = stubAdminEndpoints()
+    const wrapper = await mountAdmin(AdminDictionaryView)
+
+    expect(wrapper.find('[data-testid="admin-dictionary"]').exists()).toBe(true)
+    expect(recorded.some((item) => item.path === '/api/v1/admin/capabilities')).toBe(true)
+    expect(recorded.some((item) => item.path === '/api/v1/admin/purposes')).toBe(true)
+  })
+})
+
 describe('管理后台外框', () => {
-  it('管理员看到 11 个模块的导航', async () => {
+  it('管理员看到 12 个模块的导航', async () => {
     stubAdminEndpoints()
     const wrapper = await mountAdmin(AdminLayout)
 
     const links = wrapper.findAll('[data-testid="admin-nav"] a')
-    expect(links).toHaveLength(11)
+    expect(links).toHaveLength(12)
     expect(wrapper.find('[data-testid="admin-denied"]').exists()).toBe(false)
   })
 

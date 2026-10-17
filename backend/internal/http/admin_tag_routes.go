@@ -79,6 +79,7 @@ type adminTagInput struct {
 	NameEn      string `json:"name_en" minLength:"1" maxLength:"50" doc:"英文名称"`
 	Color       string `json:"color" maxLength:"9" doc:"十六进制颜色"`
 	Description string `json:"description" maxLength:"200" doc:"标签说明"`
+	Kind        string `json:"kind,omitempty" default:"theme" enum:"theme,form" doc:"主题标签类型"`
 	Priority    int32  `json:"priority" minimum:"-1000" maximum:"1000" doc:"优先级，越大越靠前"`
 	IsEnabled   bool   `json:"is_enabled" doc:"是否启用"`
 }
@@ -86,7 +87,8 @@ type adminTagInput struct {
 func (in *adminTagInput) service() admin.TagInput {
 	return admin.TagInput{
 		Slug: in.Slug, NameZh: in.NameZh, NameEn: in.NameEn, Color: in.Color,
-		Description: in.Description, Priority: in.Priority, IsEnabled: in.IsEnabled,
+		Description: in.Description, Kind: in.Kind,
+		Priority: in.Priority, IsEnabled: in.IsEnabled,
 	}
 }
 

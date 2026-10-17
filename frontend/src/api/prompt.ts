@@ -2,19 +2,24 @@
 
 import { api, type RequestOptions } from './client'
 
-export interface Category {
+export interface Purpose {
   id: number
   slug: string
   name_zh: string
   name_en: string
+  description_zh: string
+  description_en: string
   is_high_risk: boolean
 }
 
-export interface Ability {
+export interface Capability {
   id: number
   slug: string
   name_zh: string
   name_en: string
+  group_key: 'cognitive' | 'execution' | 'reliability'
+  description_zh: string
+  description_en: string
 }
 
 export interface Difficulty {
@@ -31,6 +36,7 @@ export interface Tag {
   name_zh: string
   name_en: string
   color: string
+  kind: 'theme' | 'form'
 }
 
 export interface Model {
@@ -49,8 +55,8 @@ export interface Prompt {
   id: number
   title: string
   description: string
-  category_id: number
-  ability_id?: number
+  purpose_id: number
+  capability_id: number
   difficulty_id?: number
   visibility: Visibility
   sensitive_level: SensitiveLevel
@@ -64,10 +70,10 @@ export interface Prompt {
 }
 
 export interface PromptListItem extends Prompt {
-  category_name_zh: string
-  category_name_en: string
-  ability_name_zh?: string
-  ability_name_en?: string
+  purpose_name_zh: string
+  purpose_name_en: string
+  capability_name_zh: string
+  capability_name_en: string
   difficulty_name_zh?: string
   difficulty_name_en?: string
   discrimination: number
@@ -86,8 +92,8 @@ export interface Page<T> {
 export interface PromptListQuery {
   page?: number
   page_size?: number
-  category_id?: string
-  ability_id?: string
+  purpose_id?: string
+  capability_id?: string
   difficulty_id?: string
   keyword?: string
   model_id?: string
@@ -101,8 +107,8 @@ export interface PromptVersion {
   title: string
   body: string
   description: string
-  category_id: number
-  ability_id?: number
+  purpose_id: number
+  capability_id: number
   difficulty_id?: number
   visibility: Visibility
   sensitive_level: SensitiveLevel
@@ -116,7 +122,9 @@ export interface PromptDetail {
   prompt: Prompt
   version: PromptVersion
   versions: PromptVersion[]
-  category: Category
+  purpose: Purpose
+  capability: Capability
+  difficulty?: Difficulty
   tags: Tag[]
   uploader: string
   major_modification_notice?: string
@@ -126,8 +134,8 @@ export interface PromptPayload {
   title: string
   body: string
   description?: string
-  category_id: number
-  ability_id?: number
+  purpose_id: number
+  capability_id: number
   difficulty_id?: number
   visibility?: Visibility
   sensitive_level?: SensitiveLevel
@@ -174,8 +182,8 @@ export const promptApi = {
     const search = query({
       page: filters.page,
       page_size: filters.page_size,
-      category_id: filters.category_id,
-      ability_id: filters.ability_id,
+      purpose_id: filters.purpose_id,
+      capability_id: filters.capability_id,
       difficulty_id: filters.difficulty_id,
       keyword: filters.keyword,
       model_id: filters.model_id,
@@ -216,11 +224,11 @@ export const promptApi = {
 }
 
 export const dictionaryApi = {
-  categories(options?: RequestOptions): Promise<{ items: Category[] }> {
-    return api.get<{ items: Category[] }>('/categories', options)
+  purposes(options?: RequestOptions): Promise<{ items: Purpose[] }> {
+    return api.get<{ items: Purpose[] }>('/purposes', options)
   },
-  abilities(options?: RequestOptions): Promise<{ items: Ability[] }> {
-    return api.get<{ items: Ability[] }>('/abilities', options)
+  capabilities(options?: RequestOptions): Promise<{ items: Capability[] }> {
+    return api.get<{ items: Capability[] }>('/capabilities', options)
   },
   difficulties(options?: RequestOptions): Promise<{ items: Difficulty[] }> {
     return api.get<{ items: Difficulty[] }>('/difficulties', options)

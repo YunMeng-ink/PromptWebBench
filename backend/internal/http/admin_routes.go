@@ -17,6 +17,7 @@ func (s *Server) registerAdminRoutes() {
 	s.registerAdminDashboardRoutes()
 	s.registerAdminPromptRoutes()
 	s.registerAdminModelRoutes()
+	s.registerAdminDictionaryRoutes()
 	s.registerAdminUserRoutes()
 	s.registerAdminTagRoutes()
 	s.registerAdminReportRoutes()

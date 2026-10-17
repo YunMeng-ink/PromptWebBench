@@ -44,7 +44,7 @@ type Favorite struct {
 
 // Access 返回收藏夹的可见性判定要素。
 //
-// HighRisk 恒为 false：高风险是提示词类别的属性，不是收藏夹的属性。
+// HighRisk 恒为 false：高风险是提示词考察目的的属性，不是收藏夹的属性。
 // 收藏夹里被改为高风险的提示词在条目层逐条复查（需求 §9.3 与开发方案 §6.5），
 // 而不是把整个收藏夹判为高风险。
 func (f Favorite) Access() Access {

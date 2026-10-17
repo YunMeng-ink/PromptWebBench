@@ -224,15 +224,17 @@ type favoriteWriteResponse struct {
 }
 
 type favoriteItemDTO struct {
-	PromptID       int64  `json:"prompt_id"`
-	Title          string `json:"title"`
-	Description    string `json:"description"`
-	VersionNo      string `json:"version_no"`
-	Visibility     string `json:"visibility"`
-	SensitiveLevel string `json:"sensitive_level"`
-	CategoryNameZh string `json:"category_name_zh"`
-	CategoryNameEn string `json:"category_name_en"`
-	AddedAt        string `json:"added_at"`
+	PromptID         int64  `json:"prompt_id"`
+	Title            string `json:"title"`
+	Description      string `json:"description"`
+	VersionNo        string `json:"version_no"`
+	Visibility       string `json:"visibility"`
+	SensitiveLevel   string `json:"sensitive_level"`
+	PurposeNameZh    string `json:"purpose_name_zh"`
+	PurposeNameEn    string `json:"purpose_name_en"`
+	CapabilityNameZh string `json:"capability_name_zh"`
+	CapabilityNameEn string `json:"capability_name_en"`
+	AddedAt          string `json:"added_at"`
 }
 
 type favoriteItemListResponse struct {
@@ -314,15 +316,17 @@ func (s *Server) handleListFavoriteItems(ctx context.Context, in *listFavoriteIt
 	out.Body.Items = make([]favoriteItemDTO, 0, len(result.Items))
 	for _, item := range result.Items {
 		out.Body.Items = append(out.Body.Items, favoriteItemDTO{
-			PromptID:       item.Prompt.ID,
-			Title:          item.Prompt.Title,
-			Description:    item.Prompt.Description,
-			VersionNo:      item.Prompt.LatestVersion.String(),
-			Visibility:     string(item.Prompt.Visibility),
-			SensitiveLevel: string(item.Prompt.Sensitive),
-			CategoryNameZh: item.CategoryNameZh,
-			CategoryNameEn: item.CategoryNameEn,
-			AddedAt:        formatTime(item.AddedAt),
+			PromptID:         item.Prompt.ID,
+			Title:            item.Prompt.Title,
+			Description:      item.Prompt.Description,
+			VersionNo:        item.Prompt.LatestVersion.String(),
+			Visibility:       string(item.Prompt.Visibility),
+			SensitiveLevel:   string(item.Prompt.Sensitive),
+			PurposeNameZh:    item.PurposeNameZh,
+			PurposeNameEn:    item.PurposeNameEn,
+			CapabilityNameZh: item.CapabilityNameZh,
+			CapabilityNameEn: item.CapabilityNameEn,
+			AddedAt:          formatTime(item.AddedAt),
 		})
 	}
 	out.Body.Page = result.Page

@@ -456,6 +456,114 @@ func TestAdminRoutesAreDocumentedWithUniqueOperationIDs(t *testing.T) {
 	}
 }
 
+// TestAdminDictionaryCRUDOverHTTP 覆盖考察维度与考察目的的后台维护，
+// 以及被引用条目只能停用的约束。
+func TestAdminDictionaryCRUDOverHTTP(t *testing.T) {
+	env := newTestEnv(t)
+	client := adminSession(t, env)
+
+	capabilities := decodeBody[struct {
+		Items []struct {
+			ID   int64  `json:"id"`
+			Slug string `json:"slug"`
+		} `json:"items"`
+	}](t, client.get(api.APIPrefix+"/admin/capabilities?page=1&page_size=100"))
+	var reasoningID int64
+	for _, item := range capabilities.Items {
+		if item.Slug == "reasoning" {
+			reasoningID = item.ID
+		}
+	}
+	if reasoningID == 0 {
+		t.Fatal("内置考察维度缺少 reasoning")
+	}
+
+	createCapability := map[string]any{
+		"slug": "test_dimension", "name_zh": "测试维度", "name_en": "Test Dimension",
+		"group_key": "cognitive", "description_zh": "中文定义", "description_en": "English definition",
+		"is_enabled": true, "sort_order": 99,
+	}
+	resp := client.post(api.APIPrefix+"/admin/capabilities", createCapability)
+	expectStatus(t, resp, http.StatusOK)
+	createdCapability := decodeBody[struct {
+		ID   int64  `json:"id"`
+		Slug string `json:"slug"`
+	}](t, resp)
+	if createdCapability.ID == 0 {
+		t.Fatalf("创建考察维度未返回 ID: %+v", createdCapability)
+	}
+
+	updateCapability := map[string]any{
+		"slug": "test_dimension", "name_zh": "测试维度（改）", "name_en": "Test Dimension",
+		"group_key": "execution", "description_zh": "中文定义", "description_en": "English definition",
+		"is_enabled": true, "sort_order": 98,
+	}
+	resp = client.patch(api.APIPrefix+"/admin/capabilities/"+itoa(createdCapability.ID), updateCapability)
+	expectStatus(t, resp, http.StatusOK)
+	updatedCapability := decodeBody[struct {
+		NameZh   string `json:"name_zh"`
+		GroupKey string `json:"group_key"`
+	}](t, resp)
+	if updatedCapability.NameZh != "测试维度（改）" || updatedCapability.GroupKey != "execution" {
+		t.Fatalf("考察维度更新结果 = %+v", updatedCapability)
+	}
+	expectStatus(t, client.delete(api.APIPrefix+"/admin/capabilities/"+itoa(createdCapability.ID)), http.StatusNoContent)
+
+	createPurpose := map[string]any{
+		"slug": "test_purpose", "name_zh": "测试目的", "name_en": "Test Purpose",
+		"description_zh": "中文定义", "description_en": "English definition",
+		"is_high_risk": false, "is_enabled": true, "sort_order": 99,
+	}
+	resp = client.post(api.APIPrefix+"/admin/purposes", createPurpose)
+	expectStatus(t, resp, http.StatusOK)
+	createdPurpose := decodeBody[struct {
+		ID int64 `json:"id"`
+	}](t, resp)
+	expectStatus(t, client.delete(api.APIPrefix+"/admin/purposes/"+itoa(createdPurpose.ID)), http.StatusNoContent)
+
+	// 被提示词引用的字典条目只能停用。
+	ownerID := pgtest.SeedUser(t, env.pool, pgtest.UserOptions{
+		Email: "dictionary-owner@example.com", Password: httpTestPassword, Verified: true,
+	})
+	pgtest.SeedPrompt(t, env.pool, ownerID, "占用字典条目的提示词")
+
+	resp = client.get(api.APIPrefix + "/admin/purposes?page=1&page_size=100")
+	expectStatus(t, resp, http.StatusOK)
+	purposes := decodeBody[struct {
+		Items []struct {
+			ID   int64  `json:"id"`
+			Slug string `json:"slug"`
+		} `json:"items"`
+	}](t, resp)
+	var boundaryID int64
+	for _, item := range purposes.Items {
+		if item.Slug == "capability_boundary" {
+			boundaryID = item.ID
+		}
+	}
+	if boundaryID == 0 {
+		t.Fatal("内置考察目的缺少 capability_boundary")
+	}
+	expectErrorCode(t, client.delete(api.APIPrefix+"/admin/purposes/"+itoa(boundaryID)),
+		http.StatusConflict, "dictionary_in_use")
+	expectErrorCode(t, client.delete(api.APIPrefix+"/admin/capabilities/"+itoa(reasoningID)),
+		http.StatusConflict, "dictionary_in_use")
+
+	// 主题标签类型可以写入并在响应中回显。
+	resp = client.post(api.APIPrefix+"/admin/tags", map[string]any{
+		"slug": "output_form", "name_zh": "输出形态", "name_en": "Output form",
+		"color": "#112233", "description": "", "kind": "form",
+		"priority": 1, "is_enabled": true,
+	})
+	expectStatus(t, resp, http.StatusOK)
+	tag := decodeBody[struct {
+		Kind string `json:"kind"`
+	}](t, resp)
+	if tag.Kind != "form" {
+		t.Fatalf("标签类型 = %q，期望 form", tag.Kind)
+	}
+}
+
 // readRawBody 读取响应体原文，供需要按字段名核对的用例使用。
 func readRawBody(t *testing.T, resp *http.Response) []byte {
 	t.Helper()

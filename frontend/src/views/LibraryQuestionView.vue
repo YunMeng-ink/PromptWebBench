@@ -16,7 +16,8 @@ import { useAuthStore } from '@/stores/auth'
 import {
   type CopyLabels,
   kindKey,
-  localizedCategory,
+  localizedCapability,
+  localizedPurpose,
   PLACEHOLDER,
   promptBodyText,
   questionFullText,
@@ -49,7 +50,8 @@ const capabilities = computed(() => capabilitiesFor(role.value))
 /** copyLabels 是复制文本里的字段名，全部取自语言包。 */
 const copyLabels = computed<CopyLabels>(() => ({
   title: t('library.fieldTitle'),
-  category: t('library.fieldCategory'),
+  purpose: t('library.fieldPurpose'),
+  capability: t('library.fieldCapability'),
   version: t('library.fieldVersion'),
   tags: t('library.fieldTags'),
   description: t('library.fieldDescription'),
@@ -96,7 +98,8 @@ async function copyFull(): Promise<void> {
       {
         title: current.title,
         kindName: t(kindKey(current.kind)),
-        category: localizedCategory(current, locale.value),
+        purpose: localizedPurpose(current, locale.value),
+        capability: localizedCapability(current, locale.value),
         tags: current.tags,
         description: current.description,
         source: sourceLabel(current),
@@ -190,7 +193,10 @@ watch(questionId, () => {
 
     <template v-else-if="question">
       <header class="pb-question__head">
-        <h1 class="pb-question__title" data-testid="question-title">{{ question.title }}</h1>
+        <div class="pb-question__heading">
+          <span class="pb-eyebrow" aria-hidden="true">Question</span>
+          <h1 class="pb-question__title" data-testid="question-title">{{ question.title }}</h1>
+        </div>
         <div class="pb-question__actions">
           <el-button size="small" data-testid="question-copy-body" @click="copyBody">
             {{ t('home.copyBody') }}
@@ -217,8 +223,10 @@ watch(questionId, () => {
       <dl class="pb-question__facts">
         <dt>{{ t('library.fieldKind') }}</dt>
         <dd data-testid="question-kind">{{ t(kindKey(question.kind)) }}</dd>
-        <dt>{{ t('library.fieldCategory') }}</dt>
-        <dd data-testid="question-category">{{ localizedCategory(question, locale) }}</dd>
+        <dt>{{ t('library.fieldPurpose') }}</dt>
+        <dd data-testid="question-purpose">{{ localizedPurpose(question, locale) }}</dd>
+        <dt>{{ t('library.fieldCapability') }}</dt>
+        <dd data-testid="question-capability">{{ localizedCapability(question, locale) }}</dd>
         <dt>{{ t('library.fieldSource') }}</dt>
         <dd data-testid="question-source">{{ sourceLabel(question) }}</dd>
       </dl>
@@ -326,17 +334,32 @@ watch(questionId, () => {
 
 <style scoped>
 .pb-question {
-  padding: var(--pb-space-lg) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-lg);
+  padding: var(--pb-space-xl) 0 var(--pb-space-2xl);
 }
 
 .pb-question__head {
-  align-items: flex-start;
   display: flex;
+  align-items: flex-end;
   justify-content: space-between;
+  gap: var(--pb-space-lg);
+  padding-bottom: var(--pb-space-md);
+  border-bottom: 1px solid var(--pb-line);
+}
+
+.pb-question__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-xs);
+  min-width: 0;
 }
 
 .pb-question__title {
-  font-size: 22px;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   margin: 0;
 }
 
@@ -344,31 +367,46 @@ watch(questionId, () => {
   display: flex;
   flex-wrap: wrap;
   gap: var(--pb-space-xs);
+  justify-content: flex-end;
 }
 
 .pb-question__subtitle {
-  font-size: 16px;
-  margin: 0 0 var(--pb-space-xs);
+  margin: 0 0 var(--pb-space-sm);
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .pb-question__section {
-  margin-top: var(--pb-space-lg);
+  margin: 0;
+  padding: var(--pb-space-lg) var(--pb-space-xl);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-lg);
+  box-shadow: var(--pb-shadow-sm);
 }
 
 .pb-question__facts {
   display: grid;
-  gap: var(--pb-space-xs) var(--pb-space-sm);
+  gap: var(--pb-space-md) var(--pb-space-xl);
   grid-template-columns: max-content 1fr;
-  margin: var(--pb-space-md) 0 0;
+  margin: 0;
+  padding: var(--pb-space-lg) var(--pb-space-xl);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-lg);
 }
 
 .pb-question__facts dt {
-  color: var(--pb-color-text-faint);
-  font-size: 12px;
+  color: var(--pb-ink-faint);
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .pb-question__facts dd {
   margin: 0;
+  color: var(--pb-ink);
+  font-size: 14px;
 }
 
 .pb-question__tags,
@@ -379,46 +417,73 @@ watch(questionId, () => {
 }
 
 .pb-question__tags li {
-  align-items: center;
   display: flex;
+  align-items: center;
   gap: var(--pb-space-xs);
+  padding: 4px 0;
+  border-bottom: 1px solid var(--pb-line);
+}
+
+.pb-question__tags li:last-child {
+  border-bottom: 0;
 }
 
 .pb-question__tag-form {
   display: flex;
   gap: var(--pb-space-xs);
-  margin-top: var(--pb-space-xs);
+  margin-top: var(--pb-space-sm);
   max-width: 420px;
 }
 
 .pb-question__body {
-  background: var(--pb-color-surface, #f7f8fa);
-  border-radius: 6px;
-  font-family: var(--pb-font-mono, monospace);
   margin: 0;
+  padding: var(--pb-space-xl);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-left: 3px solid var(--pb-accent);
+  border-radius: var(--pb-radius-lg);
+  font-family: var(--pb-font-mono);
+  font-size: 13.5px;
+  line-height: 1.85;
   overflow-x: auto;
-  padding: var(--pb-space-sm);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
 .pb-question__warning {
-  color: var(--el-color-warning);
+  margin: 0;
+  padding: var(--pb-space-sm) var(--pb-space-md);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-md);
+  background: var(--el-color-warning-light-9);
+  color: var(--pb-warning);
+  font-size: 13.5px;
 }
 
 .pb-question__error {
-  color: var(--el-color-danger);
+  margin: 0;
+  padding: var(--pb-space-sm) var(--pb-space-md);
+  border-radius: var(--pb-radius-md);
+  background: var(--pb-accent-soft);
+  color: var(--pb-danger);
+  font-size: 13.5px;
 }
 
 .pb-question__notice,
 .pb-question__hint {
-  color: var(--pb-color-text-soft);
+  margin: 0;
+  color: var(--pb-ink-soft);
+  font-size: 13.5px;
 }
 
 @media (max-width: 720px) {
   .pb-question__head {
     flex-direction: column;
-    gap: var(--pb-space-sm);
+    align-items: flex-start;
+  }
+
+  .pb-question__actions {
+    justify-content: flex-start;
   }
 }
 </style>

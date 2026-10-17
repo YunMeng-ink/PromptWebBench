@@ -72,14 +72,14 @@ func (f *fixture) prompt(t *testing.T, uploaderID int64, title, body, visibility
 	})
 }
 
-// highRiskPrompt 建立一条类别被标为高风险的公开提示词。
+// highRiskPrompt 建立一条考察目的被标为高风险的公开提示词。
 func (f *fixture) highRiskPrompt(t *testing.T, uploaderID int64, title string) int64 {
 	t.Helper()
 	promptID := f.prompt(t, uploaderID, title, "高风险正文", "public")
 	if _, err := f.pool.Exec(context.Background(), `
-		UPDATE categories SET is_high_risk = true
-		WHERE id = (SELECT category_id FROM prompts WHERE id = $1)`, promptID); err != nil {
-		t.Fatalf("标记高风险类别失败: %v", err)
+		UPDATE purposes SET is_high_risk = true
+		WHERE id = (SELECT purpose_id FROM prompts WHERE id = $1)`, promptID); err != nil {
+		t.Fatalf("标记高风险考察目的失败: %v", err)
 	}
 	return promptID
 }
@@ -304,7 +304,7 @@ func TestCollaboratorCannotReadDeveloperVisibleReferenceQuestion(t *testing.T) {
 }
 
 // TestCollaboratorCannotReadHighRiskReferenceQuestion 是 C-20 的题库侧回归：
-// 高风险类别内容即使可见性为 public，对普通用户一律不可见。
+// 高风险考察目的内容即使可见性为 public，对普通用户一律不可见。
 func TestCollaboratorCannotReadHighRiskReferenceQuestion(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
@@ -785,7 +785,8 @@ func TestExportContainsAllDeclaredElements(t *testing.T) {
 		"question_count":       "- 题目数量：2",
 		"question_order":       "## 1. ",
 		"question_title":       "引用题来源",
-		"question_category":    "- 题目类别：",
+		"question_purpose":     "- 考察目的：",
+		"question_capability":  "- 考察维度：",
 		"question_tags":        "- 题目标签：标签甲、标签乙",
 		"prompt_body":          "### 提示词正文",
 		"question_description": "### 题目说明",
@@ -794,8 +795,8 @@ func TestExportContainsAllDeclaredElements(t *testing.T) {
 		"derivation_note":      "- 修改说明：调整用词",
 	}
 	declared := domain.LibraryExportElements()
-	if len(declared) != 14 {
-		t.Fatalf("导出要素声明为 %d 项，期望 14 项", len(declared))
+	if len(declared) != 15 {
+		t.Fatalf("导出要素声明为 %d 项，期望 15 项", len(declared))
 	}
 	for _, element := range declared {
 		marker, ok := markers[element]
@@ -1265,19 +1266,19 @@ func TestUnauthenticatedLibraryAccessIsRejected(t *testing.T) {
 func majorUpdate(t *testing.T, f *fixture, promptID int64, body, versionNo string) {
 	t.Helper()
 	ctx := context.Background()
-	var categoryID int64
+	var purposeID, capabilityID int64
 	var uploaderID int64
 	if err := f.pool.QueryRow(ctx,
-		`SELECT category_id, uploader_id FROM prompts WHERE id = $1`, promptID).Scan(&categoryID, &uploaderID); err != nil {
+		`SELECT purpose_id, capability_id, uploader_id FROM prompts WHERE id = $1`, promptID).Scan(&purposeID, &capabilityID, &uploaderID); err != nil {
 		t.Fatalf("读取提示词失败: %v", err)
 	}
 	var versionID int64
 	if err := f.pool.QueryRow(ctx, `
 		INSERT INTO prompt_versions (
 			prompt_id, version_no, major, minor, title, body,
-			category_id, visibility, sensitive_level, is_major, author_id
-		) VALUES ($1, $2, 2, 0, '来源第二版', $3, $4, 'public', 'low', true, $5)
-		RETURNING id`, promptID, versionNo, body, categoryID, uploaderID).Scan(&versionID); err != nil {
+			purpose_id, capability_id, visibility, sensitive_level, is_major, author_id
+		) VALUES ($1, $2, 2, 0, '来源第二版', $3, $4, $5, 'public', 'low', true, $6)
+		RETURNING id`, promptID, versionNo, body, purposeID, capabilityID, uploaderID).Scan(&versionID); err != nil {
 		t.Fatalf("写入新版本失败: %v", err)
 	}
 	if _, err := f.pool.Exec(ctx, `

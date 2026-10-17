@@ -18,21 +18,23 @@ import (
 // （C-28）。两者都带出 SourceAccess：内容源自哪条提示词，就按那条提示词的可见性
 // 判定，否则派生副本会成为绕开 C-20 的通道。
 type Question struct {
-	ID             int64
-	LibraryID      int64
-	Library        domain.Library
-	Kind           domain.LibraryQuestionKind
-	Title          string
-	Body           string
-	Description    string
-	CategoryID     *int64
-	CategoryNameZh string
-	CategoryNameEn string
-	AbilityID      *int64
-	DifficultyID   *int64
-	Sensitive      domain.SensitiveLevel
-	SortOrder      int32
-	Tags           []string
+	ID               int64
+	LibraryID        int64
+	Library          domain.Library
+	Kind             domain.LibraryQuestionKind
+	Title            string
+	Body             string
+	Description      string
+	PurposeID        *int64
+	PurposeNameZh    string
+	PurposeNameEn    string
+	CapabilityID     *int64
+	CapabilityNameZh string
+	CapabilityNameEn string
+	DifficultyID     *int64
+	Sensitive        domain.SensitiveLevel
+	SortOrder        int32
+	Tags             []string
 
 	SourcePromptID      *int64
 	SourceVersionNo     string
@@ -85,8 +87,8 @@ type AddQuestionInput struct {
 	Title        string
 	Body         string
 	Description  string
-	CategoryID   *int64
-	AbilityID    *int64
+	PurposeID    *int64
+	CapabilityID *int64
 	DifficultyID *int64
 	Sensitive    domain.SensitiveLevel
 	Tags         []string
@@ -97,8 +99,8 @@ type UpdateQuestionInput struct {
 	Title        string
 	Body         string
 	Description  string
-	CategoryID   *int64
-	AbilityID    *int64
+	PurposeID    *int64
+	CapabilityID *int64
 	DifficultyID *int64
 	Sensitive    domain.SensitiveLevel
 	Note         string
@@ -225,8 +227,8 @@ func (s *Service) insertDerivedQuestion(
 		Title:          textOrNull(in.Title),
 		Body:           textOrNull(in.Body),
 		Description:    in.Description,
-		CategoryID:     int8OrNull(in.CategoryID),
-		AbilityID:      int8OrNull(in.AbilityID),
+		PurposeID:      int8OrNull(in.PurposeID),
+		CapabilityID:   int8OrNull(in.CapabilityID),
 		DifficultyID:   int8OrNull(in.DifficultyID),
 		SensitiveLevel: textOrNull(string(sensitive)),
 		SortOrder:      sortOrder,
@@ -352,8 +354,8 @@ func (s *Service) UpdateQuestion(
 			Title:          textOrNull(in.Title),
 			Body:           textOrNull(in.Body),
 			Description:    in.Description,
-			CategoryID:     int8OrNull(in.CategoryID),
-			AbilityID:      int8OrNull(in.AbilityID),
+			PurposeID:      int8OrNull(in.PurposeID),
+			CapabilityID:   int8OrNull(in.CapabilityID),
 			DifficultyID:   int8OrNull(in.DifficultyID),
 			SensitiveLevel: textOrNull(string(sensitive)),
 		}

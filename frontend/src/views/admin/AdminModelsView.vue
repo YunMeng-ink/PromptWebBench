@@ -17,6 +17,7 @@ import {
   INPUT_MODALITIES,
 } from '@/api/admin'
 import { useErrorMessage } from '@/composables/useErrorMessage'
+import { useDictionaryStore } from '@/stores/dictionary'
 
 /** ModelForm 是新建与编辑对话框共用的表单结构。 */
 interface ModelForm {
@@ -31,11 +32,12 @@ interface ModelForm {
   note: string
   input_modalities: string[]
   aliases: string[]
-  ability_tags: string[]
+  capability_ids: number[]
 }
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { messageOf } = useErrorMessage()
+const dictionary = useDictionaryStore()
 
 const pageSize = 20
 
@@ -150,7 +152,7 @@ function emptyForm(): ModelForm {
     note: '',
     input_modalities: [],
     aliases: [],
-    ability_tags: [],
+    capability_ids: [],
   }
 }
 
@@ -175,7 +177,7 @@ function openEdit(row: AdminModel): void {
     note: row.note,
     input_modalities: [...row.input_modalities],
     aliases: [...row.aliases],
-    ability_tags: [...row.ability_tags],
+    capability_ids: [...row.capability_ids],
   }
   formError.value = ''
   formVisible.value = true
@@ -194,7 +196,7 @@ async function submitForm(): Promise<void> {
     release_date: form.value.release_date,
     context_length: form.value.context_length,
     is_enabled: form.value.is_enabled,
-    ability_tags: form.value.ability_tags,
+    capability_ids: form.value.capability_ids,
     note: form.value.note,
   }
   try {
@@ -447,7 +449,7 @@ function changeLogPage(next: number): void {
 }
 
 onMounted(async () => {
-  await loadModels()
+  await Promise.all([loadModels(), dictionary.load()])
 })
 </script>
 
@@ -618,16 +620,23 @@ onMounted(async () => {
             :reserve-keyword="false"
           />
         </el-form-item>
-        <el-form-item :label="t('admin.models.abilityTags')">
+        <el-form-item :label="t('admin.models.capabilities')">
           <el-select
-            v-model="form.ability_tags"
+            v-model="form.capability_ids"
             class="pb-admin-module__control"
             multiple
             filterable
-            allow-create
-            default-first-option
             :reserve-keyword="false"
-          />
+          >
+            <el-option
+              v-for="capability in dictionary.data.capabilities"
+              :key="capability.id"
+              :label="
+                locale === 'en' ? capability.name_en : capability.name_zh
+              "
+              :value="capability.id"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item :label="t('admin.common.enabled')">
           <el-switch v-model="form.is_enabled" />

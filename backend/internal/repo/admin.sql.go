@@ -179,16 +179,18 @@ WHERE ($1::text = ''
   AND ($3::text = ''
        OR ($3::text = 'true' AND p.deleted_at IS NOT NULL)
        OR ($3::text = 'false' AND p.deleted_at IS NULL))
-  AND ($4::bigint IS NULL OR p.category_id = $4::bigint)
-  AND ($5::bigint IS NULL OR p.uploader_id = $5::bigint)
+  AND ($4::bigint IS NULL OR p.purpose_id = $4::bigint)
+  AND ($5::bigint IS NULL OR p.capability_id = $5::bigint)
+  AND ($6::bigint IS NULL OR p.uploader_id = $6::bigint)
 `
 
 type AdminCountPromptsParams struct {
-	Keyword    string
-	Visibility string
-	Deleted    string
-	CategoryID pgtype.Int8
-	UploaderID pgtype.Int8
+	Keyword      string
+	Visibility   string
+	Deleted      string
+	PurposeID    pgtype.Int8
+	CapabilityID pgtype.Int8
+	UploaderID   pgtype.Int8
 }
 
 func (q *Queries) AdminCountPrompts(ctx context.Context, arg AdminCountPromptsParams) (int64, error) {
@@ -196,7 +198,8 @@ func (q *Queries) AdminCountPrompts(ctx context.Context, arg AdminCountPromptsPa
 		arg.Keyword,
 		arg.Visibility,
 		arg.Deleted,
-		arg.CategoryID,
+		arg.PurposeID,
+		arg.CapabilityID,
 		arg.UploaderID,
 	)
 	var column_1 int64
@@ -495,7 +498,7 @@ func (q *Queries) AdminGetInviteCode(ctx context.Context, id int64) (InviteCode,
 }
 
 const adminGetModel = `-- name: AdminGetModel :one
-SELECT id, name, model_key, provider_key, provider_name, input_modalities, aliases, description, release_date, context_length, is_enabled, ability_tags, note, import_source, deleted_at, created_at, updated_at FROM models WHERE id = $1
+SELECT id, name, model_key, provider_key, provider_name, input_modalities, aliases, description, release_date, context_length, is_enabled, note, import_source, deleted_at, created_at, updated_at FROM models WHERE id = $1
 `
 
 func (q *Queries) AdminGetModel(ctx context.Context, id int64) (Model, error) {
@@ -513,7 +516,6 @@ func (q *Queries) AdminGetModel(ctx context.Context, id int64) (Model, error) {
 		&i.ReleaseDate,
 		&i.ContextLength,
 		&i.IsEnabled,
-		&i.AbilityTags,
 		&i.Note,
 		&i.ImportSource,
 		&i.DeletedAt,
@@ -524,7 +526,7 @@ func (q *Queries) AdminGetModel(ctx context.Context, id int64) (Model, error) {
 }
 
 const adminGetModelByIdentity = `-- name: AdminGetModelByIdentity :one
-SELECT id, name, model_key, provider_key, provider_name, input_modalities, aliases, description, release_date, context_length, is_enabled, ability_tags, note, import_source, deleted_at, created_at, updated_at FROM models
+SELECT id, name, model_key, provider_key, provider_name, input_modalities, aliases, description, release_date, context_length, is_enabled, note, import_source, deleted_at, created_at, updated_at FROM models
 WHERE model_key = $1 AND provider_key = $2 AND deleted_at IS NULL
 `
 
@@ -550,7 +552,6 @@ func (q *Queries) AdminGetModelByIdentity(ctx context.Context, arg AdminGetModel
 		&i.ReleaseDate,
 		&i.ContextLength,
 		&i.IsEnabled,
-		&i.AbilityTags,
 		&i.Note,
 		&i.ImportSource,
 		&i.DeletedAt,
@@ -585,7 +586,7 @@ func (q *Queries) AdminGetReport(ctx context.Context, id int64) (Report, error) 
 }
 
 const adminGetTag = `-- name: AdminGetTag :one
-SELECT id, slug, name_zh, name_en, color, description, priority, is_enabled, created_at, updated_at FROM tags WHERE id = $1
+SELECT id, slug, name_zh, name_en, color, description, priority, is_enabled, created_at, updated_at, kind FROM tags WHERE id = $1
 `
 
 func (q *Queries) AdminGetTag(ctx context.Context, id int64) (Tag, error) {
@@ -602,6 +603,7 @@ func (q *Queries) AdminGetTag(ctx context.Context, id int64) (Tag, error) {
 		&i.IsEnabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Kind,
 	)
 	return i, err
 }
@@ -1042,7 +1044,7 @@ func (q *Queries) AdminListModelStats(ctx context.Context, arg AdminListModelSta
 
 const adminListModels = `-- name: AdminListModels :many
 
-SELECT m.id, m.name, m.model_key, m.provider_key, m.provider_name, m.input_modalities, m.aliases, m.description, m.release_date, m.context_length, m.is_enabled, m.ability_tags, m.note, m.import_source, m.deleted_at, m.created_at, m.updated_at,
+SELECT m.id, m.name, m.model_key, m.provider_key, m.provider_name, m.input_modalities, m.aliases, m.description, m.release_date, m.context_length, m.is_enabled, m.note, m.import_source, m.deleted_at, m.created_at, m.updated_at,
        (SELECT count(*)::bigint FROM ratings r WHERE r.model_id = m.id AND r.deleted_at IS NULL) AS rating_count,
        (SELECT count(*)::bigint FROM prompts p
          JOIN ratings r2 ON r2.prompt_id = p.id
@@ -1076,7 +1078,6 @@ type AdminListModelsRow struct {
 	ReleaseDate     pgtype.Date
 	ContextLength   pgtype.Int8
 	IsEnabled       bool
-	AbilityTags     []string
 	Note            string
 	ImportSource    string
 	DeletedAt       pgtype.Timestamptz
@@ -1115,7 +1116,6 @@ func (q *Queries) AdminListModels(ctx context.Context, arg AdminListModelsParams
 			&i.ReleaseDate,
 			&i.ContextLength,
 			&i.IsEnabled,
-			&i.AbilityTags,
 			&i.Note,
 			&i.ImportSource,
 			&i.DeletedAt,
@@ -1319,14 +1319,17 @@ func (q *Queries) AdminListPromptRatings(ctx context.Context, arg AdminListPromp
 
 const adminListPrompts = `-- name: AdminListPrompts :many
 
-SELECT p.id, p.title, p.description, p.category_id, p.ability_id, p.difficulty_id,
+SELECT p.id, p.title, p.description, p.purpose_id, p.capability_id, p.difficulty_id,
        p.visibility, p.sensitive_level, p.uploader_id, p.latest_version_no,
        p.major_modified, p.comment_count, p.favorite_count, p.created_at, p.updated_at,
-       c.name_zh AS category_name_zh, c.name_en AS category_name_en, c.is_high_risk,
+       pu.name_zh AS purpose_name_zh, pu.name_en AS purpose_name_en,
+       cap.name_zh AS capability_name_zh, cap.name_en AS capability_name_en,
+       pu.is_high_risk,
        COALESCE(u.username, '') AS uploader_name,
        (p.deleted_at IS NOT NULL)::boolean AS deleted
 FROM prompts p
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
+JOIN capabilities cap ON cap.id = p.capability_id
 LEFT JOIN users u ON u.id = p.uploader_id
 WHERE ($1::text = ''
        OR p.title ILIKE '%' || $1::text || '%'
@@ -1336,43 +1339,47 @@ WHERE ($1::text = ''
   AND ($3::text = ''
        OR ($3::text = 'true' AND p.deleted_at IS NOT NULL)
        OR ($3::text = 'false' AND p.deleted_at IS NULL))
-  AND ($4::bigint IS NULL OR p.category_id = $4::bigint)
-  AND ($5::bigint IS NULL OR p.uploader_id = $5::bigint)
+  AND ($4::bigint IS NULL OR p.purpose_id = $4::bigint)
+  AND ($5::bigint IS NULL OR p.capability_id = $5::bigint)
+  AND ($6::bigint IS NULL OR p.uploader_id = $6::bigint)
 ORDER BY p.updated_at DESC, p.id DESC
-LIMIT $7 OFFSET $6
+LIMIT $8 OFFSET $7
 `
 
 type AdminListPromptsParams struct {
-	Keyword     string
-	Visibility  string
-	Deleted     string
-	CategoryID  pgtype.Int8
-	UploaderID  pgtype.Int8
-	OffsetCount int32
-	LimitCount  int32
+	Keyword      string
+	Visibility   string
+	Deleted      string
+	PurposeID    pgtype.Int8
+	CapabilityID pgtype.Int8
+	UploaderID   pgtype.Int8
+	OffsetCount  int32
+	LimitCount   int32
 }
 
 type AdminListPromptsRow struct {
-	ID              int64
-	Title           string
-	Description     string
-	CategoryID      int64
-	AbilityID       pgtype.Int8
-	DifficultyID    pgtype.Int8
-	Visibility      string
-	SensitiveLevel  string
-	UploaderID      int64
-	LatestVersionNo string
-	MajorModified   bool
-	CommentCount    int32
-	FavoriteCount   int32
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
-	CategoryNameZh  string
-	CategoryNameEn  string
-	IsHighRisk      bool
-	UploaderName    string
-	Deleted         bool
+	ID               int64
+	Title            string
+	Description      string
+	PurposeID        int64
+	CapabilityID     int64
+	DifficultyID     pgtype.Int8
+	Visibility       string
+	SensitiveLevel   string
+	UploaderID       int64
+	LatestVersionNo  string
+	MajorModified    bool
+	CommentCount     int32
+	FavoriteCount    int32
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	PurposeNameZh    string
+	PurposeNameEn    string
+	CapabilityNameZh string
+	CapabilityNameEn string
+	IsHighRisk       bool
+	UploaderName     string
+	Deleted          bool
 }
 
 // ============================================================
@@ -1385,7 +1392,8 @@ func (q *Queries) AdminListPrompts(ctx context.Context, arg AdminListPromptsPara
 		arg.Keyword,
 		arg.Visibility,
 		arg.Deleted,
-		arg.CategoryID,
+		arg.PurposeID,
+		arg.CapabilityID,
 		arg.UploaderID,
 		arg.OffsetCount,
 		arg.LimitCount,
@@ -1401,8 +1409,8 @@ func (q *Queries) AdminListPrompts(ctx context.Context, arg AdminListPromptsPara
 			&i.ID,
 			&i.Title,
 			&i.Description,
-			&i.CategoryID,
-			&i.AbilityID,
+			&i.PurposeID,
+			&i.CapabilityID,
 			&i.DifficultyID,
 			&i.Visibility,
 			&i.SensitiveLevel,
@@ -1413,8 +1421,10 @@ func (q *Queries) AdminListPrompts(ctx context.Context, arg AdminListPromptsPara
 			&i.FavoriteCount,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.CategoryNameZh,
-			&i.CategoryNameEn,
+			&i.PurposeNameZh,
+			&i.PurposeNameEn,
+			&i.CapabilityNameZh,
+			&i.CapabilityNameEn,
 			&i.IsHighRisk,
 			&i.UploaderName,
 			&i.Deleted,
@@ -1681,7 +1691,7 @@ func (q *Queries) AdminListReports(ctx context.Context, arg AdminListReportsPara
 
 const adminListTags = `-- name: AdminListTags :many
 
-SELECT t.id, t.slug, t.name_zh, t.name_en, t.color, t.description, t.priority, t.is_enabled, t.created_at, t.updated_at,
+SELECT t.id, t.slug, t.name_zh, t.name_en, t.color, t.description, t.priority, t.is_enabled, t.created_at, t.updated_at, t.kind,
        (SELECT count(*)::bigint FROM prompt_tags pt WHERE pt.tag_id = t.id) AS usage_count
 FROM tags t
 WHERE ($1::text = ''
@@ -1709,6 +1719,7 @@ type AdminListTagsRow struct {
 	IsEnabled   bool
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
+	Kind        string
 	UsageCount  int64
 }
 
@@ -1735,6 +1746,7 @@ func (q *Queries) AdminListTags(ctx context.Context, arg AdminListTagsParams) ([
 			&i.IsEnabled,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Kind,
 			&i.UsageCount,
 		); err != nil {
 			return nil, err
@@ -2292,14 +2304,14 @@ func (q *Queries) InsertInviteCode(ctx context.Context, arg InsertInviteCodePara
 const insertModel = `-- name: InsertModel :one
 INSERT INTO models (
     name, model_key, provider_key, provider_name, input_modalities, aliases,
-    description, release_date, context_length, is_enabled, ability_tags, note, import_source
+    description, release_date, context_length, is_enabled, note, import_source
 )
 VALUES (
     $1, $2, $3, $4, $5, $6, $7,
-    $12::date, $13::bigint,
-    $8, $9, $10, $11
+    $11::date, $12::bigint,
+    $8, $9, $10
 )
-RETURNING id, name, model_key, provider_key, provider_name, input_modalities, aliases, description, release_date, context_length, is_enabled, ability_tags, note, import_source, deleted_at, created_at, updated_at
+RETURNING id, name, model_key, provider_key, provider_name, input_modalities, aliases, description, release_date, context_length, is_enabled, note, import_source, deleted_at, created_at, updated_at
 `
 
 type InsertModelParams struct {
@@ -2311,7 +2323,6 @@ type InsertModelParams struct {
 	Aliases         []string
 	Description     string
 	IsEnabled       bool
-	AbilityTags     []string
 	Note            string
 	ImportSource    string
 	ReleaseDate     pgtype.Date
@@ -2328,7 +2339,6 @@ func (q *Queries) InsertModel(ctx context.Context, arg InsertModelParams) (Model
 		arg.Aliases,
 		arg.Description,
 		arg.IsEnabled,
-		arg.AbilityTags,
 		arg.Note,
 		arg.ImportSource,
 		arg.ReleaseDate,
@@ -2347,7 +2357,6 @@ func (q *Queries) InsertModel(ctx context.Context, arg InsertModelParams) (Model
 		&i.ReleaseDate,
 		&i.ContextLength,
 		&i.IsEnabled,
-		&i.AbilityTags,
 		&i.Note,
 		&i.ImportSource,
 		&i.DeletedAt,
@@ -2406,9 +2415,9 @@ func (q *Queries) InsertModelSnapshot(ctx context.Context, arg InsertModelSnapsh
 }
 
 const insertTag = `-- name: InsertTag :one
-INSERT INTO tags (slug, name_zh, name_en, color, description, priority, is_enabled)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, slug, name_zh, name_en, color, description, priority, is_enabled, created_at, updated_at
+INSERT INTO tags (slug, name_zh, name_en, color, description, kind, priority, is_enabled)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, slug, name_zh, name_en, color, description, priority, is_enabled, created_at, updated_at, kind
 `
 
 type InsertTagParams struct {
@@ -2417,6 +2426,7 @@ type InsertTagParams struct {
 	NameEn      string
 	Color       string
 	Description string
+	Kind        string
 	Priority    int32
 	IsEnabled   bool
 }
@@ -2428,6 +2438,7 @@ func (q *Queries) InsertTag(ctx context.Context, arg InsertTagParams) (Tag, erro
 		arg.NameEn,
 		arg.Color,
 		arg.Description,
+		arg.Kind,
 		arg.Priority,
 		arg.IsEnabled,
 	)
@@ -2443,6 +2454,7 @@ func (q *Queries) InsertTag(ctx context.Context, arg InsertTagParams) (Tag, erro
 		&i.IsEnabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Kind,
 	)
 	return i, err
 }
@@ -2564,7 +2576,7 @@ const setModelEnabled = `-- name: SetModelEnabled :one
 UPDATE models
 SET is_enabled = $2, updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, name, model_key, provider_key, provider_name, input_modalities, aliases, description, release_date, context_length, is_enabled, ability_tags, note, import_source, deleted_at, created_at, updated_at
+RETURNING id, name, model_key, provider_key, provider_name, input_modalities, aliases, description, release_date, context_length, is_enabled, note, import_source, deleted_at, created_at, updated_at
 `
 
 type SetModelEnabledParams struct {
@@ -2587,7 +2599,6 @@ func (q *Queries) SetModelEnabled(ctx context.Context, arg SetModelEnabledParams
 		&i.ReleaseDate,
 		&i.ContextLength,
 		&i.IsEnabled,
-		&i.AbilityTags,
 		&i.Note,
 		&i.ImportSource,
 		&i.DeletedAt,
@@ -2650,14 +2661,13 @@ SET name = $2,
     input_modalities = $6,
     aliases = $7,
     description = $8,
-    release_date = $12::date,
-    context_length = $13::bigint,
+    release_date = $11::date,
+    context_length = $12::bigint,
     is_enabled = $9,
-    ability_tags = $10,
-    note = $11,
+    note = $10,
     updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, name, model_key, provider_key, provider_name, input_modalities, aliases, description, release_date, context_length, is_enabled, ability_tags, note, import_source, deleted_at, created_at, updated_at
+RETURNING id, name, model_key, provider_key, provider_name, input_modalities, aliases, description, release_date, context_length, is_enabled, note, import_source, deleted_at, created_at, updated_at
 `
 
 type UpdateModelParams struct {
@@ -2670,7 +2680,6 @@ type UpdateModelParams struct {
 	Aliases         []string
 	Description     string
 	IsEnabled       bool
-	AbilityTags     []string
 	Note            string
 	ReleaseDate     pgtype.Date
 	ContextLength   pgtype.Int8
@@ -2687,7 +2696,6 @@ func (q *Queries) UpdateModel(ctx context.Context, arg UpdateModelParams) (Model
 		arg.Aliases,
 		arg.Description,
 		arg.IsEnabled,
-		arg.AbilityTags,
 		arg.Note,
 		arg.ReleaseDate,
 		arg.ContextLength,
@@ -2705,7 +2713,6 @@ func (q *Queries) UpdateModel(ctx context.Context, arg UpdateModelParams) (Model
 		&i.ReleaseDate,
 		&i.ContextLength,
 		&i.IsEnabled,
-		&i.AbilityTags,
 		&i.Note,
 		&i.ImportSource,
 		&i.DeletedAt,
@@ -2718,9 +2725,9 @@ func (q *Queries) UpdateModel(ctx context.Context, arg UpdateModelParams) (Model
 const updateTag = `-- name: UpdateTag :one
 UPDATE tags
 SET slug = $2, name_zh = $3, name_en = $4, color = $5, description = $6,
-    priority = $7, is_enabled = $8, updated_at = now()
+    kind = $7, priority = $8, is_enabled = $9, updated_at = now()
 WHERE id = $1
-RETURNING id, slug, name_zh, name_en, color, description, priority, is_enabled, created_at, updated_at
+RETURNING id, slug, name_zh, name_en, color, description, priority, is_enabled, created_at, updated_at, kind
 `
 
 type UpdateTagParams struct {
@@ -2730,6 +2737,7 @@ type UpdateTagParams struct {
 	NameEn      string
 	Color       string
 	Description string
+	Kind        string
 	Priority    int32
 	IsEnabled   bool
 }
@@ -2742,6 +2750,7 @@ func (q *Queries) UpdateTag(ctx context.Context, arg UpdateTagParams) (Tag, erro
 		arg.NameEn,
 		arg.Color,
 		arg.Description,
+		arg.Kind,
 		arg.Priority,
 		arg.IsEnabled,
 	)
@@ -2757,6 +2766,7 @@ func (q *Queries) UpdateTag(ctx context.Context, arg UpdateTagParams) (Tag, erro
 		&i.IsEnabled,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Kind,
 	)
 	return i, err
 }

@@ -124,50 +124,54 @@ func toDashboardPrompts(items []admin.HotPrompt) []dashboardPromptDTO {
 // ---------- 模块 2：提示词管理 ----------
 
 type adminPromptDTO struct {
-	ID             int64  `json:"id"`
-	Title          string `json:"title"`
-	Description    string `json:"description"`
-	CategoryID     int64  `json:"category_id"`
-	CategoryNameZh string `json:"category_name_zh"`
-	CategoryNameEn string `json:"category_name_en"`
-	AbilityID      *int64 `json:"ability_id,omitempty"`
-	DifficultyID   *int64 `json:"difficulty_id,omitempty"`
-	Visibility     string `json:"visibility"`
-	SensitiveLevel string `json:"sensitive_level"`
-	UploaderID     int64  `json:"uploader_id"`
-	UploaderName   string `json:"uploader_name"`
-	VersionNo      string `json:"version_no"`
-	MajorModified  bool   `json:"major_modified"`
-	HighRisk       bool   `json:"is_high_risk"`
-	CommentCount   int32  `json:"comment_count"`
-	FavoriteCount  int32  `json:"favorite_count"`
-	Deleted        bool   `json:"deleted"`
-	CreatedAt      string `json:"created_at"`
-	UpdatedAt      string `json:"updated_at"`
+	ID               int64  `json:"id"`
+	Title            string `json:"title"`
+	Description      string `json:"description"`
+	PurposeID        int64  `json:"purpose_id"`
+	PurposeNameZh    string `json:"purpose_name_zh"`
+	PurposeNameEn    string `json:"purpose_name_en"`
+	CapabilityID     int64  `json:"capability_id"`
+	CapabilityNameZh string `json:"capability_name_zh"`
+	CapabilityNameEn string `json:"capability_name_en"`
+	DifficultyID     *int64 `json:"difficulty_id,omitempty"`
+	Visibility       string `json:"visibility"`
+	SensitiveLevel   string `json:"sensitive_level"`
+	UploaderID       int64  `json:"uploader_id"`
+	UploaderName     string `json:"uploader_name"`
+	VersionNo        string `json:"version_no"`
+	MajorModified    bool   `json:"major_modified"`
+	HighRisk         bool   `json:"is_high_risk"`
+	CommentCount     int32  `json:"comment_count"`
+	FavoriteCount    int32  `json:"favorite_count"`
+	Deleted          bool   `json:"deleted"`
+	CreatedAt        string `json:"created_at"`
+	UpdatedAt        string `json:"updated_at"`
 }
 
 func toAdminPromptDTO(row repo.AdminListPromptsRow) adminPromptDTO {
 	return adminPromptDTO{
-		ID:             row.ID,
-		Title:          row.Title,
-		Description:    row.Description,
-		CategoryID:     row.CategoryID,
-		CategoryNameZh: row.CategoryNameZh,
-		CategoryNameEn: row.CategoryNameEn,
-		AbilityID:      int64PtrOf(row.AbilityID),
-		DifficultyID:   int64PtrOf(row.DifficultyID),
-		Visibility:     row.Visibility,
-		SensitiveLevel: row.SensitiveLevel,
-		UploaderID:     row.UploaderID,
-		UploaderName:   row.UploaderName,
-		VersionNo:      row.LatestVersionNo,
-		MajorModified:  row.MajorModified,
-		HighRisk:       row.IsHighRisk,
-		CommentCount:   row.CommentCount,
-		FavoriteCount:  row.FavoriteCount,
-		Deleted:        row.Deleted,
-		CreatedAt:      timeString(row.CreatedAt),
-		UpdatedAt:      timeString(row.UpdatedAt),
+		ID:               row.ID,
+		Title:            row.Title,
+		Description:      row.Description,
+		PurposeID:        row.PurposeID,
+		PurposeNameZh:    row.PurposeNameZh,
+		PurposeNameEn:    row.PurposeNameEn,
+		CapabilityID:     row.CapabilityID,
+		CapabilityNameZh: row.CapabilityNameZh,
+		CapabilityNameEn: row.CapabilityNameEn,
+		DifficultyID:     int64PtrOf(row.DifficultyID),
+		Visibility:       row.Visibility,
+		SensitiveLevel:   row.SensitiveLevel,
+		UploaderID:       row.UploaderID,
+		UploaderName:     row.UploaderName,
+		VersionNo:        row.LatestVersionNo,
+		MajorModified:    row.MajorModified,
+		HighRisk:         row.IsHighRisk,
+		CommentCount:     row.CommentCount,
+		FavoriteCount:    row.FavoriteCount,
+		Deleted:          row.Deleted,
+		CreatedAt:        timeString(row.CreatedAt),
+		UpdatedAt:        timeString(row.UpdatedAt),
 	}
 }
 
@@ -274,7 +278,7 @@ type adminModelDTO struct {
 	ReleaseDate     string   `json:"release_date"`
 	ContextLength   *int64   `json:"context_length,omitempty"`
 	IsEnabled       bool     `json:"is_enabled"`
-	AbilityTags     []string `json:"ability_tags"`
+	CapabilityIDs   []int64  `json:"capability_ids"`
 	Note            string   `json:"note"`
 	ImportSource    string   `json:"import_source"`
 	RatingCount     int64    `json:"rating_count"`
@@ -284,7 +288,7 @@ type adminModelDTO struct {
 	UpdatedAt       string   `json:"updated_at"`
 }
 
-func toAdminModelDTO(row repo.AdminListModelsRow) adminModelDTO {
+func toAdminModelDTO(row repo.AdminListModelsRow, capabilityIDs []int64) adminModelDTO {
 	out := adminModelDTO{
 		ID:              row.ID,
 		Name:            row.Name,
@@ -296,7 +300,7 @@ func toAdminModelDTO(row repo.AdminListModelsRow) adminModelDTO {
 		Description:     row.Description,
 		ContextLength:   int64PtrOf(row.ContextLength),
 		IsEnabled:       row.IsEnabled,
-		AbilityTags:     emptyIfNil(row.AbilityTags),
+		CapabilityIDs:   emptyInt64IfNil(capabilityIDs),
 		Note:            row.Note,
 		ImportSource:    row.ImportSource,
 		RatingCount:     row.RatingCount,
@@ -312,7 +316,7 @@ func toAdminModelDTO(row repo.AdminListModelsRow) adminModelDTO {
 }
 
 // modelModelDTO 把 models 表行转为后台模型形态（写入路径的返回值）。
-func modelModelDTO(row repo.Model) adminModelDTO {
+func modelModelDTO(row repo.Model, capabilityIDs []int64) adminModelDTO {
 	out := adminModelDTO{
 		ID:              row.ID,
 		Name:            row.Name,
@@ -324,7 +328,7 @@ func modelModelDTO(row repo.Model) adminModelDTO {
 		Description:     row.Description,
 		ContextLength:   int64PtrOf(row.ContextLength),
 		IsEnabled:       row.IsEnabled,
-		AbilityTags:     emptyIfNil(row.AbilityTags),
+		CapabilityIDs:   emptyInt64IfNil(capabilityIDs),
 		Note:            row.Note,
 		ImportSource:    row.ImportSource,
 		Deleted:         row.DeletedAt.Valid,
@@ -335,6 +339,14 @@ func modelModelDTO(row repo.Model) adminModelDTO {
 		out.ReleaseDate = row.ReleaseDate.Time.Format("2006-01-02")
 	}
 	return out
+}
+
+// emptyInt64IfNil 保证整数数组字段序列化为 [] 而不是 null。
+func emptyInt64IfNil(items []int64) []int64 {
+	if items == nil {
+		return []int64{}
+	}
+	return items
 }
 
 // emptyIfNil 保证数组字段序列化为 [] 而不是 null。
@@ -596,6 +608,7 @@ type adminTagDTO struct {
 	NameEn      string `json:"name_en"`
 	Color       string `json:"color"`
 	Description string `json:"description"`
+	Kind        string `json:"kind"`
 	Priority    int32  `json:"priority"`
 	IsEnabled   bool   `json:"is_enabled"`
 	UsageCount  int64  `json:"usage_count"`
@@ -611,6 +624,7 @@ func toAdminTagDTO(row repo.AdminListTagsRow) adminTagDTO {
 		NameEn:      row.NameEn,
 		Color:       row.Color,
 		Description: row.Description,
+		Kind:        row.Kind,
 		Priority:    row.Priority,
 		IsEnabled:   row.IsEnabled,
 		UsageCount:  row.UsageCount,
@@ -628,6 +642,7 @@ func tagRowDTO(row repo.Tag) adminTagDTO {
 		NameEn:      row.NameEn,
 		Color:       row.Color,
 		Description: row.Description,
+		Kind:        row.Kind,
 		Priority:    row.Priority,
 		IsEnabled:   row.IsEnabled,
 		CreatedAt:   timeString(row.CreatedAt),

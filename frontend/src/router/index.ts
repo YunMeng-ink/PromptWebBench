@@ -160,6 +160,11 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/admin/AdminTagsView.vue'),
       },
       {
+        path: 'dictionary',
+        name: 'admin-dictionary',
+        component: () => import('@/views/admin/AdminDictionaryView.vue'),
+      },
+      {
         path: 'reports',
         name: 'admin-reports',
         component: () => import('@/views/admin/AdminReportsView.vue'),

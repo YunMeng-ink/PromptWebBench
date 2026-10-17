@@ -122,19 +122,19 @@ func (q *Queries) DeleteLibraryQuestionTags(ctx context.Context, questionID int6
 const deriveLibraryQuestion = `-- name: DeriveLibraryQuestion :one
 UPDATE library_questions
 SET kind = 'derived', title = $1, body = $2,
-    description = $3, category_id = $4,
-    ability_id = $5, difficulty_id = $6,
+    description = $3, purpose_id = $4,
+    capability_id = $5, difficulty_id = $6,
     sensitive_level = $7, updated_at = now()
 WHERE id = $8 AND deleted_at IS NULL
-RETURNING id, library_id, kind, source_prompt_id, source_prompt_version_id, title, body, description, category_id, ability_id, difficulty_id, sensitive_level, sort_order, deleted_at, created_at, updated_at
+RETURNING id, library_id, kind, source_prompt_id, source_prompt_version_id, title, body, description, difficulty_id, sensitive_level, sort_order, deleted_at, created_at, updated_at, purpose_id, capability_id
 `
 
 type DeriveLibraryQuestionParams struct {
 	Title          pgtype.Text
 	Body           pgtype.Text
 	Description    string
-	CategoryID     pgtype.Int8
-	AbilityID      pgtype.Int8
+	PurposeID      pgtype.Int8
+	CapabilityID   pgtype.Int8
 	DifficultyID   pgtype.Int8
 	SensitiveLevel pgtype.Text
 	ID             int64
@@ -146,8 +146,8 @@ func (q *Queries) DeriveLibraryQuestion(ctx context.Context, arg DeriveLibraryQu
 		arg.Title,
 		arg.Body,
 		arg.Description,
-		arg.CategoryID,
-		arg.AbilityID,
+		arg.PurposeID,
+		arg.CapabilityID,
 		arg.DifficultyID,
 		arg.SensitiveLevel,
 		arg.ID,
@@ -162,14 +162,14 @@ func (q *Queries) DeriveLibraryQuestion(ctx context.Context, arg DeriveLibraryQu
 		&i.Title,
 		&i.Body,
 		&i.Description,
-		&i.CategoryID,
-		&i.AbilityID,
 		&i.DifficultyID,
 		&i.SensitiveLevel,
 		&i.SortOrder,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PurposeID,
+		&i.CapabilityID,
 	)
 	return i, err
 }
@@ -450,10 +450,10 @@ func (q *Queries) InsertLibraryMember(ctx context.Context, arg InsertLibraryMemb
 const insertLibraryQuestion = `-- name: InsertLibraryQuestion :one
 INSERT INTO library_questions (
     library_id, kind, source_prompt_id, source_prompt_version_id,
-    title, body, description, category_id, ability_id, difficulty_id,
+    title, body, description, purpose_id, capability_id, difficulty_id,
     sensitive_level, sort_order
 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-RETURNING id, library_id, kind, source_prompt_id, source_prompt_version_id, title, body, description, category_id, ability_id, difficulty_id, sensitive_level, sort_order, deleted_at, created_at, updated_at
+RETURNING id, library_id, kind, source_prompt_id, source_prompt_version_id, title, body, description, difficulty_id, sensitive_level, sort_order, deleted_at, created_at, updated_at, purpose_id, capability_id
 `
 
 type InsertLibraryQuestionParams struct {
@@ -464,8 +464,8 @@ type InsertLibraryQuestionParams struct {
 	Title                 pgtype.Text
 	Body                  pgtype.Text
 	Description           string
-	CategoryID            pgtype.Int8
-	AbilityID             pgtype.Int8
+	PurposeID             pgtype.Int8
+	CapabilityID          pgtype.Int8
 	DifficultyID          pgtype.Int8
 	SensitiveLevel        pgtype.Text
 	SortOrder             int32
@@ -480,8 +480,8 @@ func (q *Queries) InsertLibraryQuestion(ctx context.Context, arg InsertLibraryQu
 		arg.Title,
 		arg.Body,
 		arg.Description,
-		arg.CategoryID,
-		arg.AbilityID,
+		arg.PurposeID,
+		arg.CapabilityID,
 		arg.DifficultyID,
 		arg.SensitiveLevel,
 		arg.SortOrder,
@@ -496,14 +496,14 @@ func (q *Queries) InsertLibraryQuestion(ctx context.Context, arg InsertLibraryQu
 		&i.Title,
 		&i.Body,
 		&i.Description,
-		&i.CategoryID,
-		&i.AbilityID,
 		&i.DifficultyID,
 		&i.SensitiveLevel,
 		&i.SortOrder,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PurposeID,
+		&i.CapabilityID,
 	)
 	return i, err
 }
@@ -893,12 +893,12 @@ func (q *Queries) ListLibraryQuestionTagsByQuestions(ctx context.Context, questi
 
 const listLibraryQuestions = `-- name: ListLibraryQuestions :many
 SELECT
-    q.id, q.library_id, q.kind, q.source_prompt_id, q.source_prompt_version_id, q.title, q.body, q.description, q.category_id, q.ability_id, q.difficulty_id, q.sensitive_level, q.sort_order, q.deleted_at, q.created_at, q.updated_at,
+    q.id, q.library_id, q.kind, q.source_prompt_id, q.source_prompt_version_id, q.title, q.body, q.description, q.difficulty_id, q.sensitive_level, q.sort_order, q.deleted_at, q.created_at, q.updated_at, q.purpose_id, q.capability_id,
     p.title             AS source_title,
     p.body              AS source_body,
     p.description       AS source_description,
-    p.category_id       AS source_category_id,
-    p.ability_id        AS source_ability_id,
+    p.purpose_id        AS source_purpose_id,
+    p.capability_id     AS source_capability_id,
     p.difficulty_id     AS source_difficulty_id,
     p.visibility        AS source_visibility,
     p.sensitive_level   AS source_sensitive_level,
@@ -906,13 +906,17 @@ SELECT
     p.latest_version_no AS source_version_no,
     p.major_modified    AS source_major_modified,
     p.deleted_at        AS source_deleted_at,
-    COALESCE(pc.is_high_risk, false) AS source_is_high_risk,
-    COALESCE(pc.name_zh, dc.name_zh, '') AS category_name_zh,
-    COALESCE(pc.name_en, dc.name_en, '') AS category_name_en
+    COALESCE(pp.is_high_risk, false) AS source_is_high_risk,
+    COALESCE(pp.name_zh, qp.name_zh, '') AS purpose_name_zh,
+    COALESCE(pp.name_en, qp.name_en, '') AS purpose_name_en,
+    COALESCE(pcap.name_zh, qcap.name_zh, '') AS capability_name_zh,
+    COALESCE(pcap.name_en, qcap.name_en, '') AS capability_name_en
 FROM library_questions q
 LEFT JOIN prompts p ON p.id = q.source_prompt_id
-LEFT JOIN categories pc ON pc.id = p.category_id
-LEFT JOIN categories dc ON dc.id = q.category_id
+LEFT JOIN purposes pp ON pp.id = p.purpose_id
+LEFT JOIN capabilities pcap ON pcap.id = p.capability_id
+LEFT JOIN purposes qp ON qp.id = q.purpose_id
+LEFT JOIN capabilities qcap ON qcap.id = q.capability_id
 WHERE q.library_id = $1
   AND ($2::boolean OR q.deleted_at IS NULL)
 ORDER BY q.sort_order, q.id
@@ -932,19 +936,19 @@ type ListLibraryQuestionsRow struct {
 	Title                 pgtype.Text
 	Body                  pgtype.Text
 	Description           string
-	CategoryID            pgtype.Int8
-	AbilityID             pgtype.Int8
 	DifficultyID          pgtype.Int8
 	SensitiveLevel        pgtype.Text
 	SortOrder             int32
 	DeletedAt             pgtype.Timestamptz
 	CreatedAt             pgtype.Timestamptz
 	UpdatedAt             pgtype.Timestamptz
+	PurposeID             pgtype.Int8
+	CapabilityID          pgtype.Int8
 	SourceTitle           pgtype.Text
 	SourceBody            pgtype.Text
 	SourceDescription     pgtype.Text
-	SourceCategoryID      pgtype.Int8
-	SourceAbilityID       pgtype.Int8
+	SourcePurposeID       pgtype.Int8
+	SourceCapabilityID    pgtype.Int8
 	SourceDifficultyID    pgtype.Int8
 	SourceVisibility      pgtype.Text
 	SourceSensitiveLevel  pgtype.Text
@@ -953,8 +957,10 @@ type ListLibraryQuestionsRow struct {
 	SourceMajorModified   pgtype.Bool
 	SourceDeletedAt       pgtype.Timestamptz
 	SourceIsHighRisk      bool
-	CategoryNameZh        string
-	CategoryNameEn        string
+	PurposeNameZh         string
+	PurposeNameEn         string
+	CapabilityNameZh      string
+	CapabilityNameEn      string
 }
 
 // 题目的来源提示词字段：引用题的正文取自来源提示词当前版本。
@@ -981,19 +987,19 @@ func (q *Queries) ListLibraryQuestions(ctx context.Context, arg ListLibraryQuest
 			&i.Title,
 			&i.Body,
 			&i.Description,
-			&i.CategoryID,
-			&i.AbilityID,
 			&i.DifficultyID,
 			&i.SensitiveLevel,
 			&i.SortOrder,
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.PurposeID,
+			&i.CapabilityID,
 			&i.SourceTitle,
 			&i.SourceBody,
 			&i.SourceDescription,
-			&i.SourceCategoryID,
-			&i.SourceAbilityID,
+			&i.SourcePurposeID,
+			&i.SourceCapabilityID,
 			&i.SourceDifficultyID,
 			&i.SourceVisibility,
 			&i.SourceSensitiveLevel,
@@ -1002,8 +1008,10 @@ func (q *Queries) ListLibraryQuestions(ctx context.Context, arg ListLibraryQuest
 			&i.SourceMajorModified,
 			&i.SourceDeletedAt,
 			&i.SourceIsHighRisk,
-			&i.CategoryNameZh,
-			&i.CategoryNameEn,
+			&i.PurposeNameZh,
+			&i.PurposeNameEn,
+			&i.CapabilityNameZh,
+			&i.CapabilityNameEn,
 		); err != nil {
 			return nil, err
 		}
@@ -1237,7 +1245,7 @@ const restoreLibraryQuestion = `-- name: RestoreLibraryQuestion :one
 UPDATE library_questions
 SET deleted_at = NULL, updated_at = now()
 WHERE id = $1
-RETURNING id, library_id, kind, source_prompt_id, source_prompt_version_id, title, body, description, category_id, ability_id, difficulty_id, sensitive_level, sort_order, deleted_at, created_at, updated_at
+RETURNING id, library_id, kind, source_prompt_id, source_prompt_version_id, title, body, description, difficulty_id, sensitive_level, sort_order, deleted_at, created_at, updated_at, purpose_id, capability_id
 `
 
 func (q *Queries) RestoreLibraryQuestion(ctx context.Context, id int64) (LibraryQuestion, error) {
@@ -1252,14 +1260,14 @@ func (q *Queries) RestoreLibraryQuestion(ctx context.Context, id int64) (Library
 		&i.Title,
 		&i.Body,
 		&i.Description,
-		&i.CategoryID,
-		&i.AbilityID,
 		&i.DifficultyID,
 		&i.SensitiveLevel,
 		&i.SortOrder,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PurposeID,
+		&i.CapabilityID,
 	)
 	return i, err
 }
@@ -1292,7 +1300,7 @@ const softDeleteLibraryQuestion = `-- name: SoftDeleteLibraryQuestion :one
 UPDATE library_questions
 SET deleted_at = now(), updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, library_id, kind, source_prompt_id, source_prompt_version_id, title, body, description, category_id, ability_id, difficulty_id, sensitive_level, sort_order, deleted_at, created_at, updated_at
+RETURNING id, library_id, kind, source_prompt_id, source_prompt_version_id, title, body, description, difficulty_id, sensitive_level, sort_order, deleted_at, created_at, updated_at, purpose_id, capability_id
 `
 
 func (q *Queries) SoftDeleteLibraryQuestion(ctx context.Context, id int64) (LibraryQuestion, error) {
@@ -1307,14 +1315,14 @@ func (q *Queries) SoftDeleteLibraryQuestion(ctx context.Context, id int64) (Libr
 		&i.Title,
 		&i.Body,
 		&i.Description,
-		&i.CategoryID,
-		&i.AbilityID,
 		&i.DifficultyID,
 		&i.SensitiveLevel,
 		&i.SortOrder,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PurposeID,
+		&i.CapabilityID,
 	)
 	return i, err
 }
@@ -1380,19 +1388,19 @@ func (q *Queries) UpdateLibraryName(ctx context.Context, arg UpdateLibraryNamePa
 const updateLibraryQuestionContent = `-- name: UpdateLibraryQuestionContent :one
 UPDATE library_questions
 SET title = $1, body = $2, description = $3,
-    category_id = $4, ability_id = $5,
+    purpose_id = $4, capability_id = $5,
     difficulty_id = $6, sensitive_level = $7,
     updated_at = now()
 WHERE id = $8 AND deleted_at IS NULL
-RETURNING id, library_id, kind, source_prompt_id, source_prompt_version_id, title, body, description, category_id, ability_id, difficulty_id, sensitive_level, sort_order, deleted_at, created_at, updated_at
+RETURNING id, library_id, kind, source_prompt_id, source_prompt_version_id, title, body, description, difficulty_id, sensitive_level, sort_order, deleted_at, created_at, updated_at, purpose_id, capability_id
 `
 
 type UpdateLibraryQuestionContentParams struct {
 	Title          pgtype.Text
 	Body           pgtype.Text
 	Description    string
-	CategoryID     pgtype.Int8
-	AbilityID      pgtype.Int8
+	PurposeID      pgtype.Int8
+	CapabilityID   pgtype.Int8
 	DifficultyID   pgtype.Int8
 	SensitiveLevel pgtype.Text
 	ID             int64
@@ -1404,8 +1412,8 @@ func (q *Queries) UpdateLibraryQuestionContent(ctx context.Context, arg UpdateLi
 		arg.Title,
 		arg.Body,
 		arg.Description,
-		arg.CategoryID,
-		arg.AbilityID,
+		arg.PurposeID,
+		arg.CapabilityID,
 		arg.DifficultyID,
 		arg.SensitiveLevel,
 		arg.ID,
@@ -1420,14 +1428,14 @@ func (q *Queries) UpdateLibraryQuestionContent(ctx context.Context, arg UpdateLi
 		&i.Title,
 		&i.Body,
 		&i.Description,
-		&i.CategoryID,
-		&i.AbilityID,
 		&i.DifficultyID,
 		&i.SensitiveLevel,
 		&i.SortOrder,
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PurposeID,
+		&i.CapabilityID,
 	)
 	return i, err
 }

@@ -53,8 +53,8 @@ type promptDTO struct {
 	ID             int64  `json:"id"`
 	Title          string `json:"title"`
 	Description    string `json:"description"`
-	CategoryID     int64  `json:"category_id"`
-	AbilityID      *int64 `json:"ability_id,omitempty"`
+	PurposeID      int64  `json:"purpose_id"`
+	CapabilityID   int64  `json:"capability_id"`
 	DifficultyID   *int64 `json:"difficulty_id,omitempty"`
 	Visibility     string `json:"visibility"`
 	SensitiveLevel string `json:"sensitive_level"`
@@ -69,10 +69,10 @@ type promptDTO struct {
 
 type promptListItemDTO struct {
 	promptDTO
-	CategoryNameZh   string  `json:"category_name_zh"`
-	CategoryNameEn   string  `json:"category_name_en"`
-	AbilityNameZh    string  `json:"ability_name_zh,omitempty"`
-	AbilityNameEn    string  `json:"ability_name_en,omitempty"`
+	PurposeNameZh    string  `json:"purpose_name_zh"`
+	PurposeNameEn    string  `json:"purpose_name_en"`
+	CapabilityNameZh string  `json:"capability_name_zh"`
+	CapabilityNameEn string  `json:"capability_name_en"`
 	DifficultyNameZh string  `json:"difficulty_name_zh,omitempty"`
 	DifficultyNameEn string  `json:"difficulty_name_en,omitempty"`
 	Discrimination   float64 `json:"discrimination" doc:"区分度；阶段 3 之前为 0"`
@@ -95,8 +95,8 @@ func toPromptDTO(p domain.Prompt) promptDTO {
 		ID:             p.ID,
 		Title:          p.Title,
 		Description:    p.Description,
-		CategoryID:     p.CategoryID,
-		AbilityID:      p.AbilityID,
+		PurposeID:      p.PurposeID,
+		CapabilityID:   p.CapabilityID,
 		DifficultyID:   p.DifficultyID,
 		Visibility:     string(p.Visibility),
 		SensitiveLevel: string(p.Sensitive),
@@ -121,8 +121,8 @@ type promptVersionDTO struct {
 	Title          string `json:"title"`
 	Body           string `json:"body"`
 	Description    string `json:"description"`
-	CategoryID     int64  `json:"category_id"`
-	AbilityID      *int64 `json:"ability_id,omitempty"`
+	PurposeID      int64  `json:"purpose_id"`
+	CapabilityID   int64  `json:"capability_id"`
 	DifficultyID   *int64 `json:"difficulty_id,omitempty"`
 	Visibility     string `json:"visibility"`
 	SensitiveLevel string `json:"sensitive_level"`
@@ -139,8 +139,8 @@ func toPromptVersionDTO(v domain.PromptVersion) promptVersionDTO {
 		Title:          v.Title,
 		Body:           v.Body,
 		Description:    v.Description,
-		CategoryID:     v.CategoryID,
-		AbilityID:      v.AbilityID,
+		PurposeID:      v.PurposeID,
+		CapabilityID:   v.CapabilityID,
 		DifficultyID:   v.DifficultyID,
 		Visibility:     string(v.Visibility),
 		SensitiveLevel: string(v.Sensitive),
@@ -157,22 +157,19 @@ type tagDTO struct {
 	NameZh string `json:"name_zh"`
 	NameEn string `json:"name_en"`
 	Color  string `json:"color"`
+	Kind   string `json:"kind"`
 }
 
 type promptDetailResponse struct {
 	Body struct {
-		Prompt   promptDTO          `json:"prompt"`
-		Version  promptVersionDTO   `json:"version"`
-		Versions []promptVersionDTO `json:"versions"`
-		Category struct {
-			ID         int64  `json:"id"`
-			Slug       string `json:"slug"`
-			NameZh     string `json:"name_zh"`
-			NameEn     string `json:"name_en"`
-			IsHighRisk bool   `json:"is_high_risk"`
-		} `json:"category"`
-		Tags     []tagDTO `json:"tags"`
-		Uploader string   `json:"uploader"`
+		Prompt     promptDTO          `json:"prompt"`
+		Version    promptVersionDTO   `json:"version"`
+		Versions   []promptVersionDTO `json:"versions"`
+		Purpose    purposeDTO         `json:"purpose"`
+		Capability capabilityDTO      `json:"capability"`
+		Difficulty *difficultyDTO     `json:"difficulty,omitempty"`
+		Tags       []tagDTO           `json:"tags"`
+		Uploader   string             `json:"uploader"`
 		// MajorModificationNotice 在提示词发生过重大修改时非空（需求 §7.3 第 5 步）。
 		MajorModificationNotice string `json:"major_modification_notice,omitempty"`
 	}
@@ -190,14 +187,15 @@ func (s *Server) fillDetail(out *promptDetailResponse, detail prompt.Detail) {
 	out.Body.Tags = make([]tagDTO, 0, len(detail.Tags))
 	for _, t := range detail.Tags {
 		out.Body.Tags = append(out.Body.Tags, tagDTO{
-			ID: t.ID, Slug: t.Slug, NameZh: t.NameZh, NameEn: t.NameEn, Color: t.Color,
+			ID: t.ID, Slug: t.Slug, NameZh: t.NameZh, NameEn: t.NameEn, Color: t.Color, Kind: t.Kind,
 		})
 	}
-	out.Body.Category.ID = detail.Category.ID
-	out.Body.Category.Slug = detail.Category.Slug
-	out.Body.Category.NameZh = detail.Category.NameZh
-	out.Body.Category.NameEn = detail.Category.NameEn
-	out.Body.Category.IsHighRisk = detail.Category.IsHighRisk
+	out.Body.Purpose = toPurposeDTO(detail.Purpose)
+	out.Body.Capability = toCapabilityDTO(detail.Capability)
+	if detail.Difficulty != nil {
+		difficulty := toDifficultyDTO(*detail.Difficulty)
+		out.Body.Difficulty = &difficulty
+	}
 
 	if detail.Prompt.MajorModified {
 		out.Body.MajorModificationNotice = majorModificationNotice

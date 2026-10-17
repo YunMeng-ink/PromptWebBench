@@ -98,11 +98,13 @@ func questionFromRow(row repo.ListLibraryQuestionsRow, lib domain.Library) (Ques
 		out.Title = textValue(row.SourceTitle)
 		out.Body = textValue(row.SourceBody)
 		out.Description = textValue(row.SourceDescription)
-		out.CategoryID = int8Ptr(row.SourceCategoryID)
-		out.AbilityID = int8Ptr(row.SourceAbilityID)
+		out.PurposeID = int8Ptr(row.SourcePurposeID)
+		out.CapabilityID = int8Ptr(row.SourceCapabilityID)
 		out.DifficultyID = int8Ptr(row.SourceDifficultyID)
-		out.CategoryNameZh = row.CategoryNameZh
-		out.CategoryNameEn = row.CategoryNameEn
+		out.PurposeNameZh = row.PurposeNameZh
+		out.PurposeNameEn = row.PurposeNameEn
+		out.CapabilityNameZh = row.CapabilityNameZh
+		out.CapabilityNameEn = row.CapabilityNameEn
 		level, ok := domain.ParseSensitiveLevel(textValue(row.SourceSensitiveLevel))
 		if !ok {
 			return Question{}, unexpectedValue("来源提示词敏感级别", row.ID, textValue(row.SourceSensitiveLevel))
@@ -114,11 +116,13 @@ func questionFromRow(row repo.ListLibraryQuestionsRow, lib domain.Library) (Ques
 	out.Title = textValue(row.Title)
 	out.Body = textValue(row.Body)
 	out.Description = row.Description
-	out.CategoryID = int8Ptr(row.CategoryID)
-	out.AbilityID = int8Ptr(row.AbilityID)
+	out.PurposeID = int8Ptr(row.PurposeID)
+	out.CapabilityID = int8Ptr(row.CapabilityID)
 	out.DifficultyID = int8Ptr(row.DifficultyID)
-	out.CategoryNameZh = row.CategoryNameZh
-	out.CategoryNameEn = row.CategoryNameEn
+	out.PurposeNameZh = row.PurposeNameZh
+	out.PurposeNameEn = row.PurposeNameEn
+	out.CapabilityNameZh = row.CapabilityNameZh
+	out.CapabilityNameEn = row.CapabilityNameEn
 	level, ok := domain.ParseSensitiveLevel(textValue(row.SensitiveLevel))
 	if !ok {
 		return Question{}, unexpectedValue("题库题目敏感级别", row.ID, textValue(row.SensitiveLevel))
@@ -197,8 +201,8 @@ func questionSnapshot(q Question, tags []string) map[string]any {
 		"title":           q.Title,
 		"body":            q.Body,
 		"description":     q.Description,
-		"category_id":     q.CategoryID,
-		"ability_id":      q.AbilityID,
+		"purpose_id":      q.PurposeID,
+		"capability_id":   q.CapabilityID,
 		"difficulty_id":   q.DifficultyID,
 		"sensitive_level": string(q.Sensitive),
 		"sort_order":      q.SortOrder,

@@ -183,7 +183,6 @@ func (s *Service) importEntry(
 			ReleaseDate:     repoDate(parseReleaseDate(entry.ReleaseDate)),
 			ContextLength:   repoInt8(entry.ContextLength),
 			IsEnabled:       existing.IsEnabled,
-			AbilityTags:     existing.AbilityTags,
 			Note:            existing.Note,
 		})
 		if err != nil {
@@ -205,7 +204,6 @@ func (s *Service) importEntry(
 			ReleaseDate:     repoDate(parseReleaseDate(entry.ReleaseDate)),
 			ContextLength:   repoInt8(entry.ContextLength),
 			IsEnabled:       true,
-			AbilityTags:     []string{},
 			Note:            "",
 			ImportSource:    "models_dev",
 		})

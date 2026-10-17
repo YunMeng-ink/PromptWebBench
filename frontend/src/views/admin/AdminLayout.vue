@@ -18,13 +18,14 @@ interface AdminNavItem {
   labelKey: string
 }
 
-/** NAV_ITEMS 是 11 个模块的导航顺序，与 C-42 的模块清单一致。 */
+/** NAV_ITEMS 是后台模块的导航顺序，与 C-42 的模块清单一致。 */
 const NAV_ITEMS: AdminNavItem[] = [
   { name: 'admin-dashboard', path: '/admin/dashboard', labelKey: 'admin.nav.dashboard' },
   { name: 'admin-prompts', path: '/admin/prompts', labelKey: 'admin.nav.prompts' },
   { name: 'admin-models', path: '/admin/models', labelKey: 'admin.nav.models' },
   { name: 'admin-users', path: '/admin/users', labelKey: 'admin.nav.users' },
   { name: 'admin-tags', path: '/admin/tags', labelKey: 'admin.nav.tags' },
+  { name: 'admin-dictionary', path: '/admin/dictionary', labelKey: 'admin.nav.dictionary' },
   { name: 'admin-reports', path: '/admin/reports', labelKey: 'admin.nav.reports' },
   { name: 'admin-invites', path: '/admin/invites', labelKey: 'admin.nav.invites' },
   { name: 'admin-logs', path: '/admin/logs', labelKey: 'admin.nav.logs' },
@@ -43,7 +44,10 @@ const activePath = computed(() => `/admin/${String(route.name ?? '').replace('ad
 <template>
   <section class="pb-admin">
     <header class="pb-admin__head">
-      <h1 class="pb-admin__title" data-testid="admin-title">{{ t('admin.title') }}</h1>
+      <div class="pb-admin__heading">
+        <span class="pb-eyebrow" aria-hidden="true">Administration</span>
+        <h1 class="pb-admin__title" data-testid="admin-title">{{ t('admin.title') }}</h1>
+      </div>
       <span class="pb-admin__operator" data-testid="admin-operator">{{ auth.user?.username }}</span>
     </header>
 
@@ -66,7 +70,11 @@ const activePath = computed(() => `/admin/${String(route.name ?? '').replace('ad
       </nav>
 
       <div class="pb-admin__content">
-        <RouterView />
+        <RouterView v-slot="{ Component }">
+          <Transition name="pb-page" mode="out-in">
+            <component :is="Component" />
+          </Transition>
+        </RouterView>
       </div>
     </div>
   </section>
@@ -74,59 +82,85 @@ const activePath = computed(() => `/admin/${String(route.name ?? '').replace('ad
 
 <style scoped>
 .pb-admin {
-  padding: var(--pb-space-lg) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-lg);
+  padding-top: var(--pb-space-lg);
 }
 
 .pb-admin__head {
-  align-items: baseline;
   display: flex;
-  gap: var(--pb-space-md);
+  align-items: flex-end;
   justify-content: space-between;
+  gap: var(--pb-space-lg);
+  padding-bottom: var(--pb-space-md);
+  border-bottom: 1px solid var(--pb-line);
+}
+
+.pb-admin__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-xs);
 }
 
 .pb-admin__title {
-  font-size: 22px;
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.012em;
   margin: 0;
 }
 
 .pb-admin__operator {
-  color: var(--pb-color-text-faint);
-  font-size: 13px;
+  padding: 3px 11px;
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-pill);
+  color: var(--pb-ink-faint);
+  font-size: 12px;
 }
 
 .pb-admin__denied {
-  color: var(--el-color-danger);
-  margin-top: var(--pb-space-md);
+  color: var(--pb-danger);
+  margin: 0;
 }
 
 .pb-admin__layout {
   display: grid;
-  gap: var(--pb-space-lg);
-  grid-template-columns: 190px 1fr;
-  margin-top: var(--pb-space-md);
+  grid-template-columns: 208px minmax(0, 1fr);
+  gap: var(--pb-space-xl);
+  align-items: start;
 }
 
 .pb-admin__nav {
-  align-content: start;
-  display: grid;
+  position: sticky;
+  top: calc(var(--pb-header-height) + var(--pb-space-lg));
+  display: flex;
+  flex-direction: column;
   gap: 2px;
+  padding: var(--pb-space-sm);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-lg);
+  box-shadow: var(--pb-shadow-sm);
 }
 
 .pb-admin__nav-link {
-  border-radius: 4px;
-  color: var(--pb-color-text-soft);
-  font-size: 14px;
-  padding: 6px var(--pb-space-sm);
+  padding: 8px 12px;
+  border-radius: var(--pb-radius-sm);
+  color: var(--pb-ink-soft);
+  font-size: 13.5px;
+  transition:
+    background-color var(--pb-duration) var(--pb-ease),
+    color var(--pb-duration) var(--pb-ease);
 }
 
 .pb-admin__nav-link:hover {
-  background-color: var(--pb-color-surface);
-  color: var(--pb-color-primary);
+  background: var(--pb-surface-muted);
+  color: var(--pb-ink);
 }
 
 .pb-admin__nav-link--active {
-  background-color: var(--pb-color-surface);
-  color: var(--pb-color-primary);
+  background: var(--pb-accent-soft);
+  color: var(--pb-accent-strong);
   font-weight: 600;
 }
 
@@ -137,12 +171,19 @@ const activePath = computed(() => `/admin/${String(route.name ?? '').replace('ad
 @media (max-width: 900px) {
   .pb-admin__layout {
     grid-template-columns: 1fr;
+    gap: var(--pb-space-lg);
   }
 
   .pb-admin__nav {
-    display: flex;
+    position: static;
+    flex-direction: row;
     flex-wrap: wrap;
     gap: var(--pb-space-xs);
+  }
+
+  .pb-admin__nav-link {
+    padding: 6px 10px;
+    font-size: 13px;
   }
 }
 </style>

@@ -155,11 +155,12 @@ func SeedUser(t *testing.T, pool *pgxpool.Pool, opts UserOptions) int64 {
 
 // PromptOptions 描述一条测试提示词。留空字段取默认值。
 type PromptOptions struct {
-	UploaderID   int64
-	Title        string
-	Body         string
-	Visibility   string
-	CategorySlug string
+	UploaderID     int64
+	Title          string
+	Body           string
+	Visibility     string
+	PurposeSlug    string
+	CapabilitySlug string
 }
 
 // SeedPrompt 插入一条公开提示词及其首个版本，用于验证提示词转移等流程。
@@ -168,7 +169,7 @@ func SeedPrompt(t *testing.T, pool *pgxpool.Pool, uploaderID int64, title string
 	return SeedPromptWith(t, pool, PromptOptions{UploaderID: uploaderID, Title: title})
 }
 
-// SeedPromptWith 插入一条提示词及其首个版本，可指定正文、可见性与类别。
+// SeedPromptWith 插入一条提示词及其首个版本，可指定正文、可见性与分类。
 func SeedPromptWith(t *testing.T, pool *pgxpool.Pool, opts PromptOptions) int64 {
 	t.Helper()
 	ctx := context.Background()
@@ -181,21 +182,28 @@ func SeedPromptWith(t *testing.T, pool *pgxpool.Pool, opts PromptOptions) int64 
 	if visibility == "" {
 		visibility = "public"
 	}
-	slug := opts.CategorySlug
-	if slug == "" {
-		slug = "reasoning"
+	purposeSlug := opts.PurposeSlug
+	if purposeSlug == "" {
+		purposeSlug = "capability_boundary"
+	}
+	capabilitySlug := opts.CapabilitySlug
+	if capabilitySlug == "" {
+		capabilitySlug = "reasoning"
 	}
 
-	var categoryID int64
-	if err := pool.QueryRow(ctx, `SELECT id FROM categories WHERE slug = $1`, slug).Scan(&categoryID); err != nil {
-		t.Fatalf("读取类别失败: %v", err)
+	var purposeID, capabilityID int64
+	if err := pool.QueryRow(ctx, `SELECT id FROM purposes WHERE slug = $1`, purposeSlug).Scan(&purposeID); err != nil {
+		t.Fatalf("读取考察目的失败: %v", err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT id FROM capabilities WHERE slug = $1`, capabilitySlug).Scan(&capabilityID); err != nil {
+		t.Fatalf("读取考察维度失败: %v", err)
 	}
 
 	var promptID int64
 	if err := pool.QueryRow(ctx, `
-		INSERT INTO prompts (title, body, category_id, visibility, uploader_id)
-		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id`, opts.Title, body, categoryID, visibility, opts.UploaderID).Scan(&promptID); err != nil {
+		INSERT INTO prompts (title, body, purpose_id, capability_id, visibility, uploader_id)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		RETURNING id`, opts.Title, body, purposeID, capabilityID, visibility, opts.UploaderID).Scan(&promptID); err != nil {
 		t.Fatalf("创建测试提示词失败: %v", err)
 	}
 
@@ -203,9 +211,9 @@ func SeedPromptWith(t *testing.T, pool *pgxpool.Pool, opts PromptOptions) int64 
 	if err := pool.QueryRow(ctx, `
 		INSERT INTO prompt_versions (
 			prompt_id, version_no, major, minor, title, body,
-			category_id, visibility, sensitive_level, author_id
-		) VALUES ($1, 'v1.0', 1, 0, $2, $3, $4, $5, 'low', $6)
-		RETURNING id`, promptID, opts.Title, body, categoryID, visibility, opts.UploaderID).Scan(&versionID); err != nil {
+			purpose_id, capability_id, visibility, sensitive_level, author_id
+		) VALUES ($1, 'v1.0', 1, 0, $2, $3, $4, $5, $6, 'low', $7)
+		RETURNING id`, promptID, opts.Title, body, purposeID, capabilityID, visibility, opts.UploaderID).Scan(&versionID); err != nil {
 		t.Fatalf("创建测试提示词版本失败: %v", err)
 	}
 

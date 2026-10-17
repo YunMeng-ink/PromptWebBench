@@ -80,8 +80,8 @@ type Input struct {
 	Title         string
 	Body          string
 	Description   string
-	CategoryID    int64
-	AbilityID     *int64
+	PurposeID     int64
+	CapabilityID  int64
 	DifficultyID  *int64
 	Visibility    domain.Visibility
 	Sensitive     domain.SensitiveLevel
@@ -108,12 +108,12 @@ func (s *Service) Create(ctx context.Context, actor domain.User, in Input) (Resu
 
 	var result Result
 	err := repo.InTx(ctx, s.pool, func(q *repo.Queries) error {
-		category, err := loadCategory(ctx, q, in.CategoryID)
+		purpose, err := loadPurpose(ctx, q, in.PurposeID)
 		if err != nil {
 			return err
 		}
-		// 类别与可见性的权限判定在事务内以真实类别数据执行，与更新路径共用同一函数。
-		if err := viewer.AuthorizeCategory(category.IsHighRisk, in.Visibility); err != nil {
+		// 考察目的与可见性的权限判定在事务内以真实字典数据执行，与更新路径共用同一函数。
+		if err := viewer.AuthorizePurpose(purpose.IsHighRisk, in.Visibility); err != nil {
 			return translatePermission(err)
 		}
 		if err := s.validateReferences(ctx, q, in); err != nil {
@@ -130,8 +130,8 @@ func (s *Service) Create(ctx context.Context, actor domain.User, in Input) (Resu
 			Title:           in.Title,
 			Body:            in.Body,
 			Description:     in.Description,
-			CategoryID:      in.CategoryID,
-			AbilityID:       repo.Int8OrNull(derefInt64(in.AbilityID)),
+			PurposeID:       in.PurposeID,
+			CapabilityID:    in.CapabilityID,
 			DifficultyID:    repo.Int8OrNull(derefInt64(in.DifficultyID)),
 			Visibility:      string(in.Visibility),
 			SensitiveLevel:  string(in.Sensitive),
@@ -151,8 +151,8 @@ func (s *Service) Create(ctx context.Context, actor domain.User, in Input) (Resu
 			Title:          in.Title,
 			Body:           in.Body,
 			Description:    in.Description,
-			CategoryID:     in.CategoryID,
-			AbilityID:      repo.Int8OrNull(derefInt64(in.AbilityID)),
+			PurposeID:      in.PurposeID,
+			CapabilityID:   in.CapabilityID,
 			DifficultyID:   repo.Int8OrNull(derefInt64(in.DifficultyID)),
 			Visibility:     string(in.Visibility),
 			SensitiveLevel: string(in.Sensitive),
@@ -179,8 +179,8 @@ func (s *Service) Create(ctx context.Context, actor domain.User, in Input) (Resu
 		}
 
 		fields := fieldsOfPrompt(updated)
-		// 写入路径的返回行不联表取类别，高风险标记直接用事务内已校验过的类别赋值。
-		fields.IsHighRisk = category.IsHighRisk
+		// 写入路径的返回行不联表取考察目的，高风险标记直接用事务内已校验的目的赋值。
+		fields.IsHighRisk = purpose.IsHighRisk
 		prompt, err := promptFromRow(fields)
 		if err != nil {
 			return err
@@ -215,11 +215,11 @@ func (s *Service) Update(ctx context.Context, actor domain.User, id int64, in In
 			return apperr.New(apperr.CodeNotFound, "")
 		}
 
-		category, err := loadCategory(ctx, q, in.CategoryID)
+		purpose, err := loadPurpose(ctx, q, in.PurposeID)
 		if err != nil {
 			return err
 		}
-		if err := viewer.AuthorizeCategory(category.IsHighRisk, in.Visibility); err != nil {
+		if err := viewer.AuthorizePurpose(purpose.IsHighRisk, in.Visibility); err != nil {
 			return translatePermission(err)
 		}
 		if err := s.validateReferences(ctx, q, in); err != nil {
@@ -243,8 +243,8 @@ func (s *Service) Update(ctx context.Context, actor domain.User, id int64, in In
 			Title:          in.Title,
 			Body:           in.Body,
 			Description:    in.Description,
-			CategoryID:     in.CategoryID,
-			AbilityID:      repo.Int8OrNull(derefInt64(in.AbilityID)),
+			PurposeID:      in.PurposeID,
+			CapabilityID:   in.CapabilityID,
 			DifficultyID:   repo.Int8OrNull(derefInt64(in.DifficultyID)),
 			Visibility:     string(in.Visibility),
 			SensitiveLevel: string(in.Sensitive),
@@ -260,8 +260,8 @@ func (s *Service) Update(ctx context.Context, actor domain.User, id int64, in In
 			Title:          in.Title,
 			Body:           in.Body,
 			Description:    in.Description,
-			CategoryID:     in.CategoryID,
-			AbilityID:      repo.Int8OrNull(derefInt64(in.AbilityID)),
+			PurposeID:      in.PurposeID,
+			CapabilityID:   in.CapabilityID,
 			DifficultyID:   repo.Int8OrNull(derefInt64(in.DifficultyID)),
 			Visibility:     string(in.Visibility),
 			SensitiveLevel: string(in.Sensitive),
@@ -319,8 +319,8 @@ func (s *Service) Update(ctx context.Context, actor domain.User, id int64, in In
 		}
 
 		fields := fieldsOfPrompt(updated)
-		// 同创建路径：写入返回行不联表，高风险标记取自事务内已校验的类别。
-		fields.IsHighRisk = category.IsHighRisk
+		// 同创建路径：写入返回行不联表，高风险标记取自事务内已校验的考察目的。
+		fields.IsHighRisk = purpose.IsHighRisk
 		prompt, err := promptFromRow(fields)
 		if err != nil {
 			return err

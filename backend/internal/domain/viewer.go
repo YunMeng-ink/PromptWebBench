@@ -46,7 +46,7 @@ func ParseSensitiveLevel(raw string) (SensitiveLevel, bool) {
 type Viewable interface {
 	// AccessLevel 返回可见性档位。
 	AccessLevel() Visibility
-	// AccessHighRisk 返回高风险标记（提示词取自类别）。
+	// AccessHighRisk 返回高风险标记（提示词取自考察目的）。
 	AccessHighRisk() bool
 	// AccessOwner 返回所有者 ID。
 	AccessOwner() int64
@@ -92,8 +92,8 @@ func (v Viewer) CanUploadDeveloper() bool {
 	return v.Logged && v.Role.IsDeveloper()
 }
 
-// CanUseHighRiskCategory 仅开发者与管理员可选择高风险类别（C-19、需求 §8.7）。
-func (v Viewer) CanUseHighRiskCategory() bool {
+// CanUseHighRiskPurpose 仅开发者与管理员可选择高风险考察目的（C-19、需求 §8.7）。
+func (v Viewer) CanUseHighRiskPurpose() bool {
 	return v.Logged && v.Role.IsDeveloper()
 }
 
@@ -106,10 +106,10 @@ func (v Viewer) IsDeveloper() bool { return v.Logged && v.Role.IsDeveloper() }
 // CanView 单条对象判定。无权限一律判为不可见，配合接口层的 404 约定，
 // 不通过状态码差异暴露对象存在性（开发方案 §5.3）。
 //
-// 高风险类别与「开发者可见」同等处理（C-20）：即便可见性为 public，
+// 高风险考察目的与「开发者可见」同等处理（C-20）：即便可见性为 public，
 // 对普通用户与游客一律不可见。
 func (v Viewer) CanView(o Viewable) bool {
-	if o.AccessHighRisk() && !v.CanUseHighRiskCategory() {
+	if o.AccessHighRisk() && !v.CanUseHighRiskPurpose() {
 		return false
 	}
 	switch o.AccessLevel() {
@@ -138,13 +138,13 @@ func (v Viewer) CanManage(o Viewable) bool {
 // ListScope 公开列表判定，返回 SQL 谓词与参数。
 //
 // 公开列表只收录 public 档位。开发者及以上不加高风险过滤（其本就能看到高风险内容）；
-// 其余身份追加排除高风险类别，这是 C-20 的列表侧。
+// 其余身份追加排除高风险考察目的，这是 C-20 的列表侧。
 // 私有与开发者可见档位不进入公开列表，由详情与「我的提示词」分别处理。
 func (v Viewer) ListScope() (string, []any) {
 	if v.IsDeveloper() {
 		return "p.visibility = 'public'", nil
 	}
-	return "p.visibility = 'public' AND COALESCE(c.is_high_risk, false) = false", nil
+	return "p.visibility = 'public' AND COALESCE(pu.is_high_risk, false) = false", nil
 }
 
 // OwnScope 上传者本人列表判定，供「我的提示词」使用：任意可见性与高风险标记，
@@ -163,19 +163,19 @@ type PermissionError string
 func (e PermissionError) Error() string { return string(e) }
 
 const (
-	// ErrHighRiskCategoryForbidden 普通用户选择高风险类别（C-19）。
-	ErrHighRiskCategoryForbidden PermissionError = "high_risk_category_forbidden"
+	// ErrHighRiskPurposeForbidden 普通用户选择高风险考察目的（C-19）。
+	ErrHighRiskPurposeForbidden PermissionError = "high_risk_purpose_forbidden"
 	// ErrDeveloperVisibilityForbidden 普通用户选择开发者可见（需求 §8.4）。
 	ErrDeveloperVisibilityForbidden PermissionError = "developer_visibility_forbidden"
 	// ErrNotLogged 未登录用户请求需要身份的操作。
 	ErrNotLogged PermissionError = "not_logged"
 )
 
-// AuthorizeCategory 校验类别与可见性的组合。创建与更新两条路径共用此函数，
+// AuthorizePurpose 校验考察目的与可见性的组合。创建与更新两条路径共用此函数，
 // 使「只能由开发者使用」的约束在两个入口上同时生效（开发方案 §3.3）。
-func (v Viewer) AuthorizeCategory(categoryIsHighRisk bool, visibility Visibility) error {
-	if categoryIsHighRisk && !v.CanUseHighRiskCategory() {
-		return ErrHighRiskCategoryForbidden
+func (v Viewer) AuthorizePurpose(purposeIsHighRisk bool, visibility Visibility) error {
+	if purposeIsHighRisk && !v.CanUseHighRiskPurpose() {
+		return ErrHighRiskPurposeForbidden
 	}
 	if visibility == VisibilityDeveloper && !v.CanUploadDeveloper() {
 		return ErrDeveloperVisibilityForbidden

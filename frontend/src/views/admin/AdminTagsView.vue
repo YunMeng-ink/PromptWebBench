@@ -43,6 +43,7 @@ const form = ref<AdminTagInput>({
   name_en: '',
   color: '#409eff',
   description: '',
+  kind: 'theme',
   priority: 0,
   is_enabled: true,
 })
@@ -193,6 +194,7 @@ function openCreate(): void {
     name_en: '',
     color: '#409eff',
     description: '',
+    kind: 'theme',
     priority: 0,
     is_enabled: true,
   }
@@ -208,6 +210,7 @@ function openEdit(row: AdminTag): void {
     name_en: row.name_en,
     color: row.color,
     description: row.description,
+    kind: row.kind,
     priority: row.priority,
     is_enabled: row.is_enabled,
   }
@@ -315,6 +318,11 @@ onMounted(async () => {
           <el-table-column :label="t('admin.tags.color')" width="90">
             <template #default="{ row }: { row: AdminTag }">
               <span class="pb-admin-module__swatch" :style="{ backgroundColor: row.color }" />
+            </template>
+          </el-table-column>
+          <el-table-column :label="t('admin.tags.kind')" width="110">
+            <template #default="{ row }: { row: AdminTag }">
+              {{ row.kind === 'form' ? t('admin.tags.kindForm') : t('admin.tags.kindTheme') }}
             </template>
           </el-table-column>
           <el-table-column prop="description" :label="t('admin.tags.description')" min-width="200" />
@@ -508,6 +516,12 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item :label="t('admin.tags.color')">
           <el-color-picker v-model="form.color" />
+        </el-form-item>
+        <el-form-item :label="t('admin.tags.kind')">
+          <el-select v-model="form.kind">
+            <el-option :label="t('admin.tags.kindTheme')" value="theme" />
+            <el-option :label="t('admin.tags.kindForm')" value="form" />
+          </el-select>
         </el-form-item>
         <el-form-item :label="t('admin.tags.description')">
           <el-input v-model="form.description" type="textarea" :rows="3" />

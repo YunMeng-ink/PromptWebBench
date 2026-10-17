@@ -54,82 +54,133 @@ async function onLogout(): Promise<void> {
   <header class="pb-header">
     <div class="pb-container pb-header__inner">
       <RouterLink class="pb-brand" to="/">
-        <span class="pb-brand__title">{{ t('app.title') }}</span>
+        <span class="pb-brand__title">Prompt Benchmark</span>
         <span class="pb-brand__tagline">{{ t('app.tagline') }}</span>
       </RouterLink>
 
       <nav class="pb-header__actions">
-        <RouterLink class="pb-header__link" to="/">
-          {{ t('nav.home') }}
-        </RouterLink>
-        <RouterLink
-          v-if="auth.status === 'authenticated'"
-          class="pb-header__link"
-          to="/upload"
-          data-testid="header-upload"
-        >
-          {{ t('nav.upload') }}
-        </RouterLink>
-        <el-select
-          class="pb-header__locale"
-          :model-value="preferences.locale"
-          :aria-label="t('nav.language')"
-          size="small"
-          @change="onLocaleChange"
-        >
-          <el-option
-            v-for="option in localeOptions"
-            :key="option.value"
-            :label="option.label"
-            :value="option.value"
-          />
-        </el-select>
-        <el-button size="small" :aria-label="t('nav.theme')" @click="preferences.toggleTheme()">
-          {{ preferences.isDark ? t('nav.themeLight') : t('nav.themeDark') }}
-        </el-button>
-
-        <template v-if="auth.status === 'authenticated'">
-          <RouterLink class="pb-header__link" to="/libraries" data-testid="header-libraries">
-            {{ t('library.title') }}
-          </RouterLink>
-          <RouterLink class="pb-header__link" to="/favorites" data-testid="header-favorites">
-            {{ t('prompt.favoriteManage') }}
+        <div class="pb-header__links">
+          <RouterLink class="pb-header__link" to="/" data-testid="header-home">
+            {{ t('nav.home') }}
           </RouterLink>
           <RouterLink
-            v-if="auth.hasRole('admin')"
+            v-if="auth.status === 'authenticated'"
             class="pb-header__link"
-            to="/admin"
-            data-testid="header-admin"
+            to="/upload"
+            data-testid="header-upload"
           >
-            {{ t('admin.entry') }}
+            {{ t('nav.upload') }}
           </RouterLink>
-          <RouterLink class="pb-header__link" to="/notifications" data-testid="header-notifications">
-            {{ t('notifications.title') }}
-            <span v-if="notifications.hasUnread" class="pb-header__badge" data-testid="header-unread">
-              {{ notifications.unread }}
+          <template v-if="auth.status === 'authenticated'">
+            <span class="pb-header__sep" aria-hidden="true" />
+            <RouterLink class="pb-header__link" to="/libraries" data-testid="header-libraries">
+              {{ t('library.title') }}
+            </RouterLink>
+            <RouterLink class="pb-header__link" to="/favorites" data-testid="header-favorites">
+              {{ t('prompt.favoriteManage') }}
+            </RouterLink>
+            <RouterLink
+              v-if="auth.hasRole('admin')"
+              class="pb-header__link"
+              to="/admin"
+              data-testid="header-admin"
+            >
+              {{ t('admin.entry') }}
+            </RouterLink>
+            <RouterLink
+              class="pb-header__link"
+              to="/notifications"
+              data-testid="header-notifications"
+            >
+              {{ t('notifications.title') }}
+              <span v-if="notifications.hasUnread" class="pb-header__badge" data-testid="header-unread">
+                {{ notifications.unread }}
+              </span>
+            </RouterLink>
+          </template>
+        </div>
+
+        <div class="pb-header__utils">
+          <el-select
+            class="pb-header__locale"
+            :model-value="preferences.locale"
+            :aria-label="t('nav.language')"
+            size="small"
+            @change="onLocaleChange"
+          >
+            <el-option
+              v-for="option in localeOptions"
+              :key="option.value"
+              :label="option.label"
+              :value="option.value"
+            />
+          </el-select>
+
+          <button
+            type="button"
+            class="pb-header__icon"
+            :aria-label="t('nav.theme')"
+            :title="preferences.isDark ? t('nav.themeLight') : t('nav.themeDark')"
+            @click="preferences.toggleTheme()"
+          >
+            <svg
+              v-if="!preferences.isDark"
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="4" />
+              <path
+                d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.2 5.2l1.6 1.6M17.2 17.2l1.6 1.6M18.8 5.2l-1.6 1.6M6.8 17.2l-1.6 1.6"
+              />
+            </svg>
+            <svg
+              v-else
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M20.5 14.2A8.5 8.5 0 0 1 9.8 3.5a8.5 8.5 0 1 0 10.7 10.7Z" />
+            </svg>
+            <span class="pb-header__icon-label">
+              {{ preferences.isDark ? t('nav.themeLight') : t('nav.themeDark') }}
             </span>
-          </RouterLink>
-          <el-dropdown trigger="click">
-            <el-button size="small" data-testid="header-user" class="pb-header__user">
-              <span class="pb-header__user-name">{{ auth.user?.username }}</span>
+          </button>
+
+          <template v-if="auth.status === 'authenticated'">
+            <el-dropdown trigger="click">
+              <button type="button" class="pb-header__user" data-testid="header-user">
+                {{ auth.user?.username }}
+              </button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item data-testid="header-profile" @click="router.push('/me')">
+                    {{ t('nav.profile') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item data-testid="header-logout" @click="onLogout">
+                    {{ t('nav.logout') }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </template>
+          <RouterLink v-else-if="auth.status === 'guest'" to="/login">
+            <el-button size="small" type="primary" data-testid="header-login">
+              {{ t('nav.login') }}
             </el-button>
-            <template #dropdown>
-              <el-dropdown-menu>
-                <el-dropdown-item data-testid="header-profile" @click="router.push('/me')">
-                  {{ t('nav.profile') }}
-                </el-dropdown-item>
-                <el-dropdown-item data-testid="header-logout" @click="onLogout">
-                  {{ t('nav.logout') }}
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </template>
-          </el-dropdown>
-        </template>
-        <RouterLink v-else-if="auth.status === 'guest'" to="/login">
-          <el-button size="small" type="primary" data-testid="header-login">
-            {{ t('nav.login') }}
-          </el-button>
-        </RouterLink>
+          </RouterLink>
+        </div>
       </nav>
     </div>
   </header>
@@ -139,18 +190,17 @@ async function onLogout(): Promise<void> {
 .pb-header {
   position: sticky;
   top: 0;
-  z-index: 10;
-  height: var(--pb-header-height);
-  background-color: var(--pb-color-surface);
-  border-bottom: 1px solid var(--pb-color-border);
+  z-index: 30;
+  background: var(--pb-paper);
+  border-bottom: 1px solid var(--pb-line);
 }
 
 .pb-header__inner {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 100%;
-  gap: var(--pb-space-md);
+  gap: var(--pb-space-lg);
+  height: var(--pb-header-height);
 }
 
 .pb-brand {
@@ -158,67 +208,208 @@ async function onLogout(): Promise<void> {
   align-items: baseline;
   gap: var(--pb-space-sm);
   min-width: 0;
+  color: var(--pb-ink);
 }
 
 .pb-brand__title {
-  font-size: 18px;
-  font-weight: 600;
+  font-family: var(--pb-font-display);
+  font-size: 21px;
+  font-weight: 500;
+  letter-spacing: -0.015em;
   white-space: nowrap;
 }
 
 .pb-brand__tagline {
-  color: var(--pb-color-text-faint);
-  font-size: 13px;
+  color: var(--pb-ink-faint);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
+}
+
+.pb-brand__tagline::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 3px;
+  margin-right: 8px;
+  border-radius: 50%;
+  background: var(--pb-accent);
+  vertical-align: middle;
 }
 
 .pb-header__actions {
   display: flex;
   align-items: center;
-  gap: var(--pb-space-sm);
+  gap: var(--pb-space-lg);
+  min-width: 0;
+}
+
+.pb-header__links {
+  display: flex;
+  align-items: center;
+  gap: var(--pb-space-md);
+}
+
+.pb-header__sep {
+  width: 1px;
+  height: 14px;
+  background: var(--pb-line-strong);
 }
 
 .pb-header__link {
-  color: var(--pb-color-text-soft);
-  font-size: 14px;
-  padding: 0 var(--pb-space-sm);
-}
-
-.pb-header__link:hover {
-  color: var(--pb-color-primary);
-}
-
-.pb-header__locale {
-  width: 108px;
-}
-
-.pb-header__badge {
-  background-color: var(--el-color-danger);
-  border-radius: 8px;
-  color: #fff;
-  font-size: 11px;
-  margin-left: 4px;
-  padding: 0 5px;
-}
-
-/* 昵称最长 32 个字符，超长时省略以免把顶栏撑出视口。 */
-.pb-header__user-name {
-  display: inline-block;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  vertical-align: bottom;
+  position: relative;
+  padding: 6px 1px;
+  color: var(--pb-ink-soft);
+  font-size: 13.5px;
+  letter-spacing: 0.01em;
   white-space: nowrap;
 }
 
-/*
- * 窄屏（375px 起）：顶栏不再固定 60px 高度，导航项折行排布。
- * 顶栏固定高度与不折行的横排无法同时容纳品牌、导航与账户入口，
- * 折行是唯一不隐藏任何入口的排布方式。
- */
-@media (max-width: 640px) {
+.pb-header__link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 1.5px;
+  border-radius: 2px;
+  background: var(--pb-accent);
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform var(--pb-duration) var(--pb-ease);
+}
+
+.pb-header__link:hover {
+  color: var(--pb-ink);
+}
+
+.pb-header__link:hover::after,
+.pb-header__link.router-link-exact-active::after {
+  transform: scaleX(1);
+}
+
+.pb-header__link.router-link-exact-active {
+  color: var(--pb-ink);
+}
+
+.pb-header__link.router-link-active:not(.router-link-exact-active):not([href="/"]) {
+  color: var(--pb-ink);
+}
+
+.pb-header__utils {
+  display: flex;
+  align-items: center;
+  gap: var(--pb-space-sm);
+}
+
+.pb-header__locale {
+  width: 84px;
+}
+
+.pb-header__locale :deep(.el-select__wrapper) {
+  box-shadow: none;
+  background: transparent;
+  padding-left: 6px;
+  padding-right: 6px;
+}
+
+.pb-header__locale :deep(.el-select__wrapper:hover) {
+  background: var(--pb-surface-muted);
+  box-shadow: none;
+}
+
+.pb-header__locale :deep(.el-select__wrapper.is-focused) {
+  background: var(--pb-surface);
+  box-shadow: 0 0 0 1px var(--pb-accent) inset;
+}
+
+.pb-header__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--pb-radius-pill);
+  background: transparent;
+  color: var(--pb-ink-soft);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition:
+    background-color var(--pb-duration) var(--pb-ease),
+    color var(--pb-duration) var(--pb-ease);
+}
+
+.pb-header__icon:hover {
+  background: var(--pb-surface-muted);
+  color: var(--pb-ink);
+}
+
+.pb-header__icon-label {
+  line-height: 1;
+}
+
+.pb-header__user {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 180px;
+  padding: 6px 13px;
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-pill);
+  background: var(--pb-surface);
+  color: var(--pb-ink);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    border-color var(--pb-duration) var(--pb-ease),
+    background-color var(--pb-duration) var(--pb-ease);
+}
+
+.pb-header__user::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--pb-accent);
+  flex-shrink: 0;
+}
+
+.pb-header__user:hover {
+  border-color: var(--pb-line-strong);
+  background: var(--pb-surface-muted);
+}
+
+.pb-header__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 17px;
+  height: 17px;
+  margin-left: 5px;
+  padding: 0 5px;
+  border-radius: var(--pb-radius-pill);
+  background: var(--pb-accent-soft);
+  color: var(--pb-accent-strong);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1;
+  vertical-align: 1px;
+}
+
+@media (max-width: 1080px) {
+  .pb-brand__tagline {
+    display: none;
+  }
+}
+
+@media (max-width: 760px) {
   .pb-header {
     height: auto;
     min-height: var(--pb-header-height);
@@ -226,26 +417,28 @@ async function onLogout(): Promise<void> {
 
   .pb-header__inner {
     flex-wrap: wrap;
-    row-gap: var(--pb-space-sm);
     padding-top: var(--pb-space-sm);
     padding-bottom: var(--pb-space-sm);
-  }
-
-  .pb-brand__tagline {
-    display: none;
+    row-gap: var(--pb-space-sm);
   }
 
   .pb-header__actions {
-    flex-wrap: wrap;
-    row-gap: var(--pb-space-sm);
+    width: 100%;
+    justify-content: space-between;
+    gap: var(--pb-space-sm);
+  }
+
+  .pb-header__links {
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+
+  .pb-header__link {
+    font-size: 13px;
   }
 
   .pb-header__locale {
-    width: 92px;
-  }
-
-  .pb-header__user-name {
-    max-width: 96px;
+    width: 76px;
   }
 }
 </style>

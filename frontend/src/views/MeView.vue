@@ -207,7 +207,10 @@ async function deleteAccount(): Promise<void> {
 <template>
   <section class="pb-me">
     <header class="pb-me__header">
-      <h1 class="pb-me__title">{{ t('me.title') }}</h1>
+      <div class="pb-me__heading">
+        <span class="pb-eyebrow" aria-hidden="true">Account</span>
+        <h1 class="pb-me__title">{{ t('me.title') }}</h1>
+      </div>
       <div class="pb-me__meta">
         <span data-testid="me-username">{{ auth.user?.username }}</span>
         <el-tag size="small" type="info">{{ roleLabel }}</el-tag>
@@ -378,19 +381,33 @@ async function deleteAccount(): Promise<void> {
 
 <style scoped>
 .pb-me {
-  padding: var(--pb-space-lg) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-lg);
+  max-width: 840px;
+  padding: var(--pb-space-xl) 0 var(--pb-space-2xl);
 }
 
 .pb-me__header {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: space-between;
-  gap: var(--pb-space-md);
+  gap: var(--pb-space-lg);
   flex-wrap: wrap;
+  padding-bottom: var(--pb-space-md);
+  border-bottom: 1px solid var(--pb-line);
+}
+
+.pb-me__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-xs);
 }
 
 .pb-me__title {
-  font-size: 24px;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   margin: 0;
 }
 
@@ -398,20 +415,22 @@ async function deleteAccount(): Promise<void> {
   display: flex;
   align-items: center;
   gap: var(--pb-space-sm);
-  color: var(--pb-color-text-soft);
+  color: var(--pb-ink-soft);
+  font-size: 13.5px;
 }
 
 .pb-me__notice {
-  margin: var(--pb-space-md) 0;
+  margin: 0;
 }
 
 .pb-me__hint {
-  color: var(--pb-color-text-faint);
+  color: var(--pb-ink-faint);
   font-size: 13px;
 }
 
 .pb-me__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--pb-space-sm);
   margin: var(--pb-space-md) 0;
 }
@@ -421,5 +440,22 @@ async function deleteAccount(): Promise<void> {
   flex-direction: column;
   gap: var(--pb-space-sm);
   max-width: 560px;
+}
+
+.pb-me :deep(.el-tabs) {
+  padding: var(--pb-space-sm) var(--pb-space-lg) var(--pb-space-lg);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-lg);
+  box-shadow: var(--pb-shadow-sm);
+}
+
+.pb-me :deep(.el-tabs__header) {
+  margin-bottom: var(--pb-space-lg);
+}
+
+.pb-me :deep(.el-tabs__nav-wrap::after) {
+  height: 1px;
+  background: var(--pb-line);
 }
 </style>

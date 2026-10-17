@@ -18,7 +18,7 @@ const (
 	CodeBadRequest                Code = "bad_request"
 	CodeValidationFailed          Code = "validation_failed"
 	CodeInvalidState              Code = "invalid_state"
-	CodeInvalidCategory           Code = "invalid_category"
+	CodeInvalidClassification     Code = "invalid_classification"
 	CodeInvalidCredentials        Code = "invalid_credentials"
 	CodeEmailTaken                Code = "email_taken"
 	CodeEmailNotVerified          Code = "email_not_verified"
@@ -38,6 +38,7 @@ const (
 	CodeDuplicateModel            Code = "duplicate_model"
 	CodeModelInUse                Code = "model_in_use"
 	CodePromptInUse               Code = "prompt_in_use"
+	CodeDictionaryInUse           Code = "dictionary_in_use"
 	CodePermissionDenied          Code = "permission_denied"
 	CodeSecretUnavailable         Code = "secret_unavailable"
 	CodeBadGateway                Code = "bad_gateway"
@@ -72,7 +73,7 @@ var specs = map[Code]spec{
 	CodeBadRequest:                {400, "请求无法解析"},
 	CodeValidationFailed:          {422, "请求字段校验未通过"},
 	CodeInvalidState:              {422, "当前状态不允许该操作"},
-	CodeInvalidCategory:           {422, "类别、能力或难度不合法"},
+	CodeInvalidClassification:     {422, "考察目的、考察维度或难度不合法"},
 	CodeInvalidCredentials:        {401, "邮箱或密码错误"},
 	CodeEmailTaken:                {409, "邮箱已注册"},
 	CodeEmailNotVerified:          {403, "邮箱未验证"},
@@ -92,6 +93,7 @@ var specs = map[Code]spec{
 	CodeDuplicateModel:            {409, "模型重复"},
 	CodeModelInUse:                {409, "模型已被引用，不可删除"},
 	CodePromptInUse:               {409, "提示词已被题库引用，不可彻底删除"},
+	CodeDictionaryInUse:           {409, "字典条目已被引用，只能停用"},
 	CodePermissionDenied:          {403, "权限不足"},
 	CodeSecretUnavailable:         {422, "未配置主密钥，无法保存密钥类配置"},
 	CodeBadGateway:                {502, "上游服务请求失败"},

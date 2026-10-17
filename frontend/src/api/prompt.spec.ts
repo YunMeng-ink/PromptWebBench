@@ -42,8 +42,8 @@ describe('promptApi.list', () => {
     await promptApi.list({
       page: 2,
       page_size: 20,
-      category_id: '3',
-      ability_id: '5',
+      purpose_id: '3',
+      capability_id: '5',
       difficulty_id: '2',
       keyword: '推理',
       model_id: '7',
@@ -54,8 +54,8 @@ describe('promptApi.list', () => {
     const query = new URLSearchParams((calls[0] ?? '').split('?')[1] ?? '')
     expect(query.get('page')).toBe('2')
     expect(query.get('page_size')).toBe('20')
-    expect(query.get('category_id')).toBe('3')
-    expect(query.get('ability_id')).toBe('5')
+    expect(query.get('purpose_id')).toBe('3')
+    expect(query.get('capability_id')).toBe('5')
     expect(query.get('difficulty_id')).toBe('2')
     expect(query.get('keyword')).toBe('推理')
     expect(query.get('model_id')).toBe('7')
@@ -69,7 +69,8 @@ describe('promptApi.list', () => {
     await promptApi.list({ sort: 'latest' })
 
     const query = new URLSearchParams((calls[0] ?? '').split('?')[1] ?? '')
-    expect(query.get('category_id')).toBeNull()
+    expect(query.get('purpose_id')).toBeNull()
+    expect(query.get('capability_id')).toBeNull()
     expect(query.get('keyword')).toBeNull()
     expect(query.getAll('tag_ids')).toEqual([])
     expect(query.get('sort')).toBe('latest')
@@ -95,7 +96,8 @@ describe('promptApi.create 与 update', () => {
     await promptApi.create({
       title: '标题',
       body: '正文',
-      category_id: 3,
+      purpose_id: 3,
+      capability_id: 5,
       visibility: 'public',
       sensitive_level: 'low',
     })
@@ -103,7 +105,8 @@ describe('promptApi.create 与 update', () => {
     expect(bodies[0]).toEqual({
       title: '标题',
       body: '正文',
-      category_id: 3,
+      purpose_id: 3,
+      capability_id: 5,
       visibility: 'public',
       sensitive_level: 'low',
     })
@@ -120,7 +123,8 @@ describe('promptApi.create 与 update', () => {
     const result = await promptApi.update(5, {
       title: '改后标题',
       body: '正文',
-      category_id: 3,
+      purpose_id: 3,
+      capability_id: 5,
       is_major_change: true,
     })
 

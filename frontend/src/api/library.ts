@@ -41,10 +41,12 @@ export interface LibraryQuestion {
   title: string
   body: string
   description: string
-  category_id?: number
-  category_name_zh: string
-  category_name_en: string
-  ability_id?: number
+  purpose_id?: number
+  purpose_name_zh: string
+  purpose_name_en: string
+  capability_id?: number
+  capability_name_zh: string
+  capability_name_en: string
   difficulty_id?: number
   sensitive_level: string
   sort_order: number
@@ -90,8 +92,8 @@ export interface AddQuestionPayload {
   title?: string
   body?: string
   description?: string
-  category_id?: number
-  ability_id?: number
+  purpose_id?: number
+  capability_id?: number
   difficulty_id?: number
   sensitive_level?: string
   tags?: string[]
@@ -101,8 +103,8 @@ export interface UpdateQuestionPayload {
   title: string
   body: string
   description?: string
-  category_id?: number
-  ability_id?: number
+  purpose_id?: number
+  capability_id?: number
   difficulty_id?: number
   sensitive_level?: string
   change_note?: string

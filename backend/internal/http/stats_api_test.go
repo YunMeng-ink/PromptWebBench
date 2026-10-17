@@ -134,12 +134,14 @@ func TestStatsEndpointReportsInsufficientDataWithNullDiscrimination(t *testing.T
 	client.prime()
 	registerVerifyLogin(t, env, client, "stats-insufficient@example.com", httpTestPassword)
 
+	purposeID, capabilityID := defaultClassification(t, env)
 	created := decodeBody[struct {
 		Prompt struct {
 			ID int64 `json:"id"`
 		} `json:"prompt"`
 	}](t, client.post(api.APIPrefix+"/prompts", map[string]any{
-		"title": "数据不足的提示词", "body": "正文", "category_id": 1,
+		"title": "数据不足的提示词", "body": "正文", "purpose_id": purposeID,
+		"capability_id": capabilityID,
 	}))
 
 	stats := decodeBody[statsResponse](t, client.get(statsPath(created.Prompt.ID)))
@@ -161,12 +163,14 @@ func TestStatsEndpointComputesDiscriminationOnRealRatings(t *testing.T) {
 	client.prime()
 	registerVerifyLogin(t, env, client, "stats-computed@example.com", httpTestPassword)
 
+	purposeID, capabilityID := defaultClassification(t, env)
 	created := decodeBody[struct {
 		Prompt struct {
 			ID int64 `json:"id"`
 		} `json:"prompt"`
 	}](t, client.post(api.APIPrefix+"/prompts", map[string]any{
-		"title": "有评分的提示词", "body": "正文", "category_id": 1,
+		"title": "有评分的提示词", "body": "正文", "purpose_id": purposeID,
+		"capability_id": capabilityID,
 	}))
 	promptID := created.Prompt.ID
 
@@ -229,12 +233,14 @@ func TestStatsEndpointToleratesModelsWithoutRecentRatings(t *testing.T) {
 	client.prime()
 	registerVerifyLogin(t, env, client, "stats-no-recent@example.com", httpTestPassword)
 
+	purposeID, capabilityID := defaultClassification(t, env)
 	created := decodeBody[struct {
 		Prompt struct {
 			ID int64 `json:"id"`
 		} `json:"prompt"`
 	}](t, client.post(api.APIPrefix+"/prompts", map[string]any{
-		"title": "近期无评分的提示词", "body": "正文", "category_id": 1,
+		"title": "近期无评分的提示词", "body": "正文", "purpose_id": purposeID,
+		"capability_id": capabilityID,
 	}))
 	promptID := created.Prompt.ID
 
@@ -303,12 +309,14 @@ func TestConfirmedRecommendationAppearsInStats(t *testing.T) {
 	client.prime()
 	registerVerifyLogin(t, env, client, "stats-tags@example.com", httpTestPassword)
 
+	purposeID, capabilityID := defaultClassification(t, env)
 	created := decodeBody[struct {
 		Prompt struct {
 			ID int64 `json:"id"`
 		} `json:"prompt"`
 	}](t, client.post(api.APIPrefix+"/prompts", map[string]any{
-		"title": "带推荐标签的提示词", "body": "正文", "category_id": 1,
+		"title": "带推荐标签的提示词", "body": "正文", "purpose_id": purposeID,
+		"capability_id": capabilityID,
 	}))
 	promptID := created.Prompt.ID
 	modelID := seedModel(t, env, "饱和模型")
@@ -360,12 +368,14 @@ func TestPendingRecommendationIsHiddenFromFrontend(t *testing.T) {
 	client.prime()
 	registerVerifyLogin(t, env, client, "stats-pending@example.com", httpTestPassword)
 
+	purposeID, capabilityID := defaultClassification(t, env)
 	created := decodeBody[struct {
 		Prompt struct {
 			ID int64 `json:"id"`
 		} `json:"prompt"`
 	}](t, client.post(api.APIPrefix+"/prompts", map[string]any{
-		"title": "待确认标签的提示词", "body": "正文", "category_id": 1,
+		"title": "待确认标签的提示词", "body": "正文", "purpose_id": purposeID,
+		"capability_id": capabilityID,
 	}))
 	promptID := created.Prompt.ID
 	modelID := seedModel(t, env, "待确认饱和模型")

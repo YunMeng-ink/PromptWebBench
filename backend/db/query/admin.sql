@@ -56,14 +56,17 @@ LIMIT sqlc.arg(limit_count);
 -- 后台提示词列表：不取正文，避免把长文本拉进列表响应。
 -- 回收站中的提示词默认也在结果内，由 deleted 参数区分（'' 表示不限）。
 -- name: AdminListPrompts :many
-SELECT p.id, p.title, p.description, p.category_id, p.ability_id, p.difficulty_id,
+SELECT p.id, p.title, p.description, p.purpose_id, p.capability_id, p.difficulty_id,
        p.visibility, p.sensitive_level, p.uploader_id, p.latest_version_no,
        p.major_modified, p.comment_count, p.favorite_count, p.created_at, p.updated_at,
-       c.name_zh AS category_name_zh, c.name_en AS category_name_en, c.is_high_risk,
+       pu.name_zh AS purpose_name_zh, pu.name_en AS purpose_name_en,
+       cap.name_zh AS capability_name_zh, cap.name_en AS capability_name_en,
+       pu.is_high_risk,
        COALESCE(u.username, '') AS uploader_name,
        (p.deleted_at IS NOT NULL)::boolean AS deleted
 FROM prompts p
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
+JOIN capabilities cap ON cap.id = p.capability_id
 LEFT JOIN users u ON u.id = p.uploader_id
 WHERE (sqlc.arg(keyword)::text = ''
        OR p.title ILIKE '%' || sqlc.arg(keyword)::text || '%'
@@ -73,7 +76,8 @@ WHERE (sqlc.arg(keyword)::text = ''
   AND (sqlc.arg(deleted)::text = ''
        OR (sqlc.arg(deleted)::text = 'true' AND p.deleted_at IS NOT NULL)
        OR (sqlc.arg(deleted)::text = 'false' AND p.deleted_at IS NULL))
-  AND (sqlc.narg(category_id)::bigint IS NULL OR p.category_id = sqlc.narg(category_id)::bigint)
+  AND (sqlc.narg(purpose_id)::bigint IS NULL OR p.purpose_id = sqlc.narg(purpose_id)::bigint)
+  AND (sqlc.narg(capability_id)::bigint IS NULL OR p.capability_id = sqlc.narg(capability_id)::bigint)
   AND (sqlc.narg(uploader_id)::bigint IS NULL OR p.uploader_id = sqlc.narg(uploader_id)::bigint)
 ORDER BY p.updated_at DESC, p.id DESC
 LIMIT sqlc.arg(limit_count) OFFSET sqlc.arg(offset_count);
@@ -89,7 +93,8 @@ WHERE (sqlc.arg(keyword)::text = ''
   AND (sqlc.arg(deleted)::text = ''
        OR (sqlc.arg(deleted)::text = 'true' AND p.deleted_at IS NOT NULL)
        OR (sqlc.arg(deleted)::text = 'false' AND p.deleted_at IS NULL))
-  AND (sqlc.narg(category_id)::bigint IS NULL OR p.category_id = sqlc.narg(category_id)::bigint)
+  AND (sqlc.narg(purpose_id)::bigint IS NULL OR p.purpose_id = sqlc.narg(purpose_id)::bigint)
+  AND (sqlc.narg(capability_id)::bigint IS NULL OR p.capability_id = sqlc.narg(capability_id)::bigint)
   AND (sqlc.narg(uploader_id)::bigint IS NULL OR p.uploader_id = sqlc.narg(uploader_id)::bigint);
 
 -- name: DetachPromptTag :exec
@@ -168,12 +173,12 @@ ORDER BY id;
 -- name: InsertModel :one
 INSERT INTO models (
     name, model_key, provider_key, provider_name, input_modalities, aliases,
-    description, release_date, context_length, is_enabled, ability_tags, note, import_source
+    description, release_date, context_length, is_enabled, note, import_source
 )
 VALUES (
     $1, $2, $3, $4, $5, $6, $7,
     sqlc.narg(release_date)::date, sqlc.narg(context_length)::bigint,
-    $8, $9, $10, $11
+    $8, $9, $10
 )
 RETURNING *;
 
@@ -189,8 +194,7 @@ SET name = $2,
     release_date = sqlc.narg(release_date)::date,
     context_length = sqlc.narg(context_length)::bigint,
     is_enabled = $9,
-    ability_tags = $10,
-    note = $11,
+    note = $10,
     updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
 RETURNING *;
@@ -372,14 +376,14 @@ WHERE (sqlc.arg(keyword)::text = ''
 SELECT * FROM tags WHERE id = $1;
 
 -- name: InsertTag :one
-INSERT INTO tags (slug, name_zh, name_en, color, description, priority, is_enabled)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO tags (slug, name_zh, name_en, color, description, kind, priority, is_enabled)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING *;
 
 -- name: UpdateTag :one
 UPDATE tags
 SET slug = $2, name_zh = $3, name_en = $4, color = $5, description = $6,
-    priority = $7, is_enabled = $8, updated_at = now()
+    kind = $7, priority = $8, is_enabled = $9, updated_at = now()
 WHERE id = $1
 RETURNING *;
 

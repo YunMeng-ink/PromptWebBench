@@ -8,7 +8,10 @@ const year = new Date().getFullYear()
 <template>
   <footer class="pb-footer">
     <div class="pb-container pb-footer__inner">
-      <span class="pb-footer__copy">{{ t('footer.copyright') }} © {{ year }}</span>
+      <div class="pb-footer__brand">
+        <span class="pb-footer__mark">Prompt Benchmark</span>
+        <span class="pb-footer__copy">{{ t('footer.copyright') }} © {{ year }}</span>
+      </div>
       <nav class="pb-footer__links">
         <RouterLink class="pb-footer__link" to="/privacy" data-testid="footer-privacy">
           {{ t('footer.privacy') }}
@@ -23,10 +26,10 @@ const year = new Date().getFullYear()
 
 <style scoped>
 .pb-footer {
-  border-top: 1px solid var(--pb-color-border);
-  background-color: var(--pb-color-bg-soft);
-  color: var(--pb-color-text-soft);
-  font-size: 13px;
+  border-top: 1px solid var(--pb-line);
+  background: transparent;
+  color: var(--pb-ink-faint);
+  font-size: 12.5px;
 }
 
 .pb-footer__inner {
@@ -35,17 +38,38 @@ const year = new Date().getFullYear()
   justify-content: space-between;
   gap: var(--pb-space-md);
   flex-wrap: wrap;
-  min-height: 52px;
-  padding-top: var(--pb-space-sm);
-  padding-bottom: var(--pb-space-sm);
+  padding-top: var(--pb-space-lg);
+  padding-bottom: var(--pb-space-lg);
+}
+
+.pb-footer__brand {
+  display: flex;
+  align-items: baseline;
+  gap: var(--pb-space-sm);
+}
+
+.pb-footer__mark {
+  font-family: var(--pb-font-display);
+  font-size: 14px;
+  color: var(--pb-ink-soft);
+  letter-spacing: -0.01em;
+}
+
+.pb-footer__copy {
+  letter-spacing: 0.02em;
 }
 
 .pb-footer__links {
   display: flex;
-  gap: var(--pb-space-md);
+  gap: var(--pb-space-lg);
+}
+
+.pb-footer__link {
+  color: var(--pb-ink-faint);
+  letter-spacing: 0.02em;
 }
 
 .pb-footer__link:hover {
-  color: var(--pb-color-primary);
+  color: var(--pb-accent);
 }
 </style>

@@ -82,7 +82,7 @@ func TestBannedViewerLosesAllAuthorization(t *testing.T) {
 	if v.Logged {
 		t.Error("封禁账户不应持有已登录身份")
 	}
-	if v.CanWrite() || v.CanUploadDeveloper() || v.CanUseHighRiskCategory() || v.IsAdmin() || v.IsDeveloper() {
+	if v.CanWrite() || v.CanUploadDeveloper() || v.CanUseHighRiskPurpose() || v.IsAdmin() || v.IsDeveloper() {
 		t.Error("封禁账户不应保有任何授权")
 	}
 	if v.CanView(Access{Level: VisibilityPublic, UploaderID: 3}) != true {
@@ -93,11 +93,11 @@ func TestBannedViewerLosesAllAuthorization(t *testing.T) {
 	}
 }
 
-func TestAuthorizeCategoryBlocksOrdinaryUsersOnBothRules(t *testing.T) {
+func TestAuthorizePurposeBlocksOrdinaryUsersOnBothRules(t *testing.T) {
 	ordinary := Viewer{UserID: 7, Role: RoleUser, Logged: true}
 	developer := Viewer{UserID: 7, Role: RoleDeveloper, Logged: true}
 
-	// 创建与更新两条路径共用 AuthorizeCategory，此处覆盖它对两项规则的全部取值组合。
+	// 创建与更新两条路径共用 AuthorizePurpose，此处覆盖它对两项规则的全部取值组合。
 	cases := []struct {
 		highRisk bool
 		visible  Visibility
@@ -106,17 +106,17 @@ func TestAuthorizeCategoryBlocksOrdinaryUsersOnBothRules(t *testing.T) {
 		{highRisk: false, visible: VisibilityPublic},
 		{highRisk: false, visible: VisibilityPrivate},
 		{highRisk: false, visible: VisibilityDeveloper, wantErr: ErrDeveloperVisibilityForbidden},
-		{highRisk: true, visible: VisibilityPublic, wantErr: ErrHighRiskCategoryForbidden},
-		{highRisk: true, visible: VisibilityPrivate, wantErr: ErrHighRiskCategoryForbidden},
-		{highRisk: true, visible: VisibilityDeveloper, wantErr: ErrHighRiskCategoryForbidden},
+		{highRisk: true, visible: VisibilityPublic, wantErr: ErrHighRiskPurposeForbidden},
+		{highRisk: true, visible: VisibilityPrivate, wantErr: ErrHighRiskPurposeForbidden},
+		{highRisk: true, visible: VisibilityDeveloper, wantErr: ErrHighRiskPurposeForbidden},
 	}
 	for _, tc := range cases {
-		got := ordinary.AuthorizeCategory(tc.highRisk, tc.visible)
+		got := ordinary.AuthorizePurpose(tc.highRisk, tc.visible)
 		if !errors.Is(got, tc.wantErr) {
 			t.Errorf("普通用户 high_risk=%v visibility=%s 的判定 = %v，期望 %v",
 				tc.highRisk, tc.visible, got, tc.wantErr)
 		}
-		if err := developer.AuthorizeCategory(tc.highRisk, tc.visible); err != nil {
+		if err := developer.AuthorizePurpose(tc.highRisk, tc.visible); err != nil {
 			t.Errorf("开发者 high_risk=%v visibility=%s 应当通过，实际 %v", tc.highRisk, tc.visible, err)
 		}
 	}
@@ -135,10 +135,10 @@ func TestListScopeExcludesHighRiskForNonDevelopers(t *testing.T) {
 	}
 	// 非开发者排除高风险；开发者不加该过滤，否则其看不到自己有权访问的内容。
 	if !containsFragment(guestScope, "is_high_risk") {
-		t.Errorf("游客谓词应排除高风险类别，实际 %q", guestScope)
+		t.Errorf("游客谓词应排除高风险考察目的，实际 %q", guestScope)
 	}
 	if containsFragment(developerScope, "is_high_risk") {
-		t.Errorf("开发者谓词不应排除高风险类别，实际 %q", developerScope)
+		t.Errorf("开发者谓词不应排除高风险考察目的，实际 %q", developerScope)
 	}
 }
 

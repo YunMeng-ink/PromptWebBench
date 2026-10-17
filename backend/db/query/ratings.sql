@@ -84,10 +84,10 @@ ORDER BY model_id;
 -- 已删除的提示词不进列表，改为受限的提示词不再带出标题。
 -- name: ListMyRatings :many
 SELECT r.*, p.title AS prompt_title, p.visibility AS prompt_visibility,
-       p.uploader_id AS prompt_uploader_id, c.is_high_risk AS prompt_is_high_risk
+       p.uploader_id AS prompt_uploader_id, pu.is_high_risk AS prompt_is_high_risk
 FROM ratings r
 JOIN prompts p ON p.id = r.prompt_id
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
 WHERE r.user_id = $1 AND r.deleted_at IS NULL AND p.deleted_at IS NULL
 ORDER BY r.created_at DESC, r.id DESC
 LIMIT $2 OFFSET $3;

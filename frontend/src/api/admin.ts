@@ -68,10 +68,12 @@ export interface AdminPrompt {
   id: number
   title: string
   description: string
-  category_id: number
-  category_name_zh: string
-  category_name_en: string
-  ability_id?: number
+  purpose_id: number
+  purpose_name_zh: string
+  purpose_name_en: string
+  capability_id: number
+  capability_name_zh: string
+  capability_name_en: string
   difficulty_id?: number
   visibility: Visibility
   sensitive_level: string
@@ -90,7 +92,14 @@ export interface AdminPrompt {
 export interface AdminPromptDetail {
   prompt: AdminPrompt
   body: string
-  tags: { id: number; slug: string; name_zh: string; name_en: string; color: string }[]
+  tags: {
+    id: number
+    slug: string
+    name_zh: string
+    name_en: string
+    color: string
+    kind: 'theme' | 'form'
+  }[]
   versions: PromptVersion[]
 }
 
@@ -148,7 +157,7 @@ export interface AdminModel {
   release_date: string
   context_length?: number
   is_enabled: boolean
-  ability_tags: string[]
+  capability_ids: number[]
   note: string
   import_source: string
   rating_count: number
@@ -169,7 +178,7 @@ export interface AdminModelInput {
   release_date: string
   context_length?: number
   is_enabled: boolean
-  ability_tags: string[]
+  capability_ids: number[]
   note: string
 }
 
@@ -294,6 +303,7 @@ export interface AdminTag {
   name_en: string
   color: string
   description: string
+  kind: 'theme' | 'form'
   priority: number
   is_enabled: boolean
   usage_count: number
@@ -307,6 +317,7 @@ export interface AdminTagInput {
   name_en: string
   color: string
   description: string
+  kind: 'theme' | 'form'
   priority: number
   is_enabled: boolean
 }
@@ -418,13 +429,60 @@ export interface AdminConfigValue {
   updated_at?: string
 }
 
+export interface AdminPurpose {
+  id: number
+  slug: string
+  name_zh: string
+  name_en: string
+  description_zh: string
+  description_en: string
+  is_high_risk: boolean
+  is_enabled: boolean
+  sort_order: number
+}
+
+export interface AdminPurposeInput {
+  slug: string
+  name_zh: string
+  name_en: string
+  description_zh: string
+  description_en: string
+  is_high_risk: boolean
+  is_enabled: boolean
+  sort_order: number
+}
+
+export interface AdminCapability {
+  id: number
+  slug: string
+  name_zh: string
+  name_en: string
+  group_key: 'cognitive' | 'execution' | 'reliability'
+  description_zh: string
+  description_en: string
+  is_enabled: boolean
+  sort_order: number
+}
+
+export interface AdminCapabilityInput {
+  slug: string
+  name_zh: string
+  name_en: string
+  group_key: 'cognitive' | 'execution' | 'reliability'
+  description_zh: string
+  description_en: string
+  is_enabled: boolean
+  sort_order: number
+}
+
 export interface AdminPromptQuery {
   page?: number
   page_size?: number
   keyword?: string
   visibility?: string
   deleted?: string
-  category_id?: string
+  purpose_id?: string
+  capability_id?: string
   uploader_id?: string
 }
 
@@ -458,7 +516,8 @@ export const adminApi = {
         keyword: params.keyword,
         visibility: params.visibility,
         deleted: params.deleted,
-        category_id: params.category_id,
+        purpose_id: params.purpose_id,
+        capability_id: params.capability_id,
         uploader_id: params.uploader_id,
       })}`,
     )
@@ -613,6 +672,60 @@ export const adminApi = {
 
   importModels(overwrite: boolean): Promise<AdminModelImportResult> {
     return api.post<AdminModelImportResult>('/admin/models/import', { overwrite })
+  },
+
+  // ---------- 模块 3b：分类字典 ----------
+
+  purposes(params: {
+    page?: number
+    page_size?: number
+    keyword?: string
+  }): Promise<Page<AdminPurpose>> {
+    return api.get<Page<AdminPurpose>>(
+      `/admin/purposes${query({
+        page: params.page,
+        page_size: params.page_size,
+        keyword: params.keyword,
+      })}`,
+    )
+  },
+
+  createPurpose(input: AdminPurposeInput): Promise<AdminPurpose> {
+    return api.post<AdminPurpose>('/admin/purposes', input)
+  },
+
+  updatePurpose(id: number, input: AdminPurposeInput): Promise<AdminPurpose> {
+    return api.patch<AdminPurpose>(`/admin/purposes/${id}`, input)
+  },
+
+  deletePurpose(id: number): Promise<void> {
+    return api.delete<void>(`/admin/purposes/${id}`)
+  },
+
+  capabilities(params: {
+    page?: number
+    page_size?: number
+    keyword?: string
+  }): Promise<Page<AdminCapability>> {
+    return api.get<Page<AdminCapability>>(
+      `/admin/capabilities${query({
+        page: params.page,
+        page_size: params.page_size,
+        keyword: params.keyword,
+      })}`,
+    )
+  },
+
+  createCapability(input: AdminCapabilityInput): Promise<AdminCapability> {
+    return api.post<AdminCapability>('/admin/capabilities', input)
+  },
+
+  updateCapability(id: number, input: AdminCapabilityInput): Promise<AdminCapability> {
+    return api.patch<AdminCapability>(`/admin/capabilities/${id}`, input)
+  },
+
+  deleteCapability(id: number): Promise<void> {
+    return api.delete<void>(`/admin/capabilities/${id}`)
   },
 
   // ---------- 模块 4：用户管理 ----------

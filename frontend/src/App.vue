@@ -15,7 +15,11 @@ const elementLocale = computed(() => (preferences.locale === 'zh' ? zhCn : en))
     <div class="pb-shell">
       <AppHeader />
       <main class="pb-main">
-        <RouterView />
+        <RouterView v-slot="{ Component }">
+          <Transition name="pb-page" mode="out-in">
+            <component :is="Component" />
+          </Transition>
+        </RouterView>
       </main>
       <AppFooter />
     </div>

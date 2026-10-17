@@ -20,6 +20,7 @@ type TagInput struct {
 	NameEn      string
 	Color       string
 	Description string
+	Kind        string
 	Priority    int32
 	IsEnabled   bool
 }
@@ -35,6 +36,13 @@ func (in TagInput) normalize() (TagInput, error) {
 	out.NameEn = strings.TrimSpace(in.NameEn)
 	out.Color = strings.TrimSpace(in.Color)
 	out.Description = strings.TrimSpace(in.Description)
+	out.Kind = strings.TrimSpace(in.Kind)
+	if out.Kind == "" {
+		out.Kind = "theme"
+	}
+	if out.Kind != "theme" && out.Kind != "form" {
+		return TagInput{}, apperr.New(apperr.CodeValidationFailed, "标签类型只能是 theme 或 form")
+	}
 
 	if out.Slug == "" {
 		return TagInput{}, apperr.New(apperr.CodeValidationFailed, "标签标识不可为空")
@@ -85,6 +93,7 @@ func (s *Service) CreateTag(ctx context.Context, in TagInput) (repo.Tag, error) 
 		NameEn:      normalized.NameEn,
 		Color:       normalized.Color,
 		Description: normalized.Description,
+		Kind:        normalized.Kind,
 		Priority:    normalized.Priority,
 		IsEnabled:   normalized.IsEnabled,
 	})
@@ -113,6 +122,7 @@ func (s *Service) UpdateTag(ctx context.Context, id int64, in TagInput) (repo.Ta
 		NameEn:      normalized.NameEn,
 		Color:       normalized.Color,
 		Description: normalized.Description,
+		Kind:        normalized.Kind,
 		Priority:    normalized.Priority,
 		IsEnabled:   normalized.IsEnabled,
 	})

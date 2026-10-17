@@ -15,23 +15,26 @@ import (
 
 // Detail 是详情页所需的全部数据。
 type Detail struct {
-	Prompt   domain.Prompt
-	Version  domain.PromptVersion
-	Category domain.Category
-	Tags     []domain.Tag
-	Versions []domain.PromptVersion
-	Uploader string
+	Prompt     domain.Prompt
+	Version    domain.PromptVersion
+	Purpose    domain.Purpose
+	Capability domain.Capability
+	Difficulty *domain.Difficulty
+	Tags       []domain.Tag
+	Versions   []domain.PromptVersion
+	Uploader   string
 }
 
 // Get 读取提示词详情。
 //
 // 可见性判定调用 domain.Viewer.CanView，判定不通过一律返回 not_found
-// （开发方案 §5.3）：高风险类别即便可见性为 public，对普通用户与游客同样 404（C-20）。
+// （开发方案 §5.3）：高风险考察目的即便可见性为 public，对普通用户与游客同样 404（C-20）。
 //
-// 本方法是「内容访问」的唯一入口：高风险类别内容在这里写入审计日志（G-12），
+// 本方法是「内容访问」的唯一入口：高风险考察目的内容在这里写入审计日志（G-12），
 // 授予与拒绝都留痕。只做可见性闸门、不读取内容的调用方应改用 Visible。
 func (s *Service) Get(ctx context.Context, v domain.Viewer, id int64, ip string) (Detail, error) {
-	row, err := repo.New(s.pool).GetPrompt(ctx, id)
+	q := repo.New(s.pool)
+	row, err := q.GetPrompt(ctx, id)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return Detail{}, apperr.New(apperr.CodeNotFound, "")
@@ -54,7 +57,7 @@ func (s *Service) Get(ctx context.Context, v domain.Viewer, id int64, ip string)
 		return Detail{}, apperr.New(apperr.CodeNotFound, "")
 	}
 
-	versions, err := repo.New(s.pool).ListPromptVersions(ctx, id)
+	versions, err := q.ListPromptVersions(ctx, id)
 	if err != nil {
 		return Detail{}, fmt.Errorf("查询提示词版本: %w", err)
 	}
@@ -63,30 +66,54 @@ func (s *Service) Get(ctx context.Context, v domain.Viewer, id int64, ip string)
 	}
 
 	current := versions[0]
-	tags, err := repo.New(s.pool).ListPromptTags(ctx, id)
+	tags, err := q.ListPromptTags(ctx, id)
 	if err != nil {
 		return Detail{}, fmt.Errorf("查询提示词标签: %w", err)
 	}
 
-	var category domain.Category
-	if cat, err := repo.New(s.pool).GetCategory(ctx, row.CategoryID); err == nil {
-		category = domain.Category{
-			ID: cat.ID, Slug: cat.Slug, NameZh: cat.NameZh, NameEn: cat.NameEn,
-			IsHighRisk: cat.IsHighRisk, IsEnabled: cat.IsEnabled, SortOrder: cat.SortOrder,
+	purposeRow, err := q.GetPurpose(ctx, prompt.PurposeID)
+	if err != nil {
+		return Detail{}, fmt.Errorf("查询考察目的: %w", err)
+	}
+	capabilityRow, err := q.GetCapability(ctx, prompt.CapabilityID)
+	if err != nil {
+		return Detail{}, fmt.Errorf("查询考察维度: %w", err)
+	}
+	var difficulty *domain.Difficulty
+	if prompt.DifficultyID != nil {
+		row, err := q.GetDifficulty(ctx, *prompt.DifficultyID)
+		if err != nil {
+			return Detail{}, fmt.Errorf("查询难度: %w", err)
+		}
+		difficulty = &domain.Difficulty{
+			ID: row.ID, Slug: row.Slug, NameZh: row.NameZh, NameEn: row.NameEn,
+			Level: row.Level, IsEnabled: row.IsEnabled,
 		}
 	}
 
 	// _ 标识此处刻意不处理 GetUserByID 的失败：提示词已可访问时，
 	// 上传者昵称缺失不应让详情页失败，前端据此显示 ID 兜底。
-	uploader, _ := repo.New(s.pool).GetUserByID(ctx, row.UploaderID)
+	uploader, _ := q.GetUserByID(ctx, row.UploaderID)
 
 	return Detail{
-		Prompt:   prompt,
-		Version:  VersionFromRow(current),
-		Category: category,
-		Tags:     tagsFromRows(tags),
-		Versions: VersionsFromRows(versions),
-		Uploader: uploader.Username,
+		Prompt:  prompt,
+		Version: VersionFromRow(current),
+		Purpose: domain.Purpose{
+			ID: purposeRow.ID, Slug: purposeRow.Slug, NameZh: purposeRow.NameZh,
+			NameEn: purposeRow.NameEn, DescriptionZh: purposeRow.DescriptionZh,
+			DescriptionEn: purposeRow.DescriptionEn, IsHighRisk: purposeRow.IsHighRisk,
+			IsEnabled: purposeRow.IsEnabled, SortOrder: purposeRow.SortOrder,
+		},
+		Capability: domain.Capability{
+			ID: capabilityRow.ID, Slug: capabilityRow.Slug, NameZh: capabilityRow.NameZh,
+			NameEn: capabilityRow.NameEn, GroupKey: capabilityRow.GroupKey,
+			DescriptionZh: capabilityRow.DescriptionZh, DescriptionEn: capabilityRow.DescriptionEn,
+			IsEnabled: capabilityRow.IsEnabled, SortOrder: capabilityRow.SortOrder,
+		},
+		Difficulty: difficulty,
+		Tags:       tagsFromRows(tags),
+		Versions:   VersionsFromRows(versions),
+		Uploader:   uploader.Username,
 	}, nil
 }
 
@@ -111,7 +138,7 @@ func (s *Service) Visible(ctx context.Context, v domain.Viewer, id int64) error 
 	return nil
 }
 
-// auditSensitiveAccess 为高风险类别内容的一次访问写入审计日志（G-12）。
+// auditSensitiveAccess 为高风险考察目的内容的一次访问写入审计日志（G-12）。
 // granted 为假表示本次访问被可见性判定拒绝，同样留痕：被拒访问正是管控对象。
 func (s *Service) auditSensitiveAccess(ctx context.Context, v domain.Viewer, promptID int64, ip string, granted bool) error {
 	name := "游客"
@@ -195,24 +222,22 @@ func (s *Service) ListOwn(ctx context.Context, v domain.Viewer, page, pageSize i
 // VersionFromRow 把版本行映射为版本实体。导出供管理后台复用同一映射规则。
 func VersionFromRow(row repo.PromptVersion) domain.PromptVersion {
 	out := domain.PromptVersion{
-		ID:          row.ID,
-		PromptID:    row.PromptID,
-		Version:     domain.Version{Major: int(row.Major), Minor: int(row.Minor)},
-		Title:       row.Title,
-		Body:        row.Body,
-		Description: row.Description,
-		CategoryID:  row.CategoryID,
-		Visibility:  domain.Visibility(row.Visibility),
-		Sensitive:   domain.SensitiveLevel(row.SensitiveLevel),
-		IsMajor:     row.IsMajor,
-		ChangeNote:  row.ChangeNote,
-		AuthorID:    row.AuthorID,
+		ID:           row.ID,
+		PromptID:     row.PromptID,
+		Version:      domain.Version{Major: int(row.Major), Minor: int(row.Minor)},
+		Title:        row.Title,
+		Body:         row.Body,
+		Description:  row.Description,
+		PurposeID:    row.PurposeID,
+		CapabilityID: row.CapabilityID,
+		Visibility:   domain.Visibility(row.Visibility),
+		Sensitive:    domain.SensitiveLevel(row.SensitiveLevel),
+		IsMajor:      row.IsMajor,
+		ChangeNote:   row.ChangeNote,
+		AuthorID:     row.AuthorID,
 	}
 	if row.CreatedAt.Valid {
 		out.CreatedAt = row.CreatedAt.Time
-	}
-	if row.AbilityID.Valid {
-		out.AbilityID = &row.AbilityID.Int64
 	}
 	if row.DifficultyID.Valid {
 		out.DifficultyID = &row.DifficultyID.Int64
@@ -238,6 +263,7 @@ func tagsFromRows(rows []repo.Tag) []domain.Tag {
 			NameZh:   row.NameZh,
 			NameEn:   row.NameEn,
 			Color:    row.Color,
+			Kind:     row.Kind,
 			Priority: row.Priority,
 		})
 	}

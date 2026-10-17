@@ -1,5 +1,5 @@
 // 提示词管理（需求 §17.2）。
-// 列表按关键词、可见性、删除状态、上传者编号与类别筛选；标签维护、版本历史、
+// 列表按关键词、可见性、删除状态、上传者编号、考察目的与考察维度筛选；标签维护、版本历史、
 // 评分、评论与推荐标签审核集中在详情抽屉内，删除与回收站操作放在列表操作列。
 
 <script setup lang="ts">
@@ -65,7 +65,8 @@ const filters = ref({
   visibility: '',
   deleted: '',
   uploader: '',
-  category: '',
+  purpose: '',
+  capability: '',
 })
 
 const detailVisible = ref(false)
@@ -117,7 +118,8 @@ async function loadPrompts(): Promise<void> {
       keyword: filters.value.keyword,
       visibility: filters.value.visibility,
       deleted: filters.value.deleted,
-      category_id: filters.value.category,
+      purpose_id: filters.value.purpose,
+      capability_id: filters.value.capability,
       uploader_id: filters.value.uploader,
     })
     rows.value = result.items
@@ -136,7 +138,14 @@ function search(): void {
 }
 
 function resetFilters(): void {
-  filters.value = { keyword: '', visibility: '', deleted: '', uploader: '', category: '' }
+  filters.value = {
+    keyword: '',
+    visibility: '',
+    deleted: '',
+    uploader: '',
+    purpose: '',
+    capability: '',
+  }
   search()
 }
 
@@ -410,15 +419,30 @@ onMounted(async () => {
         @keyup.enter="search"
       />
       <el-select
-        v-model="filters.category"
+        v-model="filters.purpose"
         class="pb-admin-module__filter"
-        :placeholder="t('admin.prompts.category')"
+        :placeholder="t('admin.prompts.purpose')"
         clearable
-        data-testid="admin-prompts-category"
+        data-testid="admin-prompts-purpose"
         @change="search"
       >
         <el-option
-          v-for="item in dictionary.data.categories"
+          v-for="item in dictionary.data.purposes"
+          :key="item.id"
+          :label="localizedName(item.name_zh, item.name_en)"
+          :value="String(item.id)"
+        />
+      </el-select>
+      <el-select
+        v-model="filters.capability"
+        class="pb-admin-module__filter"
+        :placeholder="t('admin.prompts.capability')"
+        clearable
+        data-testid="admin-prompts-capability"
+        @change="search"
+      >
+        <el-option
+          v-for="item in dictionary.data.capabilities"
           :key="item.id"
           :label="localizedName(item.name_zh, item.name_en)"
           :value="String(item.id)"
@@ -452,9 +476,14 @@ onMounted(async () => {
           {{ labelOf(VISIBILITY_LABELS, row.visibility) }}
         </template>
       </el-table-column>
-      <el-table-column :label="t('admin.prompts.category')" width="140">
+      <el-table-column :label="t('admin.prompts.purpose')" width="130">
         <template #default="{ row }: { row: AdminPrompt }">
-          {{ localizedName(row.category_name_zh, row.category_name_en) }}
+          {{ localizedName(row.purpose_name_zh, row.purpose_name_en) }}
+        </template>
+      </el-table-column>
+      <el-table-column :label="t('admin.prompts.capability')" width="120">
+        <template #default="{ row }: { row: AdminPrompt }">
+          {{ localizedName(row.capability_name_zh, row.capability_name_en) }}
         </template>
       </el-table-column>
       <el-table-column prop="uploader_name" :label="t('admin.prompts.uploader')" width="120" />
@@ -548,8 +577,11 @@ onMounted(async () => {
           <el-descriptions-item :label="t('admin.prompts.body')">
             <pre class="pb-admin-module__body">{{ detail.body }}</pre>
           </el-descriptions-item>
-          <el-descriptions-item :label="t('admin.prompts.category')">
-            {{ localizedName(detail.prompt.category_name_zh, detail.prompt.category_name_en) }}
+          <el-descriptions-item :label="t('admin.prompts.purpose')">
+            {{ localizedName(detail.prompt.purpose_name_zh, detail.prompt.purpose_name_en) }}
+          </el-descriptions-item>
+          <el-descriptions-item :label="t('admin.prompts.capability')">
+            {{ localizedName(detail.prompt.capability_name_zh, detail.prompt.capability_name_en) }}
           </el-descriptions-item>
           <el-descriptions-item :label="t('admin.prompts.uploader')">
             {{ detail.prompt.uploader_name || t('admin.common.none') }}
@@ -663,8 +695,8 @@ onMounted(async () => {
             <el-table v-else :data="ratings" size="small">
               <el-table-column prop="id" :label="t('admin.common.id')" width="70" />
               <el-table-column prop="user_name" :label="t('admin.prompts.uploader')" width="120" />
-              <el-table-column prop="model_name" :label="t('admin.prompts.category')" width="150" />
-              <el-table-column prop="score" :label="t('admin.tags.confidence')" width="90" />
+              <el-table-column prop="model_name" :label="t('admin.prompts.model')" width="150" />
+              <el-table-column prop="score" :label="t('admin.prompts.score')" width="90" />
               <el-table-column prop="edit_count" :label="t('admin.common.edit')" width="90" />
               <el-table-column :label="t('admin.common.createdAt')" width="170">
                 <template #default="{ row }: { row: AdminRating }">
@@ -731,7 +763,7 @@ onMounted(async () => {
             </p>
             <el-table v-else :data="recommends" size="small">
               <el-table-column prop="label_zh" :label="t('admin.prompts.tags')" width="140" />
-              <el-table-column :label="t('admin.prompts.category')" width="160">
+              <el-table-column :label="t('admin.prompts.tagKindState')" width="160">
                 <template #default="{ row }: { row: AdminRecommendTag }">
                   {{ labelOf(TAG_KIND_LABELS, row.kind) }} / {{ labelOf(TAG_STATE_LABELS, row.state) }}
                 </template>

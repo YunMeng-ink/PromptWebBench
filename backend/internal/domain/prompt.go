@@ -30,25 +30,30 @@ func ParseSortOrder(raw string) (SortOrder, bool) {
 	return "", false
 }
 
-// Category 是提示词类别（需求 §8.6、C-19）。
-type Category struct {
-	ID         int64
-	Slug       string
-	NameZh     string
-	NameEn     string
-	IsHighRisk bool
-	IsEnabled  bool
-	SortOrder  int32
+// Purpose 是考察目的字典项。高风险标记只属于考察目的（C-19）。
+type Purpose struct {
+	ID            int64
+	Slug          string
+	NameZh        string
+	NameEn        string
+	DescriptionZh string
+	DescriptionEn string
+	IsHighRisk    bool
+	IsEnabled     bool
+	SortOrder     int32
 }
 
-// Ability 是能力维度字典项。
-type Ability struct {
-	ID        int64
-	Slug      string
-	NameZh    string
-	NameEn    string
-	IsEnabled bool
-	SortOrder int32
+// Capability 是考察维度字典项。
+type Capability struct {
+	ID            int64
+	Slug          string
+	NameZh        string
+	NameEn        string
+	GroupKey      string
+	DescriptionZh string
+	DescriptionEn string
+	IsEnabled     bool
+	SortOrder     int32
 }
 
 // Difficulty 是难度字典项。
@@ -62,26 +67,27 @@ type Difficulty struct {
 	SortOrder int32
 }
 
-// Tag 是提示词标签。
+// Tag 是主题标签。
 type Tag struct {
 	ID       int64
 	Slug     string
 	NameZh   string
 	NameEn   string
 	Color    string
+	Kind     string
 	Priority int32
 }
 
 // Prompt 是提示词实体，对应 prompts 表的当前状态。
-// HighRisk 是类别的高风险标记快照，由查询时连同类别一并带出，
+// HighRisk 是考察目的的高风险标记快照，由查询时连同考察目的一并带出，
 // 使可见性判定的输入齐备，无需判定处再查一次数据库。
 type Prompt struct {
 	ID           int64
 	Title        string
 	Body         string
 	Description  string
-	CategoryID   int64
-	AbilityID    *int64
+	PurposeID    int64
+	CapabilityID int64
 	DifficultyID *int64
 	Visibility   Visibility
 	Sensitive    SensitiveLevel
@@ -98,7 +104,7 @@ type Prompt struct {
 	UpdatedAt          time.Time
 }
 
-// Access 是可见性判定所需的三个要素。提示词的类别高风险标记在查询时一并带出，
+// Access 是可见性判定所需的三个要素。提示词的考察目的高风险标记在查询时一并带出，
 // 使判定所需的输入齐备，无需判定处再查一次数据库。
 type Access struct {
 	Level      Visibility
@@ -107,7 +113,7 @@ type Access struct {
 }
 
 // Access 返回该提示词的可见性判定要素。高风险标记必须一并带入：
-// 漏掉它会让「类别高风险 + 可见性 public」的提示词对普通用户可见，
+// 漏掉它会让「考察目的高风险 + 可见性 public」的提示词对普通用户可见，
 // 正是 C-20 要防止的绕过形态。
 func (p Prompt) Access() Access {
 	return Access{Level: p.Visibility, HighRisk: p.HighRisk, UploaderID: p.UploaderID}
@@ -121,8 +127,8 @@ type PromptVersion struct {
 	Title        string
 	Body         string
 	Description  string
-	CategoryID   int64
-	AbilityID    *int64
+	PurposeID    int64
+	CapabilityID int64
 	DifficultyID *int64
 	Visibility   Visibility
 	Sensitive    SensitiveLevel

@@ -37,13 +37,24 @@ func newFixture(t *testing.T) *fixture {
 	return &fixture{pool: pool, svc: New(Deps{Pool: pool, Config: cfgStore, Logger: logger}), config: cfgStore}
 }
 
-// categoryID 按 slug 取类别 ID。
-func (f *fixture) categoryID(t *testing.T, slug string) int64 {
+// purposeID 按 slug 取考察目的 ID。
+func (f *fixture) purposeID(t *testing.T, slug string) int64 {
 	t.Helper()
 	var id int64
 	if err := f.pool.QueryRow(context.Background(),
-		`SELECT id FROM categories WHERE slug = $1`, slug).Scan(&id); err != nil {
-		t.Fatalf("读取类别 %s 失败: %v", slug, err)
+		`SELECT id FROM purposes WHERE slug = $1`, slug).Scan(&id); err != nil {
+		t.Fatalf("读取考察目的 %s 失败: %v", slug, err)
+	}
+	return id
+}
+
+// capabilityID 按 slug 取考察维度 ID。
+func (f *fixture) capabilityID(t *testing.T, slug string) int64 {
+	t.Helper()
+	var id int64
+	if err := f.pool.QueryRow(context.Background(),
+		`SELECT id FROM capabilities WHERE slug = $1`, slug).Scan(&id); err != nil {
+		t.Fatalf("读取考察维度 %s 失败: %v", slug, err)
 	}
 	return id
 }
@@ -66,15 +77,16 @@ func (f *fixture) developer(t *testing.T) domain.User {
 	}
 }
 
-func baseInput(categoryID int64, visibility domain.Visibility) Input {
+func (f *fixture) baseInput(t *testing.T, purposeID int64, visibility domain.Visibility) Input {
 	return Input{
-		Title:       "测试提示词",
-		Body:        "请完成以下任务",
-		CategoryID:  categoryID,
-		Visibility:  visibility,
-		Sensitive:   domain.SensitiveLow,
-		ChangeNote:  "初始版本",
-		Description: "描述说明",
+		Title:        "测试提示词",
+		Body:         "请完成以下任务",
+		PurposeID:    purposeID,
+		CapabilityID: f.capabilityID(t, "reasoning"),
+		Visibility:   visibility,
+		Sensitive:    domain.SensitiveLow,
+		ChangeNote:   "初始版本",
+		Description:  "描述说明",
 	}
 }
 
@@ -93,41 +105,41 @@ func assertAppErrCode(t *testing.T, err error, want apperr.Code) {
 	}
 }
 
-func TestCreateRejectsHighRiskCategoryForOrdinaryUser(t *testing.T) {
-	// 创建路径拦截：普通用户不能选择高风险类别（C-19、需求 §8.7）。
+func TestCreateRejectsHighRiskPurposeForOrdinaryUser(t *testing.T) {
+	// 创建路径拦截：普通用户不能选择高风险考察目的（C-19、需求 §8.7）。
 	f := newFixture(t)
 	user := f.normalUser(t)
 
 	_, err := f.svc.Create(context.Background(), user,
-		baseInput(f.categoryID(t, "jailbreak"), domain.VisibilityPublic))
+		f.baseInput(t, f.purposeID(t, "adversarial"), domain.VisibilityPublic))
 	assertAppErrCode(t, err, apperr.CodeForbidden)
 }
 
-func TestUpdateRejectsHighRiskCategoryForOrdinaryUser(t *testing.T) {
+func TestUpdateRejectsHighRiskPurposeForOrdinaryUser(t *testing.T) {
 	// 更新路径拦截。这是 C-20 明确要求的回归：需求 §8.7 只提了创建，
-	// 若更新路径漏判，普通用户可以先建普通提示词、再改成高风险类别绕过限制。
+	// 若更新路径漏判，普通用户可以先建普通提示词、再改成高风险考察目的绕过限制。
 	f := newFixture(t)
 	user := f.normalUser(t)
-	normal := f.categoryID(t, "reasoning")
+	normal := f.purposeID(t, "capability_boundary")
 
-	created, err := f.svc.Create(context.Background(), user, baseInput(normal, domain.VisibilityPublic))
+	created, err := f.svc.Create(context.Background(), user, f.baseInput(t, normal, domain.VisibilityPublic))
 	if err != nil {
 		t.Fatalf("创建提示词失败: %v", err)
 	}
 
-	in := baseInput(normal, domain.VisibilityPublic)
-	in.Title = "改为高风险类别"
-	in.CategoryID = f.categoryID(t, "jailbreak")
+	in := f.baseInput(t, normal, domain.VisibilityPublic)
+	in.Title = "改为高风险考察目的"
+	in.PurposeID = f.purposeID(t, "adversarial")
 	_, err = f.svc.Update(context.Background(), user, created.Prompt.ID, in)
 	assertAppErrCode(t, err, apperr.CodeForbidden)
 
-	// 拒绝之后类别未被改写，仍是创建时的类别。
+	// 拒绝之后考察目的未被改写，仍是创建时的考察目的。
 	detail, err := f.svc.Get(context.Background(), domain.ViewerFor(user), created.Prompt.ID, "")
 	if err != nil {
 		t.Fatalf("读取提示词失败: %v", err)
 	}
-	if detail.Prompt.CategoryID != normal {
-		t.Errorf("被拒绝的修改不应生效，类别 = %d，期望 %d", detail.Prompt.CategoryID, normal)
+	if detail.Prompt.PurposeID != normal {
+		t.Errorf("被拒绝的修改不应生效，考察目的 = %d，期望 %d", detail.Prompt.PurposeID, normal)
 	}
 }
 
@@ -136,33 +148,33 @@ func TestCreateRejectsDeveloperVisibilityForOrdinaryUser(t *testing.T) {
 	user := f.normalUser(t)
 
 	_, err := f.svc.Create(context.Background(), user,
-		baseInput(f.categoryID(t, "reasoning"), domain.VisibilityDeveloper))
+		f.baseInput(t, f.purposeID(t, "capability_boundary"), domain.VisibilityDeveloper))
 	assertAppErrCode(t, err, apperr.CodeForbidden)
 }
 
 func TestUpdateRejectsDeveloperVisibilityForOrdinaryUser(t *testing.T) {
 	f := newFixture(t)
 	user := f.normalUser(t)
-	normal := f.categoryID(t, "reasoning")
+	normal := f.purposeID(t, "capability_boundary")
 
-	created, err := f.svc.Create(context.Background(), user, baseInput(normal, domain.VisibilityPublic))
+	created, err := f.svc.Create(context.Background(), user, f.baseInput(t, normal, domain.VisibilityPublic))
 	if err != nil {
 		t.Fatalf("创建提示词失败: %v", err)
 	}
 
-	in := baseInput(normal, domain.VisibilityDeveloper)
+	in := f.baseInput(t, normal, domain.VisibilityDeveloper)
 	_, err = f.svc.Update(context.Background(), user, created.Prompt.ID, in)
 	assertAppErrCode(t, err, apperr.CodeForbidden)
 }
 
-func TestDeveloperMayUseHighRiskCategoryAndDeveloperVisibility(t *testing.T) {
+func TestDeveloperMayUseHighRiskPurposeAndDeveloperVisibility(t *testing.T) {
 	f := newFixture(t)
 	dev := f.developer(t)
-	jailbreak := f.categoryID(t, "jailbreak")
+	jailbreak := f.purposeID(t, "adversarial")
 
-	created, err := f.svc.Create(context.Background(), dev, baseInput(jailbreak, domain.VisibilityDeveloper))
+	created, err := f.svc.Create(context.Background(), dev, f.baseInput(t, jailbreak, domain.VisibilityDeveloper))
 	if err != nil {
-		t.Fatalf("开发者应能选择高风险类别与开发者可见: %v", err)
+		t.Fatalf("开发者应能选择高风险考察目的与开发者可见: %v", err)
 	}
 	if !created.Prompt.HighRisk {
 		t.Error("创建结果的高风险标记应为真")
@@ -181,20 +193,20 @@ func TestDeveloperMayUseHighRiskCategoryAndDeveloperVisibility(t *testing.T) {
 }
 
 func TestHighRiskPublicPromptIsHiddenFromOrdinaryUsers(t *testing.T) {
-	// C-20 的完整形态：类别高风险 + 可见性 public。开发者先按普通类别创建再改为高风险，
+	// C-20 的完整形态：考察目的高风险 + 可见性 public。开发者先按普通目的创建再改为高风险，
 	// 使一条 public 的高风险提示词真实存在；普通用户与游客都必须 404。
 	f := newFixture(t)
 	dev := f.developer(t)
-	normal := f.categoryID(t, "reasoning")
+	normal := f.purposeID(t, "capability_boundary")
 
-	created, err := f.svc.Create(context.Background(), dev, baseInput(normal, domain.VisibilityPublic))
+	created, err := f.svc.Create(context.Background(), dev, f.baseInput(t, normal, domain.VisibilityPublic))
 	if err != nil {
 		t.Fatalf("创建提示词失败: %v", err)
 	}
-	in := baseInput(normal, domain.VisibilityPublic)
-	in.CategoryID = f.categoryID(t, "jailbreak")
+	in := f.baseInput(t, normal, domain.VisibilityPublic)
+	in.PurposeID = f.purposeID(t, "adversarial")
 	if _, err := f.svc.Update(context.Background(), dev, created.Prompt.ID, in); err != nil {
-		t.Fatalf("改为高风险类别失败: %v", err)
+		t.Fatalf("改为高风险考察目的失败: %v", err)
 	}
 
 	_, err = f.svc.Get(context.Background(), domain.Guest(), created.Prompt.ID, "")
@@ -234,9 +246,9 @@ func TestNormalEditCreatesMinorVersionAndKeepsRatings(t *testing.T) {
 	// 需求 §7.2：普通修改生成新版本、不重置评分、保留历史版本。
 	f := newFixture(t)
 	user := f.normalUser(t)
-	normal := f.categoryID(t, "reasoning")
+	normal := f.purposeID(t, "capability_boundary")
 
-	created, err := f.svc.Create(context.Background(), user, baseInput(normal, domain.VisibilityPublic))
+	created, err := f.svc.Create(context.Background(), user, f.baseInput(t, normal, domain.VisibilityPublic))
 	if err != nil {
 		t.Fatalf("创建提示词失败: %v", err)
 	}
@@ -244,7 +256,7 @@ func TestNormalEditCreatesMinorVersionAndKeepsRatings(t *testing.T) {
 		t.Errorf("初始版本号 = %s，期望 v1.0", created.VersionNo)
 	}
 
-	in := baseInput(normal, domain.VisibilityPublic)
+	in := f.baseInput(t, normal, domain.VisibilityPublic)
 	in.Title = "普通修改后的标题"
 	result, err := f.svc.Update(context.Background(), user, created.Prompt.ID, in)
 	if err != nil {
@@ -277,9 +289,9 @@ func TestMajorChangeResetsRatingsAndArchivesHistory(t *testing.T) {
 	// 历史评分归档、提示标记、系统重算统计、标签待复核。
 	f := newFixture(t)
 	user := f.normalUser(t)
-	normal := f.categoryID(t, "reasoning")
+	normal := f.purposeID(t, "capability_boundary")
 
-	created, err := f.svc.Create(context.Background(), user, baseInput(normal, domain.VisibilityPublic))
+	created, err := f.svc.Create(context.Background(), user, f.baseInput(t, normal, domain.VisibilityPublic))
 	if err != nil {
 		t.Fatalf("创建提示词失败: %v", err)
 	}
@@ -289,7 +301,7 @@ func TestMajorChangeResetsRatingsAndArchivesHistory(t *testing.T) {
 		t.Fatal("评分准备失败")
 	}
 
-	in := baseInput(normal, domain.VisibilityPublic)
+	in := f.baseInput(t, normal, domain.VisibilityPublic)
 	in.Title = "重大修改后的标题"
 	in.IsMajorChange = true
 	in.ChangeNote = "任务定义整体重写"
@@ -369,15 +381,15 @@ func TestUpdateByNonOwnerReturnsNotFound(t *testing.T) {
 	// 无权限对象统一 404，不通过状态码暴露对象存在性（开发方案 §5.3）。
 	f := newFixture(t)
 	owner := f.normalUser(t)
-	normal := f.categoryID(t, "reasoning")
+	normal := f.purposeID(t, "capability_boundary")
 
-	created, err := f.svc.Create(context.Background(), owner, baseInput(normal, domain.VisibilityPublic))
+	created, err := f.svc.Create(context.Background(), owner, f.baseInput(t, normal, domain.VisibilityPublic))
 	if err != nil {
 		t.Fatalf("创建提示词失败: %v", err)
 	}
 
 	other := f.normalUser(t)
-	in := baseInput(normal, domain.VisibilityPublic)
+	in := f.baseInput(t, normal, domain.VisibilityPublic)
 	_, err = f.svc.Update(context.Background(), other, created.Prompt.ID, in)
 	assertAppErrCode(t, err, apperr.CodeNotFound)
 }
@@ -392,7 +404,7 @@ func TestUnverifiedUserCannotCreatePrompt(t *testing.T) {
 	}
 
 	_, err := f.svc.Create(context.Background(), unverified,
-		baseInput(f.categoryID(t, "reasoning"), domain.VisibilityPublic))
+		f.baseInput(t, f.purposeID(t, "capability_boundary"), domain.VisibilityPublic))
 	assertAppErrCode(t, err, apperr.CodeEmailNotVerified)
 }
 
@@ -400,7 +412,7 @@ func TestPrivatePromptQuotaBlocksBeyondLimit(t *testing.T) {
 	// 需求 §8.3 与 C-21：额度在事务内判定。
 	f := newFixture(t)
 	user := f.normalUser(t)
-	normal := f.categoryID(t, "reasoning")
+	normal := f.purposeID(t, "capability_boundary")
 
 	limit, err := f.config.GetInt(context.Background(), "private_prompt_quota_user")
 	if err != nil {
@@ -420,14 +432,14 @@ func TestPrivatePromptQuotaBlocksBeyondLimit(t *testing.T) {
 	}
 
 	for i := 0; i < 2; i++ {
-		in := baseInput(normal, domain.VisibilityPrivate)
+		in := f.baseInput(t, normal, domain.VisibilityPrivate)
 		in.Title = fmt.Sprintf("私有提示词 %d", i)
 		if _, err := f.svc.Create(context.Background(), user, in); err != nil {
 			t.Fatalf("创建第 %d 条私有提示词失败: %v", i+1, err)
 		}
 	}
 
-	_, err = f.svc.Create(context.Background(), user, baseInput(normal, domain.VisibilityPrivate))
+	_, err = f.svc.Create(context.Background(), user, f.baseInput(t, normal, domain.VisibilityPrivate))
 	assertAppErrCode(t, err, apperr.CodeQuotaExceeded)
 }
 
@@ -437,7 +449,7 @@ func TestPrivatePromptQuotaUnderConcurrentCreates(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
 	user := f.normalUser(t)
-	normal := f.categoryID(t, "reasoning")
+	normal := f.purposeID(t, "capability_boundary")
 
 	if _, err := f.pool.Exec(ctx,
 		`UPDATE config SET value = '3'::jsonb WHERE key = 'private_prompt_quota_user'`); err != nil {
@@ -454,7 +466,7 @@ func TestPrivatePromptQuotaUnderConcurrentCreates(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			in := baseInput(normal, domain.VisibilityPrivate)
+			in := f.baseInput(t, normal, domain.VisibilityPrivate)
 			in.Title = fmt.Sprintf("并发私有提示词 %d", i)
 			_, results[i] = f.svc.Create(ctx, user, in)
 		}(i)
@@ -486,7 +498,7 @@ func TestPublicPromptsDoNotConsumePrivateQuota(t *testing.T) {
 	// 需求 §8.2：公开提示词不占用用户私有提示词额度。
 	f := newFixture(t)
 	user := f.normalUser(t)
-	normal := f.categoryID(t, "reasoning")
+	normal := f.purposeID(t, "capability_boundary")
 
 	if _, err := f.pool.Exec(context.Background(),
 		`UPDATE config SET value = '1'::jsonb WHERE key = 'private_prompt_quota_user'`); err != nil {
@@ -497,14 +509,14 @@ func TestPublicPromptsDoNotConsumePrivateQuota(t *testing.T) {
 	}
 
 	for i := 0; i < 3; i++ {
-		in := baseInput(normal, domain.VisibilityPublic)
+		in := f.baseInput(t, normal, domain.VisibilityPublic)
 		in.Title = fmt.Sprintf("公开提示词 %d", i)
 		if _, err := f.svc.Create(context.Background(), user, in); err != nil {
 			t.Fatalf("创建第 %d 条公开提示词失败: %v", i+1, err)
 		}
 	}
 
-	in := baseInput(normal, domain.VisibilityPrivate)
+	in := f.baseInput(t, normal, domain.VisibilityPrivate)
 	if _, err := f.svc.Create(context.Background(), user, in); err != nil {
 		t.Fatalf("公开提示词不应占用私有额度，创建私有提示词失败: %v", err)
 	}

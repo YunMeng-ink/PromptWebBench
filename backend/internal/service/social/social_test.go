@@ -53,7 +53,7 @@ func (f *fixture) prompt(t *testing.T, uploaderID int64, title string) int64 {
 	return pgtest.SeedPrompt(t, f.pool, uploaderID, title)
 }
 
-// setPromptVisibility 修改提示词的可见性与所属类别的高风险标记。
+// setPromptVisibility 修改提示词的可见性与所属考察目的的高风险标记。
 func (f *fixture) setPromptVisibility(t *testing.T, promptID int64, visibility string) {
 	t.Helper()
 	if _, err := f.pool.Exec(context.Background(),
@@ -62,13 +62,13 @@ func (f *fixture) setPromptVisibility(t *testing.T, promptID int64, visibility s
 	}
 }
 
-// setPromptHighRisk 把提示词的类别标为高风险。
+// setPromptHighRisk 把提示词的考察目标为高风险。
 func (f *fixture) setPromptHighRisk(t *testing.T, promptID int64) {
 	t.Helper()
 	if _, err := f.pool.Exec(context.Background(), `
-		UPDATE categories SET is_high_risk = true
-		WHERE id = (SELECT category_id FROM prompts WHERE id = $1)`, promptID); err != nil {
-		t.Fatalf("标记高风险类别失败: %v", err)
+		UPDATE purposes SET is_high_risk = true
+		WHERE id = (SELECT purpose_id FROM prompts WHERE id = $1)`, promptID); err != nil {
+		t.Fatalf("标记高风险考察目的失败: %v", err)
 	}
 }
 
@@ -310,7 +310,7 @@ func TestFavoriteItemsHideHighRisk(t *testing.T) {
 		t.Fatalf("开发者可见条目数 = %d，期望 1", len(developerView.Items))
 	}
 
-	// 类别被标为高风险后，普通用户不再能在公开收藏夹里看到它。
+	// 考察目的被标为高风险后，普通用户不再能在公开收藏夹里看到它。
 	f.setPromptHighRisk(t, promptID)
 
 	ordinaryView, err := f.svc.ListItems(ctx, ordinary, favorite.Entity.ID, 1, 20)

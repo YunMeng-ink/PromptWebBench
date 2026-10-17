@@ -6,7 +6,7 @@ import { visibilityOptions } from '@/api/prompt'
 import { mountView, resetLocale, stubResponse } from '@/testing/mount'
 import HomeView from '@/views/HomeView.vue'
 import PromptFormView from '@/views/PromptFormView.vue'
-import { normalizeVisibility, visibleCategories } from '@/views/promptFormRules'
+import { normalizeVisibility, visiblePurposes } from '@/views/promptFormRules'
 
 /** memoryRouter 构造内存历史路由，供需要路由参数的视图挂载。 */
 function memoryRouter(): Router {
@@ -22,16 +22,44 @@ function memoryRouter(): Router {
 }
 
 /**
- * categoryOptionsFor 返回给定身份在表单中可见的类别。
+ * purposeOptionsFor 返回给定身份在表单中可见的考察目的。
  */
-const categoryFixtures = [
-  { id: 1, slug: 'reasoning', name_zh: '逻辑推理', name_en: 'Reasoning', is_high_risk: false },
-  { id: 9, slug: 'jailbreak', name_zh: '越狱对抗', name_en: 'Jailbreak', is_high_risk: true },
+const purposeFixtures = [
+  {
+    id: 1,
+    slug: 'capability_boundary',
+    name_zh: '边界探测',
+    name_en: 'Capability Boundary',
+    description_zh: '模型是否具备该能力，边界在哪里',
+    description_en: 'Does the model have the capability?',
+    is_high_risk: false,
+  },
+  {
+    id: 9,
+    slug: 'adversarial',
+    name_zh: '对抗探测',
+    name_en: 'Adversarial Probing',
+    description_zh: '是否抵抗刻意操纵',
+    description_en: 'Does the model resist manipulation?',
+    is_high_risk: true,
+  },
+]
+
+const capabilityFixtures = [
+  {
+    id: 1,
+    slug: 'reasoning',
+    name_zh: '推理',
+    name_en: 'Reasoning',
+    group_key: 'cognitive',
+    description_zh: '多步演绎与约束求解',
+    description_en: 'Multi-step deduction',
+  },
 ]
 
 interface DictionaryStub {
-  categories?: unknown[]
-  abilities?: unknown[]
+  purposes?: unknown[]
+  capabilities?: unknown[]
   difficulties?: unknown[]
   tags?: unknown[]
   models?: unknown[]
@@ -43,17 +71,20 @@ const prompts: unknown[] = []
  * 安装接口桩。首页与表单共用一套字典端点，评分与提示词各自独立，
  * 因此按路径前缀分派而不是逐个枚举。
  */
-function stubEndpoints({ categories = [] }: DictionaryStub = {}): void {
+function stubEndpoints({
+  purposes = [],
+  capabilities = capabilityFixtures,
+}: DictionaryStub = {}): void {
   vi.stubGlobal(
     'fetch',
     vi.fn(async (url: string) => {
       const path = url.replace(/^https?:\/\/[^/]+/, '').split('?')[0] ?? ''
 
-      if (path.endsWith('/categories')) {
-        return stubResponse({ status: 200, body: { items: categories } })
+      if (path.endsWith('/purposes')) {
+        return stubResponse({ status: 200, body: { items: purposes } })
       }
-      if (path.endsWith('/abilities')) {
-        return stubResponse({ status: 200, body: { items: [] } })
+      if (path.endsWith('/capabilities')) {
+        return stubResponse({ status: 200, body: { items: capabilities } })
       }
       if (path.endsWith('/difficulties')) {
         return stubResponse({ status: 200, body: { items: [] } })
@@ -108,7 +139,8 @@ describe('HomeView 列表与筛选', () => {
       id: 11,
       title: '推理类提示词',
       description: '描述说明',
-      category_id: 1,
+      purpose_id: 1,
+      capability_id: 1,
       visibility: 'public',
       sensitive_level: 'low',
       uploader_id: 1,
@@ -118,8 +150,10 @@ describe('HomeView 列表与筛选', () => {
       favorite_count: 0,
       created_at: '2026-10-01T00:00:00Z',
       updated_at: '2026-10-02T00:00:00Z',
-      category_name_zh: '逻辑推理',
-      category_name_en: 'Logical Reasoning',
+      purpose_name_zh: '边界探测',
+      purpose_name_en: 'Capability Boundary',
+      capability_name_zh: '推理',
+      capability_name_en: 'Reasoning',
       discrimination: 0,
       data_sufficient: false,
       average_adjusted: 0,
@@ -137,7 +171,8 @@ describe('HomeView 列表与筛选', () => {
       id: 12,
       title: '有数据的提示词',
       description: '',
-      category_id: 1,
+      purpose_id: 1,
+      capability_id: 1,
       visibility: 'public',
       sensitive_level: 'low',
       uploader_id: 1,
@@ -147,8 +182,10 @@ describe('HomeView 列表与筛选', () => {
       favorite_count: 0,
       created_at: '2026-10-01T00:00:00Z',
       updated_at: '2026-10-02T00:00:00Z',
-      category_name_zh: '逻辑推理',
-      category_name_en: 'Logical Reasoning',
+      purpose_name_zh: '边界探测',
+      purpose_name_en: 'Capability Boundary',
+      capability_name_zh: '推理',
+      capability_name_en: 'Reasoning',
       discrimination: 4.6,
       data_sufficient: true,
       average_adjusted: 3.25,
@@ -177,6 +214,26 @@ describe('HomeView 列表与筛选', () => {
     expect(last).toContain('sort=discrimination')
   })
 
+  it('切换考察目的与考察维度会带对应参数重新查询', async () => {
+    stubEndpoints({ purposes: purposeFixtures })
+    const wrapper = await mountHome()
+
+    const purpose = wrapper.findComponent('[data-testid="filter-purpose"]') as VueWrapper
+    await purpose.vm.$emit('update:modelValue', '1')
+    await purpose.vm.$emit('change', '1')
+    await flushPromises()
+
+    const capability = wrapper.findComponent('[data-testid="filter-capability"]') as VueWrapper
+    await capability.vm.$emit('update:modelValue', '1')
+    await capability.vm.$emit('change', '1')
+    await flushPromises()
+
+    const calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls
+    const urls = calls.map((call) => String(call[0] ?? ''))
+    expect(urls.some((url) => url.includes('purpose_id=1'))).toBe(true)
+    expect(urls.some((url) => url.includes('capability_id=1'))).toBe(true)
+  })
+
   it('未设置任何筛选时重置按钮不可用', async () => {
     stubEndpoints()
     const wrapper = await mountHome()
@@ -193,14 +250,14 @@ describe('HomeView 列表与筛选', () => {
 })
 
 describe('PromptFormView 权限相关的选项', () => {
-  it('普通用户的类别选项不含高风险类别', () => {
-    const visible = visibleCategories(categoryFixtures, false).map((item) => item.slug)
-    expect(visible).toEqual(['reasoning'])
+  it('普通用户的考察目的选项不含高风险条目', () => {
+    const visible = visiblePurposes(purposeFixtures, false).map((item) => item.slug)
+    expect(visible).toEqual(['capability_boundary'])
   })
 
-  it('开发者的类别选项包含高风险类别', () => {
-    const visible = visibleCategories(categoryFixtures, true).map((item) => item.slug)
-    expect(visible).toEqual(['reasoning', 'jailbreak'])
+  it('开发者的考察目的选项包含高风险条目', () => {
+    const visible = visiblePurposes(purposeFixtures, true).map((item) => item.slug)
+    expect(visible).toEqual(['capability_boundary', 'adversarial'])
   })
 
   it('普通用户的可见性只有公开与私有两档', () => {
@@ -218,7 +275,7 @@ describe('PromptFormView 权限相关的选项', () => {
   })
 
   it('上传页在字典就绪后渲染标题输入框', async () => {
-    stubEndpoints({ categories: categoryFixtures })
+    stubEndpoints({ purposes: purposeFixtures })
     const wrapper = mountView(PromptFormView, { router: memoryRouter() })
     await flushPromises()
 
@@ -238,10 +295,13 @@ describe('PromptFormView 编辑表单的加载门禁', () => {
       'fetch',
       vi.fn(async (url: string) => {
         const path = url.replace(/^https?:\/\/[^/]+/, '').split('?')[0] ?? ''
-        if (path.endsWith('/categories')) {
-          return stubResponse({ status: 200, body: { items: categoryFixtures } })
+        if (path.endsWith('/purposes')) {
+          return stubResponse({ status: 200, body: { items: purposeFixtures } })
         }
-        if (path.endsWith('/abilities') || path.endsWith('/difficulties')) {
+        if (path.endsWith('/capabilities')) {
+          return stubResponse({ status: 200, body: { items: capabilityFixtures } })
+        }
+        if (path.endsWith('/difficulties')) {
           return stubResponse({ status: 200, body: { items: [] } })
         }
         if (path.endsWith('/tags') || path.endsWith('/models')) {
@@ -263,7 +323,8 @@ describe('PromptFormView 编辑表单的加载门禁', () => {
                 id: 7,
                 title: '待编辑提示词',
                 description: '',
-                category_id: 1,
+                purpose_id: 1,
+                capability_id: 1,
                 visibility: 'public',
                 sensitive_level: 'low',
                 uploader_id: 1,
@@ -280,7 +341,8 @@ describe('PromptFormView 编辑表单的加载门禁', () => {
                 title: '待编辑提示词',
                 body: '正文',
                 description: '',
-                category_id: 1,
+                purpose_id: 1,
+                capability_id: 1,
                 visibility: 'public',
                 sensitive_level: 'low',
                 is_major: false,
@@ -289,12 +351,23 @@ describe('PromptFormView 编辑表单的加载门禁', () => {
                 created_at: '2026-01-01T00:00:00Z',
               },
               versions: [],
-              category: {
+              purpose: {
+                id: 1,
+                slug: 'capability_boundary',
+                name_zh: '边界探测',
+                name_en: 'Capability Boundary',
+                description_zh: '模型是否具备该能力，边界在哪里',
+                description_en: 'Does the model have the capability?',
+                is_high_risk: false,
+              },
+              capability: {
                 id: 1,
                 slug: 'reasoning',
-                name_zh: '逻辑推理',
+                name_zh: '推理',
                 name_en: 'Reasoning',
-                is_high_risk: false,
+                group_key: 'cognitive',
+                description_zh: '多步演绎与约束求解',
+                description_en: 'Multi-step deduction',
               },
               tags: [],
               uploader: 'alice',
@@ -311,7 +384,7 @@ describe('PromptFormView 编辑表单的加载门禁', () => {
     const wrapper = mountView(PromptFormView, { router })
     await flushPromises()
 
-    // 详情未到达：提交入口被禁用，避免把占位取值（空正文、类别 0）发给后端。
+    // 详情未到达：提交入口被禁用，避免把占位取值（空正文、考察目的 0）发给后端。
     expect(wrapper.find('[data-testid="prompt-submit"]').attributes('disabled')).toBeDefined()
 
     release?.()

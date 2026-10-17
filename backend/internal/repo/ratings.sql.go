@@ -177,10 +177,10 @@ func (q *Queries) InsertRatingChangeLog(ctx context.Context, arg InsertRatingCha
 
 const listMyRatings = `-- name: ListMyRatings :many
 SELECT r.id, r.user_id, r.prompt_id, r.prompt_version_id, r.model_id, r.score, r.edit_count, r.deleted_at, r.created_at, r.updated_at, p.title AS prompt_title, p.visibility AS prompt_visibility,
-       p.uploader_id AS prompt_uploader_id, c.is_high_risk AS prompt_is_high_risk
+       p.uploader_id AS prompt_uploader_id, pu.is_high_risk AS prompt_is_high_risk
 FROM ratings r
 JOIN prompts p ON p.id = r.prompt_id
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
 WHERE r.user_id = $1 AND r.deleted_at IS NULL AND p.deleted_at IS NULL
 ORDER BY r.created_at DESC, r.id DESC
 LIMIT $2 OFFSET $3

@@ -31,10 +31,12 @@ func (f Favorite) Access() domain.Access { return f.Entity.Access() }
 
 // FavoriteItem 是收藏夹里的一条提示词。
 type FavoriteItem struct {
-	Prompt         domain.Prompt
-	CategoryNameZh string
-	CategoryNameEn string
-	AddedAt        time.Time
+	Prompt           domain.Prompt
+	PurposeNameZh    string
+	PurposeNameEn    string
+	CapabilityNameZh string
+	CapabilityNameEn string
+	AddedAt          time.Time
 }
 
 // FavoritePage 是收藏夹列表的一页。
@@ -399,9 +401,11 @@ func (s *Service) visibleItems(ctx context.Context, q *repo.Queries, v domain.Vi
 				continue
 			}
 			item := FavoriteItem{
-				Prompt:         prompt,
-				CategoryNameZh: row.CategoryNameZh,
-				CategoryNameEn: row.CategoryNameEn,
+				Prompt:           prompt,
+				PurposeNameZh:    row.PurposeNameZh,
+				PurposeNameEn:    row.PurposeNameEn,
+				CapabilityNameZh: row.CapabilityNameZh,
+				CapabilityNameEn: row.CapabilityNameEn,
 			}
 			if row.AddedAt.Valid {
 				item.AddedAt = row.AddedAt.Time

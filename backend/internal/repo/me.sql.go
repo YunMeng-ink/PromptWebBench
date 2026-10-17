@@ -105,25 +105,29 @@ const exportMyPrompts = `-- name: ExportMyPrompts :many
 
 SELECT p.id, p.title, p.body, p.description, p.visibility, p.sensitive_level,
        p.latest_version_no, p.created_at, p.updated_at,
-       c.name_zh AS category_name_zh, c.name_en AS category_name_en
+       pu.name_zh AS purpose_name_zh, pu.name_en AS purpose_name_en,
+       cap.name_zh AS capability_name_zh, cap.name_en AS capability_name_en
 FROM prompts p
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
+JOIN capabilities cap ON cap.id = p.capability_id
 WHERE p.uploader_id = $1 AND p.deleted_at IS NULL
 ORDER BY p.created_at ASC, p.id ASC
 `
 
 type ExportMyPromptsRow struct {
-	ID              int64
-	Title           string
-	Body            string
-	Description     string
-	Visibility      string
-	SensitiveLevel  string
-	LatestVersionNo string
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
-	CategoryNameZh  string
-	CategoryNameEn  string
+	ID               int64
+	Title            string
+	Body             string
+	Description      string
+	Visibility       string
+	SensitiveLevel   string
+	LatestVersionNo  string
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	PurposeNameZh    string
+	PurposeNameEn    string
+	CapabilityNameZh string
+	CapabilityNameEn string
 }
 
 // 个人数据导出与账号注销（G-08、G-09）。
@@ -147,8 +151,10 @@ func (q *Queries) ExportMyPrompts(ctx context.Context, uploaderID int64) ([]Expo
 			&i.LatestVersionNo,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.CategoryNameZh,
-			&i.CategoryNameEn,
+			&i.PurposeNameZh,
+			&i.PurposeNameEn,
+			&i.CapabilityNameZh,
+			&i.CapabilityNameEn,
 		); err != nil {
 			return nil, err
 		}

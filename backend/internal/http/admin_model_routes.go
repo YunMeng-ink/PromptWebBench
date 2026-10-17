@@ -9,6 +9,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/promptbench/backend/internal/apperr"
+	"github.com/promptbench/backend/internal/repo"
 	"github.com/promptbench/backend/internal/service/admin"
 )
 
@@ -95,8 +96,16 @@ func (s *Server) handleAdminListModels(ctx context.Context, in *adminListModelsI
 
 	out := &adminModelListResponse{}
 	out.Body.Items = make([]adminModelDTO, 0, len(result.Items))
+	modelIDs := make([]int64, 0, len(result.Items))
 	for _, row := range result.Items {
-		out.Body.Items = append(out.Body.Items, toAdminModelDTO(row))
+		modelIDs = append(modelIDs, row.ID)
+	}
+	capabilities, err := s.deps.Admin.ModelCapabilityIDsByModel(ctx, modelIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range result.Items {
+		out.Body.Items = append(out.Body.Items, toAdminModelDTO(row, capabilities[row.ID]))
 	}
 	out.Body.Page = result.Page
 	out.Body.PageSize = result.PageSize
@@ -116,7 +125,7 @@ type adminModelInput struct {
 	ReleaseDate     string   `json:"release_date" doc:"发布时间，YYYY-MM-DD；留空表示未知"`
 	ContextLength   *int64   `json:"context_length,omitempty" minimum:"0" doc:"上下文长度"`
 	IsEnabled       bool     `json:"is_enabled" doc:"是否启用"`
-	AbilityTags     []string `json:"ability_tags" doc:"能力标签"`
+	CapabilityIDs   []int64  `json:"capability_ids" doc:"考察维度"`
 	Note            string   `json:"note" maxLength:"500" doc:"备注"`
 }
 
@@ -133,7 +142,7 @@ func (in *adminModelInput) service() (admin.ModelInput, error) {
 		Description:     in.Description,
 		ContextLength:   in.ContextLength,
 		IsEnabled:       in.IsEnabled,
-		AbilityTags:     in.AbilityTags,
+		CapabilityIDs:   in.CapabilityIDs,
 		Note:            in.Note,
 	}
 	if in.ReleaseDate != "" {
@@ -150,6 +159,14 @@ type adminCreateModelInput struct {
 	Body adminModelInput
 }
 
+func (s *Server) adminModelResponse(ctx context.Context, row repo.Model) (*adminModelResponse, error) {
+	capabilityIDs, err := s.deps.Admin.ModelCapabilityIDs(ctx, row.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &adminModelResponse{Body: modelModelDTO(row, capabilityIDs)}, nil
+}
+
 func (s *Server) handleAdminCreateModel(ctx context.Context, in *adminCreateModelInput) (*adminModelResponse, error) {
 	operator, err := requireAdmin(ctx)
 	if err != nil {
@@ -163,7 +180,7 @@ func (s *Server) handleAdminCreateModel(ctx context.Context, in *adminCreateMode
 	if err != nil {
 		return nil, err
 	}
-	return &adminModelResponse{Body: modelModelDTO(row)}, nil
+	return s.adminModelResponse(ctx, row)
 }
 
 type adminModelIDInput struct {
@@ -178,7 +195,7 @@ func (s *Server) handleAdminGetModel(ctx context.Context, in *adminModelIDInput)
 	if err != nil {
 		return nil, err
 	}
-	return &adminModelResponse{Body: modelModelDTO(row)}, nil
+	return s.adminModelResponse(ctx, row)
 }
 
 type adminUpdateModelInput struct {
@@ -199,7 +216,7 @@ func (s *Server) handleAdminUpdateModel(ctx context.Context, in *adminUpdateMode
 	if err != nil {
 		return nil, err
 	}
-	return &adminModelResponse{Body: modelModelDTO(row)}, nil
+	return s.adminModelResponse(ctx, row)
 }
 
 func (s *Server) handleAdminDeleteModel(ctx context.Context, in *adminModelIDInput) (*struct{}, error) {
@@ -229,7 +246,7 @@ func (s *Server) handleAdminSetModelEnabled(ctx context.Context, in *adminSetMod
 	if err != nil {
 		return nil, err
 	}
-	return &adminModelResponse{Body: modelModelDTO(row)}, nil
+	return s.adminModelResponse(ctx, row)
 }
 
 type adminModelPagedInput struct {

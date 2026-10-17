@@ -13,11 +13,11 @@ import (
 	"github.com/promptbench/backend/internal/domain"
 )
 
-// PromptListFilter 是公开列表的筛选维度（需求 §8.2：类别、能力维度、难度、关键词、
+// PromptListFilter 是公开列表的筛选维度（需求 §8.2：考察目的、考察维度、难度、关键词、
 // 适用模型、标签共 6 维）。零值表示该维度不参与筛选。
 type PromptListFilter struct {
-	CategoryID   *int64
-	AbilityID    *int64
+	PurposeID    *int64
+	CapabilityID *int64
 	DifficultyID *int64
 	Keyword      string
 	ModelID      *int64
@@ -28,10 +28,10 @@ type PromptListFilter struct {
 // 快照缺失时为零值并标记为数据不足。
 type PromptListItem struct {
 	Prompt           domain.Prompt
-	CategoryNameZh   string
-	CategoryNameEn   string
-	AbilityNameZh    string
-	AbilityNameEn    string
+	PurposeNameZh    string
+	PurposeNameEn    string
+	CapabilityNameZh string
+	CapabilityNameEn string
 	DifficultyNameZh string
 	DifficultyNameEn string
 	Discrimination   float64
@@ -63,11 +63,11 @@ func PromptListPage(ctx context.Context, pool *pgxpool.Pool, v domain.Viewer, f 
 		conditions = append(conditions, fmt.Sprintf(clause, len(args)))
 	}
 
-	if f.CategoryID != nil {
-		add("p.category_id = $%d", *f.CategoryID)
+	if f.PurposeID != nil {
+		add("p.purpose_id = $%d", *f.PurposeID)
 	}
-	if f.AbilityID != nil {
-		add("p.ability_id = $%d", *f.AbilityID)
+	if f.CapabilityID != nil {
+		add("p.capability_id = $%d", *f.CapabilityID)
 	}
 	if f.DifficultyID != nil {
 		add("p.difficulty_id = $%d", *f.DifficultyID)
@@ -104,11 +104,11 @@ func PromptListPage(ctx context.Context, pool *pgxpool.Pool, v domain.Viewer, f 
 
 // selectColumns 是列表项的取值列，统计列一律取自阶段 3 的快照表。
 const selectColumns = `
-    p.id, p.title, p.description, p.category_id, p.ability_id, p.difficulty_id,
+    p.id, p.title, p.description, p.purpose_id, p.capability_id, p.difficulty_id,
     p.visibility, p.sensitive_level, p.uploader_id, p.latest_version_no,
     p.major_modified, p.comment_count, p.favorite_count, p.created_at, p.updated_at,
-    c.name_zh, c.name_en, c.is_high_risk,
-    COALESCE(a.name_zh, ''), COALESCE(a.name_en, ''),
+    pu.name_zh, pu.name_en, pu.is_high_risk,
+    cap.name_zh, cap.name_en,
     COALESCE(d.name_zh, ''), COALESCE(d.name_en, ''),
     COALESCE(s.sort_discrimination, 0), COALESCE(s.data_sufficient, false),
     COALESCE(top.avg_adjusted, 0)`
@@ -119,8 +119,8 @@ const selectColumns = `
 // 但子查询本身也包一层，保证扫描与排序都不会遇到空值（开发方案 §6.4 专项回归）。
 const fromClause = `
 FROM prompts p
-JOIN categories c ON c.id = p.category_id
-LEFT JOIN abilities a ON a.id = p.ability_id
+JOIN purposes pu ON pu.id = p.purpose_id
+JOIN capabilities cap ON cap.id = p.capability_id
 LEFT JOIN difficulties d ON d.id = p.difficulty_id
 LEFT JOIN prompt_stats s ON s.prompt_id = p.id
 LEFT JOIN LATERAL (
@@ -173,23 +173,21 @@ func queryPrompts(ctx context.Context, pool *pgxpool.Pool, where string, args []
 			visibility   string
 			sensitive    string
 			versionNo    string
-			abilityID    *int64
 			difficultyID *int64
 		)
 		if err := rows.Scan(
-			&item.Prompt.ID, &item.Prompt.Title, &item.Prompt.Description, &item.Prompt.CategoryID,
-			&abilityID, &difficultyID, &visibility, &sensitive, &item.Prompt.UploaderID,
+			&item.Prompt.ID, &item.Prompt.Title, &item.Prompt.Description, &item.Prompt.PurposeID,
+			&item.Prompt.CapabilityID, &difficultyID, &visibility, &sensitive, &item.Prompt.UploaderID,
 			&versionNo, &item.Prompt.MajorModified, &item.Prompt.CommentCount, &item.Prompt.FavoriteCount,
 			&item.Prompt.CreatedAt, &item.Prompt.UpdatedAt,
-			&item.CategoryNameZh, &item.CategoryNameEn, &item.Prompt.HighRisk,
-			&item.AbilityNameZh, &item.AbilityNameEn,
+			&item.PurposeNameZh, &item.PurposeNameEn, &item.Prompt.HighRisk,
+			&item.CapabilityNameZh, &item.CapabilityNameEn,
 			&item.DifficultyNameZh, &item.DifficultyNameEn,
 			&item.Discrimination, &item.DataSufficient, &item.AvgAdjusted,
 		); err != nil {
 			return nil, fmt.Errorf("扫描公开提示词列表行: %w", err)
 		}
 
-		item.Prompt.AbilityID = abilityID
 		item.Prompt.DifficultyID = difficultyID
 		item.Prompt.Visibility = domain.Visibility(visibility)
 		item.Prompt.Sensitive = domain.SensitiveLevel(sensitive)

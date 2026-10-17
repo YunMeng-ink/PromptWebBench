@@ -3,7 +3,8 @@ import type { LibraryQuestion } from '@/api/library'
 import {
   type CopyLabels,
   kindKey,
-  localizedCategory,
+  localizedCapability,
+  localizedPurpose,
   PLACEHOLDER,
   promptBodyText,
   promptFullText,
@@ -16,7 +17,8 @@ import {
 
 const labels: CopyLabels = {
   title: '标题',
-  category: '类别',
+  purpose: '考察目的',
+  capability: '考察维度',
   version: '版本',
   tags: '标签',
   description: '说明',
@@ -33,8 +35,10 @@ function questionFixture(overrides: Partial<LibraryQuestion> = {}): LibraryQuest
     title: '引用题标题',
     body: '引用题正文',
     description: '',
-    category_name_zh: '逻辑推理',
-    category_name_en: 'Logical Reasoning',
+    purpose_name_zh: '边界探测',
+    purpose_name_en: 'Capability Boundary',
+    capability_name_zh: '推理',
+    capability_name_en: 'Reasoning',
     sensitive_level: 'low',
     sort_order: 1,
     tags: [],
@@ -57,12 +61,20 @@ describe('题库展示规则', () => {
     expect(kindKey('derived')).toBe('library.kindDerived')
   })
 
-  it('类别名称按语言选择，缺失时给占位符', () => {
+  it('考察目的与考察维度按语言选择，缺失时给占位符', () => {
     const question = questionFixture()
-    expect(localizedCategory(question, 'zh')).toBe('逻辑推理')
-    expect(localizedCategory(question, 'en')).toBe('Logical Reasoning')
+    expect(localizedPurpose(question, 'zh')).toBe('边界探测')
+    expect(localizedPurpose(question, 'en')).toBe('Capability Boundary')
+    expect(localizedCapability(question, 'zh')).toBe('推理')
+    expect(localizedCapability(question, 'en')).toBe('Reasoning')
     expect(
-      localizedCategory(questionFixture({ category_name_zh: '', category_name_en: '' }), 'zh'),
+      localizedPurpose(questionFixture({ purpose_name_zh: '', purpose_name_en: '' }), 'zh'),
+    ).toBe(PLACEHOLDER)
+    expect(
+      localizedCapability(
+        questionFixture({ capability_name_zh: '', capability_name_en: '' }),
+        'zh',
+      ),
     ).toBe(PLACEHOLDER)
   })
 
@@ -96,7 +108,8 @@ describe('复制文本', () => {
     const text = promptFullText(
       {
         title: '标题一',
-        category: '逻辑推理',
+        purpose: '边界探测',
+        capability: '推理',
         versionNo: 'v1.0',
         tags: ['标签甲', '标签乙'],
         description: '',
@@ -105,7 +118,7 @@ describe('复制文本', () => {
       labels,
     )
     expect(text).toBe(
-      '标题：标题一\n类别：逻辑推理\n版本：v1.0\n标签：标签甲、标签乙\n\n正文\n正文内容',
+      '标题：标题一\n考察目的：边界探测\n考察维度：推理\n版本：v1.0\n标签：标签甲、标签乙\n\n正文\n正文内容',
     )
     expect(text).not.toContain('说明：')
   })
@@ -115,7 +128,8 @@ describe('复制文本', () => {
       {
         title: '引用题标题',
         kindName: '引用题',
-        category: '逻辑推理',
+        purpose: '边界探测',
+        capability: '推理',
         tags: [],
         description: '题目说明',
         source: '#12 (v2.0)',
@@ -134,7 +148,8 @@ describe('复制文本', () => {
       {
         title: '（来源提示词已删除）',
         kindName: '引用题',
-        category: PLACEHOLDER,
+        purpose: PLACEHOLDER,
+        capability: PLACEHOLDER,
         tags: [],
         description: '',
         source: PLACEHOLDER,
@@ -143,7 +158,7 @@ describe('复制文本', () => {
       labels,
     )
     expect(text).toBe(
-      `标题：（来源提示词已删除）\n类型：引用题\n类别：${PLACEHOLDER}\n\n正文\n${PLACEHOLDER}`,
+      `标题：（来源提示词已删除）\n类型：引用题\n考察目的：${PLACEHOLDER}\n考察维度：${PLACEHOLDER}\n\n正文\n${PLACEHOLDER}`,
     )
   })
 })

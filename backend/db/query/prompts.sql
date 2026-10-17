@@ -7,7 +7,7 @@ SELECT pg_advisory_xact_lock((4::bigint << 32) + sqlc.arg(owner_id)::bigint);
 
 -- name: InsertPrompt :one
 INSERT INTO prompts (
-    title, body, description, category_id, ability_id, difficulty_id,
+    title, body, description, purpose_id, capability_id, difficulty_id,
     visibility, sensitive_level, uploader_id, original_uploader_id,
     latest_version_no, major_modified
 )
@@ -17,7 +17,7 @@ RETURNING *;
 -- name: InsertPromptVersion :one
 INSERT INTO prompt_versions (
     prompt_id, version_no, major, minor, title, body, description,
-    category_id, ability_id, difficulty_id, visibility, sensitive_level,
+    purpose_id, capability_id, difficulty_id, visibility, sensitive_level,
     is_major, change_note, author_id
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
@@ -39,8 +39,8 @@ UPDATE prompts
 SET title = $2,
     body = $3,
     description = $4,
-    category_id = $5,
-    ability_id = $6,
+    purpose_id = $5,
+    capability_id = $6,
     difficulty_id = $7,
     visibility = $8,
     sensitive_level = $9,
@@ -49,16 +49,19 @@ WHERE id = $1 AND deleted_at IS NULL
 RETURNING *;
 
 -- name: GetPrompt :one
-SELECT p.*, c.is_high_risk
+SELECT p.*, pu.is_high_risk
 FROM prompts p
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
 WHERE p.id = $1 AND p.deleted_at IS NULL;
 
--- 后台读取提示词：包含回收站中的条目，并带出类别的中英名称供列表与详情直接展示。
+-- 后台读取提示词：包含回收站中的条目，并带出考察目的与考察维度的中英名称供列表与详情直接展示。
 -- name: GetPromptIncludingDeleted :one
-SELECT p.*, c.is_high_risk, c.name_zh AS category_name_zh, c.name_en AS category_name_en
+SELECT p.*, pu.is_high_risk,
+       pu.name_zh AS purpose_name_zh, pu.name_en AS purpose_name_en,
+       cap.name_zh AS capability_name_zh, cap.name_en AS capability_name_en
 FROM prompts p
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
+JOIN capabilities cap ON cap.id = p.capability_id
 WHERE p.id = $1;
 
 -- 恢复回收站中的提示词（需求 §11.3）。
@@ -85,16 +88,19 @@ DELETE FROM prompts WHERE id = $1 AND deleted_at IS NOT NULL;
 -- 使「引用计数 → 删除」两步与「读提示词 → 插引用」互斥（C-21）。
 -- 列与 GetPromptIncludingDeleted 一致，服务层复用同一转换函数。
 -- name: LockPromptIncludingDeleted :one
-SELECT p.*, c.is_high_risk, c.name_zh AS category_name_zh, c.name_en AS category_name_en
+SELECT p.*, pu.is_high_risk,
+       pu.name_zh AS purpose_name_zh, pu.name_en AS purpose_name_en,
+       cap.name_zh AS capability_name_zh, cap.name_en AS capability_name_en
 FROM prompts p
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
+JOIN capabilities cap ON cap.id = p.capability_id
 WHERE p.id = $1
 FOR UPDATE OF p;
 
 -- name: LockPrompt :one
-SELECT p.*, c.is_high_risk
+SELECT p.*, pu.is_high_risk
 FROM prompts p
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
 WHERE p.id = $1 AND p.deleted_at IS NULL
 FOR UPDATE OF p;
 
@@ -185,9 +191,9 @@ UPDATE prompts SET favorite_count = favorite_count + 1 WHERE id = $1;
 UPDATE prompts SET favorite_count = GREATEST(favorite_count - 1, 0) WHERE id = $1;
 
 -- name: ListOwnPrompts :many
-SELECT p.*, c.is_high_risk
+SELECT p.*, pu.is_high_risk
 FROM prompts p
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
 WHERE p.uploader_id = $1 AND p.deleted_at IS NULL
 ORDER BY p.updated_at DESC, p.id DESC
 LIMIT $2 OFFSET $3;

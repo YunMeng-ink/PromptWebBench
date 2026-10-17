@@ -239,14 +239,15 @@ func (s *Service) retentionDays(ctx context.Context) int64 {
 // promptSnapshot 是写入操作日志与回收站的提示词摘要。
 func promptSnapshot(p domain.Prompt) map[string]any {
 	return map[string]any{
-		"id":           p.ID,
-		"title":        p.Title,
-		"visibility":   string(p.Visibility),
-		"uploader_id":  p.UploaderID,
-		"version_no":   p.LatestVersion.String(),
-		"category_id":  p.CategoryID,
-		"high_risk":    p.HighRisk,
-		"sensitive":    string(p.Sensitive),
-		"major_modify": p.MajorModified,
+		"id":            p.ID,
+		"title":         p.Title,
+		"visibility":    string(p.Visibility),
+		"uploader_id":   p.UploaderID,
+		"version_no":    p.LatestVersion.String(),
+		"purpose_id":    p.PurposeID,
+		"capability_id": p.CapabilityID,
+		"high_risk":     p.HighRisk,
+		"sensitive":     string(p.Sensitive),
+		"major_modify":  p.MajorModified,
 	}
 }

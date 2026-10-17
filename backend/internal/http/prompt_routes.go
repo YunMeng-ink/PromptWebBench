@@ -60,8 +60,8 @@ func (s *Server) registerPromptRoutes() {
 type listPromptsInput struct {
 	Page         int32    `query:"page" default:"1" minimum:"1" doc:"页码，从 1 起"`
 	PageSize     int32    `query:"page_size" default:"20" minimum:"1" maximum:"100" doc:"每页条数，默认 20，上限 100"`
-	CategoryID   string   `query:"category_id" doc:"按类别筛选"`
-	AbilityID    string   `query:"ability_id" doc:"按能力维度筛选"`
+	PurposeID    string   `query:"purpose_id" doc:"按考察目的筛选"`
+	CapabilityID string   `query:"capability_id" doc:"按考察维度筛选"`
 	DifficultyID string   `query:"difficulty_id" doc:"按难度筛选"`
 	Keyword      string   `query:"keyword" maxLength:"100" doc:"标题、正文与描述中的关键词"`
 	ModelID      string   `query:"model_id" doc:"按适用模型筛选"`
@@ -85,10 +85,10 @@ func (in *listPromptsInput) filter() (repo.PromptListFilter, error) {
 	}
 
 	var err error
-	if out.CategoryID, err = id(in.CategoryID); err != nil {
+	if out.PurposeID, err = id(in.PurposeID); err != nil {
 		return repo.PromptListFilter{}, err
 	}
-	if out.AbilityID, err = id(in.AbilityID); err != nil {
+	if out.CapabilityID, err = id(in.CapabilityID); err != nil {
 		return repo.PromptListFilter{}, err
 	}
 	if out.DifficultyID, err = id(in.DifficultyID); err != nil {
@@ -157,10 +157,10 @@ func buildPromptList(list repo.PromptList) *promptListResponse {
 	for _, item := range list.Items {
 		out.Body.Items = append(out.Body.Items, promptListItemDTO{
 			promptDTO:        toPromptDTO(item.Prompt),
-			CategoryNameZh:   item.CategoryNameZh,
-			CategoryNameEn:   item.CategoryNameEn,
-			AbilityNameZh:    item.AbilityNameZh,
-			AbilityNameEn:    item.AbilityNameEn,
+			PurposeNameZh:    item.PurposeNameZh,
+			PurposeNameEn:    item.PurposeNameEn,
+			CapabilityNameZh: item.CapabilityNameZh,
+			CapabilityNameEn: item.CapabilityNameEn,
 			DifficultyNameZh: item.DifficultyNameZh,
 			DifficultyNameEn: item.DifficultyNameEn,
 			Discrimination:   item.Discrimination,
@@ -182,8 +182,8 @@ type promptBody struct {
 	Title          string  `json:"title" required:"true" minLength:"1" maxLength:"200" doc:"标题"`
 	Body           string  `json:"body" required:"true" minLength:"1" maxLength:"200000" doc:"提示词正文"`
 	Description    string  `json:"description,omitempty" maxLength:"2000" doc:"描述说明"`
-	CategoryID     int64   `json:"category_id" required:"true" minimum:"1" doc:"类别"`
-	AbilityID      *int64  `json:"ability_id,omitempty" minimum:"1" doc:"能力维度"`
+	PurposeID      int64   `json:"purpose_id" required:"true" minimum:"1" doc:"考察目的"`
+	CapabilityID   int64   `json:"capability_id" required:"true" minimum:"1" doc:"考察维度"`
 	DifficultyID   *int64  `json:"difficulty_id,omitempty" minimum:"1" doc:"难度"`
 	Visibility     string  `json:"visibility,omitempty" default:"public" enum:"public,private,developer" doc:"可见性，默认公开"`
 	SensitiveLevel string  `json:"sensitive_level,omitempty" default:"low" enum:"low,medium,high" doc:"敏感级别，默认 low"`
@@ -217,8 +217,8 @@ func (b promptBody) toInput() (prompt.Input, error) {
 		Title:         b.Title,
 		Body:          b.Body,
 		Description:   b.Description,
-		CategoryID:    b.CategoryID,
-		AbilityID:     b.AbilityID,
+		PurposeID:     b.PurposeID,
+		CapabilityID:  b.CapabilityID,
 		DifficultyID:  b.DifficultyID,
 		Visibility:    parsedVisibility,
 		Sensitive:     parsedSensitive,

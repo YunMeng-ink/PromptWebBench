@@ -147,7 +147,7 @@ async function removeItem(item: FavoriteItem): Promise<void> {
   }
 }
 
-/** localized 按当前语言选择类别名。 */
+/** localized 按当前语言选择考察目的或考察维度名称。 */
 function localized(zh: string, en: string): string {
   return locale.value === 'en' ? en : zh
 }
@@ -174,13 +174,15 @@ watch(ownerId, () => {
 <template>
   <section class="pb-favorites">
     <header class="pb-favorites__head">
-      <h1 class="pb-favorites__title" data-testid="favorites-title">
-        {{ viewingSelf ? t('prompt.favoriteManage') : t('prompt.profileTitle') }}
-      </h1>
+      <div class="pb-favorites__heading">
+        <span class="pb-eyebrow" aria-hidden="true">Favorites</span>
+        <h1 class="pb-favorites__title" data-testid="favorites-title">
+          {{ viewingSelf ? t('prompt.favoriteManage') : t('prompt.profileTitle') }}
+        </h1>
+      </div>
       <el-button
         v-if="viewingSelf && auth.isAuthenticated"
         type="primary"
-        size="small"
         data-testid="favorites-create"
         @click="createDialog"
       >
@@ -192,9 +194,9 @@ watch(ownerId, () => {
     <p v-if="notice" class="pb-favorites__notice" data-testid="favorites-notice">{{ notice }}</p>
 
     <p v-if="loading" class="pb-favorites__hint">{{ t('prompt.favoriteEmpty') }}</p>
-    <p v-else-if="favorites.length === 0" data-testid="favorites-empty">
-      {{ t('prompt.favoriteEmpty') }}
-    </p>
+    <div v-else-if="favorites.length === 0" class="pb-empty" data-testid="favorites-empty">
+      <span class="pb-empty__title">{{ t('prompt.favoriteEmpty') }}</span>
+    </div>
 
     <div v-else class="pb-favorites__layout">
       <ul class="pb-favorites__list" data-testid="favorites-list">
@@ -249,7 +251,8 @@ watch(ownerId, () => {
               {{ item.title }}
             </RouterLink>
             <span class="pb-favorites__item-meta">
-              {{ item.version_no }} · {{ localized(item.category_name_zh, item.category_name_en) }}
+              {{ item.version_no }} · {{ localized(item.purpose_name_zh, item.purpose_name_en) }}
+              · {{ localized(item.capability_name_zh, item.capability_name_en) }}
             </span>
             <el-button
               v-if="viewingSelf && auth.isAuthenticated"
@@ -315,61 +318,94 @@ watch(ownerId, () => {
 
 <style scoped>
 .pb-favorites {
-  padding: var(--pb-space-lg) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-lg);
+  padding: var(--pb-space-xl) 0 var(--pb-space-2xl);
 }
 
 .pb-favorites__head {
-  align-items: center;
   display: flex;
+  align-items: flex-end;
   justify-content: space-between;
+  gap: var(--pb-space-lg);
+  padding-bottom: var(--pb-space-md);
+  border-bottom: 1px solid var(--pb-line);
+}
+
+.pb-favorites__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-xs);
 }
 
 .pb-favorites__title {
-  font-size: 22px;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   margin: 0;
 }
 
 .pb-favorites__layout {
   display: grid;
+  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
   gap: var(--pb-space-lg);
-  grid-template-columns: minmax(200px, 260px) 1fr;
-  margin-top: var(--pb-space-md);
+  align-items: start;
 }
 
 .pb-favorites__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: var(--pb-space-sm);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-lg);
 }
 
 .pb-favorites__entry {
-  border-bottom: 1px solid var(--pb-color-border);
-  padding: var(--pb-space-xs) 0;
+  padding: var(--pb-space-sm) var(--pb-space-sm) var(--pb-space-sm) var(--pb-space-md);
+  border-left: 2px solid transparent;
+  border-radius: var(--pb-radius-sm);
+  transition:
+    background-color var(--pb-duration) var(--pb-ease),
+    border-color var(--pb-duration) var(--pb-ease);
+}
+
+.pb-favorites__entry:hover {
+  background: var(--pb-surface-muted);
 }
 
 .pb-favorites__entry--active {
-  border-left: 3px solid var(--el-color-primary);
-  padding-left: var(--pb-space-xs);
+  border-left-color: var(--pb-accent);
+  background: var(--pb-accent-soft);
 }
 
 .pb-favorites__entry-button {
-  background: none;
-  border: none;
-  cursor: pointer;
-  display: block;
-  padding: 0;
-  text-align: left;
   width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
 .pb-favorites__name {
+  display: block;
+  color: var(--pb-ink);
+  font-size: 14px;
   font-weight: 600;
 }
 
 .pb-favorites__meta,
 .pb-favorites__item-meta {
-  color: var(--pb-color-text-faint);
   display: block;
+  margin-top: 2px;
+  color: var(--pb-ink-faint);
   font-size: 12px;
 }
 
@@ -379,6 +415,15 @@ watch(ownerId, () => {
   margin-top: var(--pb-space-xs);
 }
 
+.pb-favorites__items {
+  min-width: 0;
+  padding: var(--pb-space-lg);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-lg);
+  box-shadow: var(--pb-shadow-sm);
+}
+
 .pb-favorites__items ul {
   list-style: none;
   margin: 0;
@@ -386,24 +431,44 @@ watch(ownerId, () => {
 }
 
 .pb-favorites__item {
-  align-items: center;
-  border-bottom: 1px solid var(--pb-color-border);
   display: flex;
+  align-items: center;
   gap: var(--pb-space-sm);
-  padding: var(--pb-space-xs) 0;
+  padding: var(--pb-space-md) 0;
+  border-bottom: 1px solid var(--pb-line);
+}
+
+.pb-favorites__item:last-child {
+  border-bottom: 0;
 }
 
 .pb-favorites__item-title {
   flex: 1;
+  min-width: 0;
+  color: var(--pb-ink);
+  font-size: 15px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.pb-favorites__item-title:hover {
+  color: var(--pb-accent);
 }
 
 .pb-favorites__error {
-  color: var(--el-color-danger);
+  margin: 0;
+  padding: var(--pb-space-sm) var(--pb-space-md);
+  border-radius: var(--pb-radius-md);
+  background: var(--pb-accent-soft);
+  color: var(--pb-danger);
+  font-size: 13.5px;
 }
 
 .pb-favorites__notice,
 .pb-favorites__hint {
-  color: var(--pb-color-text-soft);
+  margin: 0;
+  color: var(--pb-ink-soft);
+  font-size: 13.5px;
 }
 
 @media (max-width: 720px) {

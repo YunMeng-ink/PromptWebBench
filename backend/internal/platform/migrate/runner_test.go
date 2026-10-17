@@ -60,9 +60,9 @@ func TestApplyBuildsFullSchema(t *testing.T) {
 		t.Fatalf("应用迁移失败: %v", err)
 	}
 
-	// 39 张业务表（开发方案 §4.1），另有引擎自建的 schema_migrations。
-	if got := countTables(t, pool); got != 40 {
-		t.Fatalf("表数量 = %d，期望 40（39 张业务表 + schema_migrations）", got)
+	// 40 张业务表，另有引擎自建的 schema_migrations。
+	if got := countTables(t, pool); got != 41 {
+		t.Fatalf("表数量 = %d，期望 41（40 张业务表 + schema_migrations）", got)
 	}
 	if got, want := countMigrated(t, pool), embeddedMigrationCount(t); got != want {
 		t.Fatalf("迁移记录数 = %d，期望 %d（内嵌迁移文件数）", got, want)
@@ -81,8 +81,8 @@ func TestApplyIsIdempotent(t *testing.T) {
 	if got, want := countMigrated(t, pool), embeddedMigrationCount(t); got != want {
 		t.Fatalf("重复应用后迁移记录数 = %d，期望仍为 %d", got, want)
 	}
-	if got := countTables(t, pool); got != 40 {
-		t.Fatalf("重复应用后表数量 = %d，期望仍为 40", got)
+	if got := countTables(t, pool); got != 41 {
+		t.Fatalf("重复应用后表数量 = %d，期望仍为 41", got)
 	}
 }
 
@@ -114,8 +114,8 @@ func TestSeedDataIsComplete(t *testing.T) {
 		table string
 		want  int
 	}{
-		{"categories", 13},
-		{"abilities", 8},
+		{"capabilities", 12},
+		{"purposes", 7},
 		{"difficulties", 3},
 		// 26 项参数（C-45）加统计缓存时长（阶段 7 按 §3.1 补充）。
 		{"config", 27},
@@ -145,14 +145,14 @@ func TestSeedDataIsComplete(t *testing.T) {
 		t.Fatalf("系统账户 = %s/%v/%s，期望 沧海遗粟/true/normal", username, isSystem, status)
 	}
 
-	// 越狱对抗类别是默认的高风险类别（C-19）。
+	// 对抗探测是默认的高风险考察目的（C-19）。
 	var highRisk bool
 	if err := pool.QueryRow(ctx,
-		`SELECT is_high_risk FROM categories WHERE slug = 'jailbreak'`).Scan(&highRisk); err != nil {
-		t.Fatalf("查询越狱对抗类别失败: %v", err)
+		`SELECT is_high_risk FROM purposes WHERE slug = 'adversarial'`).Scan(&highRisk); err != nil {
+		t.Fatalf("查询对抗探测考察目的失败: %v", err)
 	}
 	if !highRisk {
-		t.Fatal("越狱对抗类别应默认标记为高风险")
+		t.Fatal("对抗探测考察目的应默认标记为高风险")
 	}
 }
 
@@ -162,7 +162,7 @@ func TestDownScriptsDropEverything(t *testing.T) {
 
 	// 直接执行仓库中的逆向脚本，验证建表与删表互相对称。
 	downDir := filepath.Join("..", "..", "..", "migrations", "down")
-	for _, name := range []string{"003_seed.sql", "002_schema.sql", "001_extensions.sql"} {
+	for _, name := range []string{"009_classification.sql", "003_seed.sql", "002_schema.sql", "001_extensions.sql"} {
 		content, err := os.ReadFile(filepath.Join(downDir, name))
 		if err != nil {
 			t.Fatalf("读取逆向脚本 %s 失败: %v", name, err)

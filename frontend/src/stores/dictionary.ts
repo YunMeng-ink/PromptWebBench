@@ -1,28 +1,28 @@
-// 字典数据的进程内缓存。类别、能力维度、难度、标签与模型变动极少，
+// 字典数据的进程内缓存。考察目的、考察维度、难度、主题标签与模型变动极少，
 // 每个页面各拉一次会造成重复请求，这里统一缓存并允许手动刷新。
 
 import { defineStore } from 'pinia'
 import { computed, ref } from 'vue'
 import {
-  type Ability,
-  type Category,
+  type Capability,
   type Difficulty,
   dictionaryApi,
   type Model,
+  type Purpose,
   type Tag,
 } from '@/api/prompt'
 
 interface Dictionaries {
-  categories: Category[]
-  abilities: Ability[]
+  purposes: Purpose[]
+  capabilities: Capability[]
   difficulties: Difficulty[]
   tags: Tag[]
   models: Model[]
 }
 
 const empty: Dictionaries = {
-  categories: [],
-  abilities: [],
+  purposes: [],
+  capabilities: [],
   difficulties: [],
   tags: [],
   models: [],
@@ -49,16 +49,16 @@ export const useDictionaryStore = defineStore('dictionary', () => {
     error.value = ''
     inFlight = (async () => {
       try {
-        const [categories, abilities, difficulties, tags, models] = await Promise.all([
-          dictionaryApi.categories(),
-          dictionaryApi.abilities(),
+        const [purposes, capabilities, difficulties, tags, models] = await Promise.all([
+          dictionaryApi.purposes(),
+          dictionaryApi.capabilities(),
           dictionaryApi.difficulties(),
           dictionaryApi.tags(),
           dictionaryApi.models(),
         ])
         data.value = {
-          categories: categories.items,
-          abilities: abilities.items,
+          purposes: purposes.items,
+          capabilities: capabilities.items,
           difficulties: difficulties.items,
           tags: tags.items,
           models: models.items,
@@ -74,8 +74,12 @@ export const useDictionaryStore = defineStore('dictionary', () => {
     return inFlight
   }
 
-  function categoryById(id: number | undefined): Category | undefined {
-    return data.value.categories.find((item) => item.id === id)
+  function purposeById(id: number | undefined): Purpose | undefined {
+    return data.value.purposes.find((item) => item.id === id)
+  }
+
+  function capabilityById(id: number | undefined): Capability | undefined {
+    return data.value.capabilities.find((item) => item.id === id)
   }
 
   const modelById = computed(() => {
@@ -86,5 +90,5 @@ export const useDictionaryStore = defineStore('dictionary', () => {
     return index
   })
 
-  return { data, loaded, loading, error, load, categoryById, modelById }
+  return { data, loaded, loading, error, load, purposeById, capabilityById, modelById }
 })

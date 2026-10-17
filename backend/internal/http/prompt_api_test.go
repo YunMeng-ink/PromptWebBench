@@ -63,8 +63,8 @@ func TestPromptListClampsPageSizeToMaximum(t *testing.T) {
 	}
 }
 
-func TestHighRiskCategoryHiddenFromOrdinaryUserOverHTTP(t *testing.T) {
-	// C-20 在接口层的验收：普通用户既不能选高风险类别，也读不到已有的高风险内容。
+func TestHighRiskPurposeHiddenFromOrdinaryUserOverHTTP(t *testing.T) {
+	// C-20 在接口层的验收：普通用户既不能选高风险考察目的，也读不到已有的高风险内容。
 	env := newTestEnv(t)
 
 	devClient := env.newClient(t)
@@ -74,23 +74,28 @@ func TestHighRiskCategoryHiddenFromOrdinaryUserOverHTTP(t *testing.T) {
 	ordinary.prime()
 	registerVerifyLogin(t, env, ordinary, "user-highrisk@example.com", httpTestPassword)
 
-	// 普通用户的类别列表不应出现高风险类别。
-	for slug := range categoryIDs(t, ordinary) {
-		if slug == "jailbreak" {
-			t.Fatal("普通用户的类别列表不应包含高风险类别")
+	// 普通用户的考察目的列表不应出现高风险条目。
+	for slug := range purposeIDs(t, ordinary) {
+		if slug == "adversarial" {
+			t.Fatal("普通用户的考察目的列表不应包含高风险条目")
 		}
 	}
 
-	devCategories := categoryIDs(t, devClient)
-	jailbreakID, ok := devCategories["jailbreak"]
+	devPurposes := purposeIDs(t, devClient)
+	adversarialID, ok := devPurposes["adversarial"]
 	if !ok {
-		t.Fatal("开发者的类别列表应包含高风险类别")
+		t.Fatal("开发者的考察目的列表应包含高风险条目")
+	}
+	capabilityList := capabilityIDs(t, devClient)
+	defaultCapabilityID, ok := capabilityList["reasoning"]
+	if !ok {
+		t.Fatal("考察维度字典缺少 reasoning")
 	}
 
-	// 创建路径：普通用户选高风险类别 → 403。
+	// 创建路径：普通用户选高风险考察目的 → 403。
 	expectErrorCode(t, ordinary.post(api.APIPrefix+"/prompts", map[string]any{
-		"title": "普通用户的高风险提示词", "body": "正文", "category_id": jailbreakID,
-		"visibility": "public",
+		"title": "普通用户的高风险提示词", "body": "正文", "purpose_id": adversarialID,
+		"capability_id": defaultCapabilityID, "visibility": "public",
 	}), http.StatusForbidden, "forbidden")
 
 	// 开发者创建一条高风险且公开的提示词。
@@ -100,8 +105,8 @@ func TestHighRiskCategoryHiddenFromOrdinaryUserOverHTTP(t *testing.T) {
 		} `json:"prompt"`
 		VersionNo string `json:"version_no"`
 	}](t, devClient.post(api.APIPrefix+"/prompts", map[string]any{
-		"title": "高风险公开提示词", "body": "正文", "category_id": jailbreakID,
-		"visibility": "public",
+		"title": "高风险公开提示词", "body": "正文", "purpose_id": adversarialID,
+		"capability_id": capabilityList["safety"], "visibility": "public",
 	}))
 	promptID := created.Prompt.ID
 
@@ -118,19 +123,23 @@ func TestHighRiskCategoryHiddenFromOrdinaryUserOverHTTP(t *testing.T) {
 	expectStatus(t, devClient.get(fmt.Sprintf("%s/prompts/%d", api.APIPrefix, promptID)), http.StatusOK)
 }
 
-func TestOrdinaryUserCannotPatchToHighRiskCategory(t *testing.T) {
+func TestOrdinaryUserCannotPatchToHighRiskPurpose(t *testing.T) {
 	// C-20 的更新路径回归：这是普通用户绕过限制的主要方式。
 	env := newTestEnv(t)
 	developer := env.newClient(t)
 	registerDeveloper(t, env, developer, "dev-patch@example.com", httpTestPassword)
 
-	categories := categoryIDs(t, developer)
-	reasoningID, jailbreakID := categories["reasoning"], categories["jailbreak"]
-	if reasoningID == 0 || jailbreakID == 0 {
-		t.Fatal("类别字典缺少 reasoning 或 jailbreak")
+	purposes := purposeIDs(t, developer)
+	purposeID, highRiskID := purposes["capability_boundary"], purposes["adversarial"]
+	if purposeID == 0 || highRiskID == 0 {
+		t.Fatal("考察目的字典缺少 capability_boundary 或 adversarial")
+	}
+	capabilityID := capabilityIDs(t, developer)["reasoning"]
+	if capabilityID == 0 {
+		t.Fatal("考察维度字典缺少 reasoning")
 	}
 
-	// 普通类别、公开可见性，先创建成功。
+	// 普通目的、公开可见性，先创建成功。
 	ordinary := env.newClient(t)
 	ordinary.prime()
 	registerVerifyLogin(t, env, ordinary, "user-patch@example.com", httpTestPassword)
@@ -140,31 +149,31 @@ func TestOrdinaryUserCannotPatchToHighRiskCategory(t *testing.T) {
 			ID int64 `json:"id"`
 		} `json:"prompt"`
 	}](t, ordinary.post(api.APIPrefix+"/prompts", map[string]any{
-		"title": "可修改的提示词", "body": "正文", "category_id": reasoningID,
-		"visibility": "public",
+		"title": "可修改的提示词", "body": "正文", "purpose_id": purposeID,
+		"capability_id": capabilityID, "visibility": "public",
 	}))
 	promptID := created.Prompt.ID
 
-	// 直接改类别为高风险 → 403。
+	// 直接改考察目的为高风险 → 403。
 	expectErrorCode(t, ordinary.patch(fmt.Sprintf("%s/prompts/%d", api.APIPrefix, promptID), map[string]any{
-		"title": "改为高风险", "body": "正文", "category_id": jailbreakID,
-		"visibility": "public",
+		"title": "改为高风险", "body": "正文", "purpose_id": highRiskID,
+		"capability_id": capabilityID, "visibility": "public",
 	}), http.StatusForbidden, "forbidden")
 
-	// 类别未变，提示词仍可公开读取。
+	// 考察目的未变，提示词仍可公开读取。
 	detail := decodeBody[struct {
 		Prompt struct {
-			CategoryID int64 `json:"category_id"`
+			PurposeID int64 `json:"purpose_id"`
 		} `json:"prompt"`
 	}](t, ordinary.get(fmt.Sprintf("%s/prompts/%d", api.APIPrefix, promptID)))
-	if detail.Prompt.CategoryID != reasoningID {
-		t.Errorf("被拒绝的修改不应生效，类别 = %d，期望 %d", detail.Prompt.CategoryID, reasoningID)
+	if detail.Prompt.PurposeID != purposeID {
+		t.Errorf("被拒绝的修改不应生效，考察目的 = %d，期望 %d", detail.Prompt.PurposeID, purposeID)
 	}
 
 	// 改可见性为 developer → 同样 403。
 	expectErrorCode(t, ordinary.patch(fmt.Sprintf("%s/prompts/%d", api.APIPrefix, promptID), map[string]any{
-		"title": "改为开发者可见", "body": "正文", "category_id": reasoningID,
-		"visibility": "developer",
+		"title": "改为开发者可见", "body": "正文", "purpose_id": purposeID,
+		"capability_id": capabilityID, "visibility": "developer",
 	}), http.StatusForbidden, "forbidden")
 }
 
@@ -176,13 +185,15 @@ func TestRatingOverHTTPEnforcesScaleAndUniqueness(t *testing.T) {
 	registerVerifyLogin(t, env, author, "author-rating@example.com", httpTestPassword)
 
 	modelID := firstModelID(t, env)
+	purposeID, capabilityID := defaultClassification(t, env)
 
 	created := decodeBody[struct {
 		Prompt struct {
 			ID int64 `json:"id"`
 		} `json:"prompt"`
 	}](t, author.post(api.APIPrefix+"/prompts", map[string]any{
-		"title": "被评分的提示词", "body": "正文", "category_id": 1, "visibility": "public",
+		"title": "被评分的提示词", "body": "正文", "purpose_id": purposeID,
+		"capability_id": capabilityID, "visibility": "public",
 	}))
 	promptID := created.Prompt.ID
 
@@ -225,12 +236,14 @@ func TestGuestCannotRate(t *testing.T) {
 	author.prime()
 	registerVerifyLogin(t, env, author, "author-guest-rate@example.com", httpTestPassword)
 
+	purposeID, capabilityID := defaultClassification(t, env)
 	created := decodeBody[struct {
 		Prompt struct {
 			ID int64 `json:"id"`
 		} `json:"prompt"`
 	}](t, author.post(api.APIPrefix+"/prompts", map[string]any{
-		"title": "公开提示词", "body": "正文", "category_id": 1, "visibility": "public",
+		"title": "公开提示词", "body": "正文", "purpose_id": purposeID,
+		"capability_id": capabilityID, "visibility": "public",
 	}))
 
 	modelID := firstModelID(t, env)
@@ -242,52 +255,48 @@ func TestGuestCannotRate(t *testing.T) {
 		http.StatusUnauthorized, "unauthorized")
 }
 
-func TestPromptListFiltersByCategoryAndKeyword(t *testing.T) {
-	// 6 维筛选中的类别与关键词两维在接口层可用。
+func TestPromptListFiltersByPurposeAndKeyword(t *testing.T) {
+	// 6 维筛选中的考察目的与关键词两维在接口层可用。
 	env := newTestEnv(t)
 	author := env.newClient(t)
 	author.prime()
 	registerVerifyLogin(t, env, author, "filter-author@example.com", httpTestPassword)
 
-	categories := decodeBody[struct {
-		Items []struct {
-			ID   int64  `json:"id"`
-			Slug string `json:"slug"`
-		} `json:"items"`
-	}](t, author.get(api.APIPrefix+"/categories"))
-	var reasoningID, mathID int64
-	for _, c := range categories.Items {
-		switch c.Slug {
-		case "reasoning":
-			reasoningID = c.ID
-		case "math":
-			mathID = c.ID
-		}
+	purposes := purposeIDs(t, author)
+	boundaryID, correctnessID := purposes["capability_boundary"], purposes["correctness"]
+	if boundaryID == 0 || correctnessID == 0 {
+		t.Fatal("考察目的字典缺少 capability_boundary 或 correctness")
+	}
+	capabilityID := capabilityIDs(t, author)["reasoning"]
+	if capabilityID == 0 {
+		t.Fatal("考察维度字典缺少 reasoning")
 	}
 
 	author.post(api.APIPrefix+"/prompts", map[string]any{
-		"title": "推理类提示词", "body": "正文一", "category_id": reasoningID, "visibility": "public",
+		"title": "推理类提示词", "body": "正文一", "purpose_id": boundaryID,
+		"capability_id": capabilityID, "visibility": "public",
 	})
 	author.post(api.APIPrefix+"/prompts", map[string]any{
-		"title": "数学类提示词", "body": "正文二", "category_id": mathID, "visibility": "public",
+		"title": "数学类提示词", "body": "正文二", "purpose_id": correctnessID,
+		"capability_id": capabilityID, "visibility": "public",
 	})
 
 	guest := env.newClient(t)
 	guest.prime()
 
-	byCategory := decodeBody[struct {
+	byPurpose := decodeBody[struct {
 		Items []struct {
-			Title      string `json:"title"`
-			CategoryID int64  `json:"category_id"`
+			Title     string `json:"title"`
+			PurposeID int64  `json:"purpose_id"`
 		} `json:"items"`
 		Total int64 `json:"total"`
-	}](t, guest.get(fmt.Sprintf("%s/prompts?category_id=%d", api.APIPrefix, reasoningID)))
+	}](t, guest.get(fmt.Sprintf("%s/prompts?purpose_id=%d", api.APIPrefix, boundaryID)))
 
-	if byCategory.Total != 1 || len(byCategory.Items) != 1 {
-		t.Fatalf("按类别筛选 total = %d，items = %d，期望各 1", byCategory.Total, len(byCategory.Items))
+	if byPurpose.Total != 1 || len(byPurpose.Items) != 1 {
+		t.Fatalf("按考察目的筛选 total = %d，items = %d，期望各 1", byPurpose.Total, len(byPurpose.Items))
 	}
-	if byCategory.Items[0].Title != "推理类提示词" {
-		t.Errorf("筛选结果标题 = %s，期望 推理类提示词", byCategory.Items[0].Title)
+	if byPurpose.Items[0].Title != "推理类提示词" {
+		t.Errorf("筛选结果标题 = %s，期望 推理类提示词", byPurpose.Items[0].Title)
 	}
 
 	byKeyword := decodeBody[struct {
@@ -307,8 +316,10 @@ func TestPromptListSortOrdersAreAccepted(t *testing.T) {
 	author.prime()
 	registerVerifyLogin(t, env, author, "sort-author@example.com", httpTestPassword)
 
+	purposeID, capabilityID := defaultClassification(t, env)
 	author.post(api.APIPrefix+"/prompts", map[string]any{
-		"title": "排序提示词", "body": "正文", "category_id": 1, "visibility": "public",
+		"title": "排序提示词", "body": "正文", "purpose_id": purposeID,
+		"capability_id": capabilityID, "visibility": "public",
 	})
 
 	guest := env.newClient(t)
@@ -327,12 +338,14 @@ func TestMajorChangeResponseCarriesNotice(t *testing.T) {
 	author.prime()
 	registerVerifyLogin(t, env, author, "major-author@example.com", httpTestPassword)
 
+	purposeID, capabilityID := defaultClassification(t, env)
 	created := decodeBody[struct {
 		Prompt struct {
 			ID int64 `json:"id"`
 		} `json:"prompt"`
 	}](t, author.post(api.APIPrefix+"/prompts", map[string]any{
-		"title": "将被重大修改的提示词", "body": "正文", "category_id": 1, "visibility": "public",
+		"title": "将被重大修改的提示词", "body": "正文", "purpose_id": purposeID,
+		"capability_id": capabilityID, "visibility": "public",
 	}))
 	promptID := created.Prompt.ID
 	path := fmt.Sprintf("%s/prompts/%d", api.APIPrefix, promptID)
@@ -343,8 +356,8 @@ func TestMajorChangeResponseCarriesNotice(t *testing.T) {
 		ArchivedRatings int64  `json:"archived_ratings"`
 		Notice          string `json:"notice"`
 	}](t, author.patch(path, map[string]any{
-		"title": "重大修改后的标题", "body": "正文", "category_id": 1,
-		"visibility": "public", "is_major_change": true,
+		"title": "重大修改后的标题", "body": "正文", "purpose_id": purposeID,
+		"capability_id": capabilityID, "visibility": "public", "is_major_change": true,
 	}))
 
 	if updated.VersionNo != "v2.0" {
@@ -429,7 +442,7 @@ func TestDictionaryEndpointsArePublic(t *testing.T) {
 	guest := env.newClient(t)
 	guest.prime()
 
-	for _, path := range []string{"/categories", "/abilities", "/difficulties", "/tags", "/models"} {
+	for _, path := range []string{"/purposes", "/capabilities", "/difficulties", "/tags", "/models"} {
 		resp := guest.get(api.APIPrefix + path)
 		expectStatus(t, resp, http.StatusOK)
 	}
@@ -467,21 +480,53 @@ func registerDeveloper(t *testing.T, env *testEnv, client *apiClient, email, pas
 	return user
 }
 
-// categoryIDs 返回 slug 到类别 ID 的映射，供用例按名称取 ID。
-func categoryIDs(t *testing.T, client *apiClient) map[string]int64 {
+// purposeIDs 返回 slug 到考察目的 ID 的映射，供用例按名称取 ID。
+func purposeIDs(t *testing.T, client *apiClient) map[string]int64 {
 	t.Helper()
 	body := decodeBody[struct {
 		Items []struct {
 			ID   int64  `json:"id"`
 			Slug string `json:"slug"`
 		} `json:"items"`
-	}](t, client.get(api.APIPrefix+"/categories"))
+	}](t, client.get(api.APIPrefix+"/purposes"))
 
 	out := make(map[string]int64, len(body.Items))
 	for _, item := range body.Items {
 		out[item.Slug] = item.ID
 	}
 	return out
+}
+
+// capabilityIDs 返回 slug 到考察维度 ID 的映射。
+func capabilityIDs(t *testing.T, client *apiClient) map[string]int64 {
+	t.Helper()
+	body := decodeBody[struct {
+		Items []struct {
+			ID   int64  `json:"id"`
+			Slug string `json:"slug"`
+		} `json:"items"`
+	}](t, client.get(api.APIPrefix+"/capabilities"))
+
+	out := make(map[string]int64, len(body.Items))
+	for _, item := range body.Items {
+		out[item.Slug] = item.ID
+	}
+	return out
+}
+
+// defaultClassification 返回创建提示词使用的默认考察目的与考察维度。
+func defaultClassification(t *testing.T, env *testEnv) (int64, int64) {
+	t.Helper()
+	var purposeID, capabilityID int64
+	if err := env.pool.QueryRow(t.Context(),
+		`SELECT id FROM purposes WHERE slug = 'capability_boundary'`).Scan(&purposeID); err != nil {
+		t.Fatalf("读取默认考察目的失败: %v", err)
+	}
+	if err := env.pool.QueryRow(t.Context(),
+		`SELECT id FROM capabilities WHERE slug = 'reasoning'`).Scan(&capabilityID); err != nil {
+		t.Fatalf("读取默认考察维度失败: %v", err)
+	}
+	return purposeID, capabilityID
 }
 
 // clientSessionCookie 取出测试客户端持有的会话 Cookie 值，供需要自行构造

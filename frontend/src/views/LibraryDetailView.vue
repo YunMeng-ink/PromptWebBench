@@ -19,7 +19,8 @@ import { useAuthStore } from '@/stores/auth'
 import {
   downloadText,
   kindKey,
-  localizedCategory,
+  localizedCapability,
+  localizedPurpose,
   remainingDays,
   sourceMissing,
 } from '@/views/libraryText'
@@ -294,7 +295,8 @@ watch(
 
     <template v-else-if="library">
       <header class="pb-library__head">
-        <div>
+        <div class="pb-library__heading">
+          <span class="pb-eyebrow" aria-hidden="true">Library</span>
           <h1 class="pb-library__title" data-testid="library-name">{{ library.name }}</h1>
           <p class="pb-library__meta" data-testid="library-meta">
             {{ t(library.role === 'owner' ? 'library.roleOwner' : 'library.roleCollaborator') }} ·
@@ -361,7 +363,10 @@ watch(
             </RouterLink>
             <span class="pb-library__question-meta" :data-testid="`question-meta-${question.id}`">
               {{ t(kindKey(question.kind)) }} ·
-              {{ localizedCategory(question, locale) }}
+              {{ localizedPurpose(question, locale) }}
+              <template v-if="question.capability_name_zh">
+                · {{ localizedCapability(question, locale) }}
+              </template>
               <template v-if="question.tags.length > 0"> · {{ question.tags.join('、') }}</template>
             </span>
             <p
@@ -632,39 +637,77 @@ watch(
 
 <style scoped>
 .pb-library {
-  padding: var(--pb-space-lg) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-lg);
+  padding: var(--pb-space-xl) 0 var(--pb-space-2xl);
 }
 
 .pb-library__head {
-  align-items: flex-start;
   display: flex;
+  align-items: flex-end;
   justify-content: space-between;
+  gap: var(--pb-space-lg);
+  padding-bottom: var(--pb-space-md);
+  border-bottom: 1px solid var(--pb-line);
+}
+
+.pb-library__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-xs);
+  min-width: 0;
 }
 
 .pb-library__title {
-  font-size: 22px;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   margin: 0;
+}
+
+.pb-library__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pb-space-xs);
+  justify-content: flex-end;
 }
 
 .pb-library__subtitle {
-  font-size: 16px;
   margin: 0;
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .pb-library__count {
-  color: var(--pb-color-text-faint);
-  font-size: 12px;
   margin-left: var(--pb-space-xs);
+  color: var(--pb-ink-faint);
+  font-size: 12px;
+}
+
+.pb-library__description {
+  max-width: 72ch;
+  margin: 0;
+  color: var(--pb-ink-soft);
+  font-size: 15px;
+  line-height: 1.7;
 }
 
 .pb-library__section {
-  margin-top: var(--pb-space-lg);
+  margin: 0;
+  padding: var(--pb-space-lg) var(--pb-space-xl) var(--pb-space-xl);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-lg);
+  box-shadow: var(--pb-shadow-sm);
 }
 
 .pb-library__section-head {
-  align-items: center;
   display: flex;
+  align-items: center;
   justify-content: space-between;
+  gap: var(--pb-space-md);
+  flex-wrap: wrap;
 }
 
 .pb-library__section-actions {
@@ -673,36 +716,48 @@ watch(
 }
 
 .pb-library__meta,
-.pb-library__description,
 .pb-library__hint,
 .pb-library__question-meta {
-  color: var(--pb-color-text-faint);
   display: block;
-  font-size: 12px;
   margin: 0;
+  color: var(--pb-ink-faint);
+  font-size: 12.5px;
 }
 
 .pb-library__questions,
 .pb-library__members,
 .pb-library__recycle {
   list-style: none;
-  margin: var(--pb-space-sm) 0 0;
+  margin: var(--pb-space-md) 0 0;
   padding: 0;
 }
 
 .pb-library__question,
 .pb-library__member {
-  align-items: center;
-  border-bottom: 1px solid var(--pb-color-border);
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
   gap: var(--pb-space-sm);
-  padding: var(--pb-space-xs) 0;
+  padding: var(--pb-space-sm) 0;
+  border-bottom: 1px solid var(--pb-line);
+}
+
+.pb-library__question:last-child,
+.pb-library__member:last-child {
+  border-bottom: 0;
 }
 
 .pb-library__question-title {
   flex: 1;
+  min-width: 0;
+  color: var(--pb-ink);
+  font-size: 15px;
   font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.pb-library__question-title:hover {
+  color: var(--pb-accent);
 }
 
 .pb-library__question-actions {
@@ -711,24 +766,36 @@ watch(
 }
 
 .pb-library__warning {
-  color: var(--el-color-warning);
   flex-basis: 100%;
-  font-size: 12px;
   margin: 0;
+  color: var(--pb-warning);
+  font-size: 12px;
 }
 
 .pb-library__error {
-  color: var(--el-color-danger);
+  margin: 0;
+  padding: var(--pb-space-sm) var(--pb-space-md);
+  border-radius: var(--pb-radius-md);
+  background: var(--pb-accent-soft);
+  color: var(--pb-danger);
+  font-size: 13.5px;
 }
 
-.pb-library__notice {
-  color: var(--pb-color-text-soft);
+.pb-library__notice,
+.pb-library__hint {
+  margin: 0;
+  color: var(--pb-ink-soft);
+  font-size: 13.5px;
 }
 
 @media (max-width: 720px) {
   .pb-library__head {
     flex-direction: column;
-    gap: var(--pb-space-sm);
+    align-items: flex-start;
+  }
+
+  .pb-library__actions {
+    justify-content: flex-start;
   }
 }
 </style>

@@ -98,11 +98,13 @@ onMounted(async () => {
 <template>
   <section class="pb-libraries">
     <header class="pb-libraries__head">
-      <h1 class="pb-libraries__title" data-testid="libraries-title">{{ t('library.title') }}</h1>
+      <div class="pb-libraries__heading">
+        <span class="pb-eyebrow" aria-hidden="true">Collections</span>
+        <h1 class="pb-libraries__title" data-testid="libraries-title">{{ t('library.title') }}</h1>
+      </div>
       <el-button
         v-if="auth.isAuthenticated"
         type="primary"
-        size="small"
         data-testid="library-create"
         @click="openCreate"
       >
@@ -114,9 +116,9 @@ onMounted(async () => {
     <p v-if="notice" class="pb-libraries__notice" data-testid="libraries-notice">{{ notice }}</p>
 
     <p v-if="loading" class="pb-libraries__hint">{{ t('library.title') }}</p>
-    <p v-else-if="libraries.length === 0" data-testid="libraries-empty">
-      {{ t('library.empty') }}
-    </p>
+    <div v-else-if="libraries.length === 0" class="pb-empty" data-testid="libraries-empty">
+      <span class="pb-empty__title">{{ t('library.empty') }}</span>
+    </div>
     <ul v-else class="pb-libraries__list" data-testid="libraries-list">
       <li
         v-for="library in libraries"
@@ -140,7 +142,7 @@ onMounted(async () => {
 
     <section class="pb-libraries__recycle">
       <h2 class="pb-libraries__subtitle">{{ t('library.recycleBin') }}</h2>
-      <p v-if="recycled.length === 0" data-testid="libraries-recycle-empty">
+      <p v-if="recycled.length === 0" class="pb-libraries__meta" data-testid="libraries-recycle-empty">
         {{ t('library.recycleBinEmpty') }}
       </p>
       <ul v-else data-testid="libraries-recycle">
@@ -152,21 +154,24 @@ onMounted(async () => {
         >
           <span class="pb-libraries__name">{{ entry.name }}</span>
           <span class="pb-libraries__meta">{{ entry.expires_at }}</span>
-          <el-button
-            size="small"
-            :data-testid="`library-restore-${entry.library_id}`"
-            @click="restore(entry)"
-          >
-            {{ t('library.restore') }}
-          </el-button>
-          <el-button
-            size="small"
-            type="danger"
-            :data-testid="`library-purge-${entry.library_id}`"
-            @click="purge(entry)"
-          >
-            {{ t('library.purge') }}
-          </el-button>
+          <div class="pb-libraries__entry-actions">
+            <el-button
+              size="small"
+              :data-testid="`library-restore-${entry.library_id}`"
+              @click="restore(entry)"
+            >
+              {{ t('library.restore') }}
+            </el-button>
+            <el-button
+              size="small"
+              type="danger"
+              plain
+              :data-testid="`library-purge-${entry.library_id}`"
+              @click="purge(entry)"
+            >
+              {{ t('library.purge') }}
+            </el-button>
+          </div>
         </li>
       </ul>
     </section>
@@ -215,59 +220,108 @@ onMounted(async () => {
 
 <style scoped>
 .pb-libraries {
-  padding: var(--pb-space-lg) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-lg);
+  padding: var(--pb-space-xl) 0 var(--pb-space-2xl);
 }
 
 .pb-libraries__head {
-  align-items: center;
   display: flex;
+  align-items: flex-end;
   justify-content: space-between;
+  gap: var(--pb-space-lg);
+  padding-bottom: var(--pb-space-md);
+  border-bottom: 1px solid var(--pb-line);
 }
 
-.pb-libraries__title,
-.pb-libraries__subtitle {
-  margin: 0;
+.pb-libraries__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-xs);
 }
 
 .pb-libraries__title {
-  font-size: 22px;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0;
 }
 
 .pb-libraries__subtitle {
-  font-size: 16px;
-  margin-top: var(--pb-space-lg);
+  margin: 0 0 var(--pb-space-sm);
+  font-size: 18px;
+  font-weight: 600;
 }
 
 .pb-libraries__list,
 .pb-libraries__recycle ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-sm);
   list-style: none;
-  margin: var(--pb-space-md) 0 0;
+  margin: 0;
   padding: 0;
 }
 
 .pb-libraries__entry {
-  border-bottom: 1px solid var(--pb-color-border);
-  padding: var(--pb-space-sm) 0;
+  padding: var(--pb-space-md) var(--pb-space-lg);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-md);
+  transition:
+    border-color var(--pb-duration) var(--pb-ease),
+    box-shadow var(--pb-duration) var(--pb-ease);
+}
+
+.pb-libraries__entry:hover {
+  border-color: var(--pb-line-strong);
+  box-shadow: var(--pb-shadow-sm);
 }
 
 .pb-libraries__name {
+  color: var(--pb-ink);
+  font-size: 16px;
   font-weight: 600;
+  letter-spacing: 0.006em;
+}
+
+a.pb-libraries__name:hover {
+  color: var(--pb-accent);
 }
 
 .pb-libraries__meta,
 .pb-libraries__description {
-  color: var(--pb-color-text-faint);
   display: block;
-  font-size: 12px;
-  margin: 0;
+  margin: 4px 0 0;
+  color: var(--pb-ink-faint);
+  font-size: 12.5px;
+}
+
+.pb-libraries__entry-actions {
+  display: flex;
+  gap: var(--pb-space-xs);
+  margin-top: var(--pb-space-sm);
+}
+
+.pb-libraries__recycle {
+  padding-top: var(--pb-space-lg);
+  border-top: 1px solid var(--pb-line);
 }
 
 .pb-libraries__error {
-  color: var(--el-color-danger);
+  margin: 0;
+  padding: var(--pb-space-sm) var(--pb-space-md);
+  border-radius: var(--pb-radius-md);
+  background: var(--pb-accent-soft);
+  color: var(--pb-danger);
+  font-size: 13.5px;
 }
 
 .pb-libraries__notice,
 .pb-libraries__hint {
-  color: var(--pb-color-text-soft);
+  margin: 0;
+  color: var(--pb-ink-soft);
+  font-size: 13.5px;
 }
 </style>

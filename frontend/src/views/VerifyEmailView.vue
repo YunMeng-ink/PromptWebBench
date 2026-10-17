@@ -48,55 +48,43 @@ async function resend(): Promise<void> {
 
 <template>
   <section class="pb-auth">
-    <h1 class="pb-auth__title">{{ t('auth.verifyTitle') }}</h1>
-    <p class="pb-auth__hint">{{ t('auth.verifyHint', { email }) }}</p>
+    <div class="pb-auth__card">
+      <span class="pb-auth__eyebrow" aria-hidden="true">Email Verification</span>
+      <h1 class="pb-auth__title">{{ t('auth.verifyTitle') }}</h1>
+      <p class="pb-auth__hint">{{ t('auth.verifyHint', { email }) }}</p>
 
-    <el-alert v-if="errorText" class="pb-auth__error" type="error" :title="errorText" show-icon />
-    <el-alert v-else class="pb-auth__notice" type="info" :title="noticeText" show-icon />
+      <el-alert v-if="errorText" class="pb-auth__error" type="error" :title="errorText" show-icon />
+      <el-alert v-else class="pb-auth__notice" type="info" :title="noticeText" show-icon />
 
-    <el-form label-position="top" @submit.prevent="submit">
-      <el-form-item :label="t('auth.code')">
-        <el-input
-          v-model="code"
-          maxlength="6"
-          autocomplete="one-time-code"
-          data-testid="verify-code"
-        />
-      </el-form-item>
-      <el-button
-        type="primary"
-        native-type="submit"
-        :loading="submitting"
-        data-testid="verify-submit"
-      >
-        {{ t('auth.submitVerify') }}
-      </el-button>
-      <el-button :loading="resending" data-testid="verify-resend" @click="resend">
-        {{ t('auth.resend') }}
-      </el-button>
-    </el-form>
+      <el-form label-position="top" @submit.prevent="submit">
+        <el-form-item :label="t('auth.code')">
+          <el-input
+            v-model="code"
+            maxlength="6"
+            autocomplete="one-time-code"
+            data-testid="verify-code"
+          />
+        </el-form-item>
+        <div class="pb-auth__actions">
+          <el-button
+            class="pb-auth__action"
+            type="primary"
+            native-type="submit"
+            :loading="submitting"
+            data-testid="verify-submit"
+          >
+            {{ t('auth.submitVerify') }}
+          </el-button>
+          <el-button
+            class="pb-auth__action"
+            :loading="resending"
+            data-testid="verify-resend"
+            @click="resend"
+          >
+            {{ t('auth.resend') }}
+          </el-button>
+        </div>
+      </el-form>
+    </div>
   </section>
 </template>
-
-<style scoped>
-.pb-auth {
-  max-width: 420px;
-  margin: 0 auto;
-  padding: var(--pb-space-xl) 0;
-}
-
-.pb-auth__title {
-  font-size: 24px;
-  margin: 0 0 var(--pb-space-sm);
-}
-
-.pb-auth__hint {
-  color: var(--pb-color-text-soft);
-  margin: 0 0 var(--pb-space-lg);
-}
-
-.pb-auth__error,
-.pb-auth__notice {
-  margin-bottom: var(--pb-space-md);
-}
-</style>

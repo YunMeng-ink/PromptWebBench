@@ -206,7 +206,7 @@ type Library struct {
 //
 // 题库没有公开档位（需求 §10.1：私有题库），因此恒为 private 档：
 // 只有成员与管理员能看到，非成员一律 404。HighRisk 恒为 false，
-// 高风险是提示词类别的属性，题库内的高风险内容在题目层逐条复查。
+// 高风险是提示词考察目的的属性，题库内的高风险内容在题目层逐条复查。
 func (l Library) Access() Access {
 	return Access{Level: VisibilityPrivate, HighRisk: false, UploaderID: l.OwnerID}
 }
@@ -253,8 +253,8 @@ type LibraryQuestion struct {
 	Title                 string
 	Body                  string
 	Description           string
-	CategoryID            *int64
-	AbilityID             *int64
+	PurposeID             *int64
+	CapabilityID          *int64
 	DifficultyID          *int64
 	Sensitive             SensitiveLevel
 	SortOrder             int32
@@ -262,7 +262,7 @@ type LibraryQuestion struct {
 
 // SourceAccess 返回题目内容所属的可见性判定要素。
 //
-// 引用题的正文来自来源提示词，判定要素完全取自来源提示词（C-20：高风险类别与
+// 引用题的正文来自来源提示词，判定要素完全取自来源提示词（C-20：高风险考察目的与
 // 开发者可见同等处理）；派生题的副本虽然存于题库，其内容同样源自来源提示词，
 // 因此沿用来源的判定要素，否则开发者可见或高风险的内容会以副本形式流到普通用户。
 // source 为 nil 表示来源提示词已不存在：引用题没有正文可读，派生题作为独立副本
@@ -300,7 +300,8 @@ func LibraryExportElements() []string {
 		"question_count",       // 题目数量
 		"question_order",       // 题目顺序
 		"question_title",       // 题目标题
-		"question_category",    // 题目类别
+		"question_purpose",     // 题目考察目的
+		"question_capability",  // 题目考察维度
 		"question_tags",        // 题目标签
 		"prompt_body",          // 提示词正文
 		"question_description", // 题目说明

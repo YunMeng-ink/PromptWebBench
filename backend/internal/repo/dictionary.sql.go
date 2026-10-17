@@ -9,19 +9,53 @@ import (
 	"context"
 )
 
-const getAbility = `-- name: GetAbility :one
-SELECT id, slug, name_zh, name_en, is_enabled, sort_order, created_at, updated_at FROM abilities
-WHERE id = $1
+const adminCountCapabilities = `-- name: AdminCountCapabilities :one
+SELECT count(*)::bigint
+FROM capabilities
+WHERE ($1::text = ''
+       OR name_zh ILIKE '%' || $1::text || '%'
+       OR name_en ILIKE '%' || $1::text || '%'
+       OR slug ILIKE '%' || $1::text || '%')
 `
 
-func (q *Queries) GetAbility(ctx context.Context, id int64) (Ability, error) {
-	row := q.db.QueryRow(ctx, getAbility, id)
-	var i Ability
+func (q *Queries) AdminCountCapabilities(ctx context.Context, keyword string) (int64, error) {
+	row := q.db.QueryRow(ctx, adminCountCapabilities, keyword)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const adminCountPurposes = `-- name: AdminCountPurposes :one
+SELECT count(*)::bigint
+FROM purposes
+WHERE ($1::text = ''
+       OR name_zh ILIKE '%' || $1::text || '%'
+       OR name_en ILIKE '%' || $1::text || '%'
+       OR slug ILIKE '%' || $1::text || '%')
+`
+
+func (q *Queries) AdminCountPurposes(ctx context.Context, keyword string) (int64, error) {
+	row := q.db.QueryRow(ctx, adminCountPurposes, keyword)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const adminGetCapability = `-- name: AdminGetCapability :one
+SELECT id, slug, name_zh, name_en, group_key, description_zh, description_en, is_enabled, sort_order, created_at, updated_at FROM capabilities WHERE id = $1
+`
+
+func (q *Queries) AdminGetCapability(ctx context.Context, id int64) (Capability, error) {
+	row := q.db.QueryRow(ctx, adminGetCapability, id)
+	var i Capability
 	err := row.Scan(
 		&i.ID,
 		&i.Slug,
 		&i.NameZh,
 		&i.NameEn,
+		&i.GroupKey,
+		&i.DescriptionZh,
+		&i.DescriptionEn,
 		&i.IsEnabled,
 		&i.SortOrder,
 		&i.CreatedAt,
@@ -30,20 +64,239 @@ func (q *Queries) GetAbility(ctx context.Context, id int64) (Ability, error) {
 	return i, err
 }
 
-const getCategory = `-- name: GetCategory :one
-SELECT id, slug, name_zh, name_en, is_high_risk, is_enabled, sort_order, created_at, updated_at FROM categories
-WHERE id = $1
+const adminGetPurpose = `-- name: AdminGetPurpose :one
+SELECT id, slug, name_zh, name_en, description_zh, description_en, is_high_risk, is_enabled, sort_order, created_at, updated_at FROM purposes WHERE id = $1
 `
 
-func (q *Queries) GetCategory(ctx context.Context, id int64) (Category, error) {
-	row := q.db.QueryRow(ctx, getCategory, id)
-	var i Category
+func (q *Queries) AdminGetPurpose(ctx context.Context, id int64) (Purpose, error) {
+	row := q.db.QueryRow(ctx, adminGetPurpose, id)
+	var i Purpose
 	err := row.Scan(
 		&i.ID,
 		&i.Slug,
 		&i.NameZh,
 		&i.NameEn,
+		&i.DescriptionZh,
+		&i.DescriptionEn,
 		&i.IsHighRisk,
+		&i.IsEnabled,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const adminListCapabilities = `-- name: AdminListCapabilities :many
+SELECT id, slug, name_zh, name_en, group_key, description_zh, description_en, is_enabled, sort_order, created_at, updated_at FROM capabilities
+WHERE ($1::text = ''
+       OR name_zh ILIKE '%' || $1::text || '%'
+       OR name_en ILIKE '%' || $1::text || '%'
+       OR slug ILIKE '%' || $1::text || '%')
+ORDER BY sort_order, id
+LIMIT $3 OFFSET $2
+`
+
+type AdminListCapabilitiesParams struct {
+	Keyword     string
+	OffsetCount int32
+	LimitCount  int32
+}
+
+func (q *Queries) AdminListCapabilities(ctx context.Context, arg AdminListCapabilitiesParams) ([]Capability, error) {
+	rows, err := q.db.Query(ctx, adminListCapabilities, arg.Keyword, arg.OffsetCount, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Capability{}
+	for rows.Next() {
+		var i Capability
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.NameZh,
+			&i.NameEn,
+			&i.GroupKey,
+			&i.DescriptionZh,
+			&i.DescriptionEn,
+			&i.IsEnabled,
+			&i.SortOrder,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const adminListPurposes = `-- name: AdminListPurposes :many
+SELECT id, slug, name_zh, name_en, description_zh, description_en, is_high_risk, is_enabled, sort_order, created_at, updated_at FROM purposes
+WHERE ($1::text = ''
+       OR name_zh ILIKE '%' || $1::text || '%'
+       OR name_en ILIKE '%' || $1::text || '%'
+       OR slug ILIKE '%' || $1::text || '%')
+ORDER BY sort_order, id
+LIMIT $3 OFFSET $2
+`
+
+type AdminListPurposesParams struct {
+	Keyword     string
+	OffsetCount int32
+	LimitCount  int32
+}
+
+func (q *Queries) AdminListPurposes(ctx context.Context, arg AdminListPurposesParams) ([]Purpose, error) {
+	rows, err := q.db.Query(ctx, adminListPurposes, arg.Keyword, arg.OffsetCount, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Purpose{}
+	for rows.Next() {
+		var i Purpose
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.NameZh,
+			&i.NameEn,
+			&i.DescriptionZh,
+			&i.DescriptionEn,
+			&i.IsHighRisk,
+			&i.IsEnabled,
+			&i.SortOrder,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const attachModelCapability = `-- name: AttachModelCapability :exec
+INSERT INTO model_capabilities (model_id, capability_id)
+VALUES ($1, $2)
+ON CONFLICT DO NOTHING
+`
+
+type AttachModelCapabilityParams struct {
+	ModelID      int64
+	CapabilityID int64
+}
+
+func (q *Queries) AttachModelCapability(ctx context.Context, arg AttachModelCapabilityParams) error {
+	_, err := q.db.Exec(ctx, attachModelCapability, arg.ModelID, arg.CapabilityID)
+	return err
+}
+
+const countCapabilityReferences = `-- name: CountCapabilityReferences :one
+SELECT (SELECT count(*) FROM prompts p WHERE p.capability_id = $1)
+     + (SELECT count(*) FROM prompt_versions v WHERE v.capability_id = $1)
+     + (SELECT count(*) FROM library_questions q WHERE q.capability_id = $1)
+     + (SELECT count(*) FROM model_capabilities mc WHERE mc.capability_id = $1)
+`
+
+func (q *Queries) CountCapabilityReferences(ctx context.Context, capabilityID int64) (int32, error) {
+	row := q.db.QueryRow(ctx, countCapabilityReferences, capabilityID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countPurposeReferences = `-- name: CountPurposeReferences :one
+SELECT (SELECT count(*) FROM prompts p WHERE p.purpose_id = $1)
+     + (SELECT count(*) FROM prompt_versions v WHERE v.purpose_id = $1)
+     + (SELECT count(*) FROM library_questions q WHERE q.purpose_id = $1)
+`
+
+func (q *Queries) CountPurposeReferences(ctx context.Context, purposeID int64) (int32, error) {
+	row := q.db.QueryRow(ctx, countPurposeReferences, purposeID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const deleteCapability = `-- name: DeleteCapability :exec
+DELETE FROM capabilities WHERE id = $1
+`
+
+func (q *Queries) DeleteCapability(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deleteCapability, id)
+	return err
+}
+
+const deletePurpose = `-- name: DeletePurpose :exec
+DELETE FROM purposes WHERE id = $1
+`
+
+func (q *Queries) DeletePurpose(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, deletePurpose, id)
+	return err
+}
+
+const getCapabilitiesByIDs = `-- name: GetCapabilitiesByIDs :many
+SELECT id, slug, name_zh, name_en, group_key, description_zh, description_en, is_enabled, sort_order, created_at, updated_at FROM capabilities
+WHERE id = ANY($1::bigint[])
+`
+
+func (q *Queries) GetCapabilitiesByIDs(ctx context.Context, ids []int64) ([]Capability, error) {
+	rows, err := q.db.Query(ctx, getCapabilitiesByIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Capability{}
+	for rows.Next() {
+		var i Capability
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.NameZh,
+			&i.NameEn,
+			&i.GroupKey,
+			&i.DescriptionZh,
+			&i.DescriptionEn,
+			&i.IsEnabled,
+			&i.SortOrder,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getCapability = `-- name: GetCapability :one
+SELECT id, slug, name_zh, name_en, group_key, description_zh, description_en, is_enabled, sort_order, created_at, updated_at FROM capabilities
+WHERE id = $1
+`
+
+func (q *Queries) GetCapability(ctx context.Context, id int64) (Capability, error) {
+	row := q.db.QueryRow(ctx, getCapability, id)
+	var i Capability
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.NameZh,
+		&i.NameEn,
+		&i.GroupKey,
+		&i.DescriptionZh,
+		&i.DescriptionEn,
 		&i.IsEnabled,
 		&i.SortOrder,
 		&i.CreatedAt,
@@ -74,7 +327,7 @@ func (q *Queries) GetDifficulty(ctx context.Context, id int64) (Difficulty, erro
 }
 
 const getModel = `-- name: GetModel :one
-SELECT id, name, model_key, provider_key, provider_name, input_modalities, aliases, description, release_date, context_length, is_enabled, ability_tags, note, import_source, deleted_at, created_at, updated_at FROM models
+SELECT id, name, model_key, provider_key, provider_name, input_modalities, aliases, description, release_date, context_length, is_enabled, note, import_source, deleted_at, created_at, updated_at FROM models
 WHERE id = $1 AND deleted_at IS NULL
 `
 
@@ -93,7 +346,6 @@ func (q *Queries) GetModel(ctx context.Context, id int64) (Model, error) {
 		&i.ReleaseDate,
 		&i.ContextLength,
 		&i.IsEnabled,
-		&i.AbilityTags,
 		&i.Note,
 		&i.ImportSource,
 		&i.DeletedAt,
@@ -103,8 +355,32 @@ func (q *Queries) GetModel(ctx context.Context, id int64) (Model, error) {
 	return i, err
 }
 
+const getPurpose = `-- name: GetPurpose :one
+SELECT id, slug, name_zh, name_en, description_zh, description_en, is_high_risk, is_enabled, sort_order, created_at, updated_at FROM purposes
+WHERE id = $1
+`
+
+func (q *Queries) GetPurpose(ctx context.Context, id int64) (Purpose, error) {
+	row := q.db.QueryRow(ctx, getPurpose, id)
+	var i Purpose
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.NameZh,
+		&i.NameEn,
+		&i.DescriptionZh,
+		&i.DescriptionEn,
+		&i.IsHighRisk,
+		&i.IsEnabled,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getTagsByIDs = `-- name: GetTagsByIDs :many
-SELECT id, slug, name_zh, name_en, color, description, priority, is_enabled, created_at, updated_at FROM tags
+SELECT id, slug, name_zh, name_en, color, description, priority, is_enabled, created_at, updated_at, kind FROM tags
 WHERE id = ANY($1::bigint[])
 ORDER BY priority DESC, id
 `
@@ -129,6 +405,7 @@ func (q *Queries) GetTagsByIDs(ctx context.Context, ids []int64) ([]Tag, error) 
 			&i.IsEnabled,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}
@@ -140,64 +417,119 @@ func (q *Queries) GetTagsByIDs(ctx context.Context, ids []int64) ([]Tag, error) 
 	return items, nil
 }
 
-const listAbilities = `-- name: ListAbilities :many
-SELECT id, slug, name_zh, name_en, is_enabled, sort_order, created_at, updated_at FROM abilities
-WHERE is_enabled
-ORDER BY sort_order, id
+const insertCapability = `-- name: InsertCapability :one
+INSERT INTO capabilities (slug, name_zh, name_en, group_key, description_zh, description_en, is_enabled, sort_order)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, slug, name_zh, name_en, group_key, description_zh, description_en, is_enabled, sort_order, created_at, updated_at
 `
 
-func (q *Queries) ListAbilities(ctx context.Context) ([]Ability, error) {
-	rows, err := q.db.Query(ctx, listAbilities)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []Ability{}
-	for rows.Next() {
-		var i Ability
-		if err := rows.Scan(
-			&i.ID,
-			&i.Slug,
-			&i.NameZh,
-			&i.NameEn,
-			&i.IsEnabled,
-			&i.SortOrder,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+type InsertCapabilityParams struct {
+	Slug          string
+	NameZh        string
+	NameEn        string
+	GroupKey      string
+	DescriptionZh string
+	DescriptionEn string
+	IsEnabled     bool
+	SortOrder     int32
 }
 
-const listCategories = `-- name: ListCategories :many
+func (q *Queries) InsertCapability(ctx context.Context, arg InsertCapabilityParams) (Capability, error) {
+	row := q.db.QueryRow(ctx, insertCapability,
+		arg.Slug,
+		arg.NameZh,
+		arg.NameEn,
+		arg.GroupKey,
+		arg.DescriptionZh,
+		arg.DescriptionEn,
+		arg.IsEnabled,
+		arg.SortOrder,
+	)
+	var i Capability
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.NameZh,
+		&i.NameEn,
+		&i.GroupKey,
+		&i.DescriptionZh,
+		&i.DescriptionEn,
+		&i.IsEnabled,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
 
-SELECT id, slug, name_zh, name_en, is_high_risk, is_enabled, sort_order, created_at, updated_at FROM categories
+const insertPurpose = `-- name: InsertPurpose :one
+INSERT INTO purposes (slug, name_zh, name_en, description_zh, description_en, is_high_risk, is_enabled, sort_order)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+RETURNING id, slug, name_zh, name_en, description_zh, description_en, is_high_risk, is_enabled, sort_order, created_at, updated_at
+`
+
+type InsertPurposeParams struct {
+	Slug          string
+	NameZh        string
+	NameEn        string
+	DescriptionZh string
+	DescriptionEn string
+	IsHighRisk    bool
+	IsEnabled     bool
+	SortOrder     int32
+}
+
+func (q *Queries) InsertPurpose(ctx context.Context, arg InsertPurposeParams) (Purpose, error) {
+	row := q.db.QueryRow(ctx, insertPurpose,
+		arg.Slug,
+		arg.NameZh,
+		arg.NameEn,
+		arg.DescriptionZh,
+		arg.DescriptionEn,
+		arg.IsHighRisk,
+		arg.IsEnabled,
+		arg.SortOrder,
+	)
+	var i Purpose
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.NameZh,
+		&i.NameEn,
+		&i.DescriptionZh,
+		&i.DescriptionEn,
+		&i.IsHighRisk,
+		&i.IsEnabled,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listCapabilities = `-- name: ListCapabilities :many
+SELECT id, slug, name_zh, name_en, group_key, description_zh, description_en, is_enabled, sort_order, created_at, updated_at FROM capabilities
 WHERE is_enabled
 ORDER BY sort_order, id
 `
 
-// 字典表查询：类别、能力维度、难度、标签、模型（开发方案 §5.5 字典组）。
-func (q *Queries) ListCategories(ctx context.Context) ([]Category, error) {
-	rows, err := q.db.Query(ctx, listCategories)
+func (q *Queries) ListCapabilities(ctx context.Context) ([]Capability, error) {
+	rows, err := q.db.Query(ctx, listCapabilities)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Category{}
+	items := []Capability{}
 	for rows.Next() {
-		var i Category
+		var i Capability
 		if err := rows.Scan(
 			&i.ID,
 			&i.Slug,
 			&i.NameZh,
 			&i.NameEn,
-			&i.IsHighRisk,
+			&i.GroupKey,
+			&i.DescriptionZh,
+			&i.DescriptionEn,
 			&i.IsEnabled,
 			&i.SortOrder,
 			&i.CreatedAt,
@@ -248,8 +580,59 @@ func (q *Queries) ListDifficulties(ctx context.Context) ([]Difficulty, error) {
 	return items, nil
 }
 
+const listModelCapabilitiesForModels = `-- name: ListModelCapabilitiesForModels :many
+SELECT model_id, capability_id
+FROM model_capabilities
+WHERE model_id = ANY($1::bigint[])
+ORDER BY model_id, capability_id
+`
+
+func (q *Queries) ListModelCapabilitiesForModels(ctx context.Context, modelIds []int64) ([]ModelCapability, error) {
+	rows, err := q.db.Query(ctx, listModelCapabilitiesForModels, modelIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ModelCapability{}
+	for rows.Next() {
+		var i ModelCapability
+		if err := rows.Scan(&i.ModelID, &i.CapabilityID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listModelCapabilityIDs = `-- name: ListModelCapabilityIDs :many
+SELECT capability_id FROM model_capabilities WHERE model_id = $1
+`
+
+func (q *Queries) ListModelCapabilityIDs(ctx context.Context, modelID int64) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listModelCapabilityIDs, modelID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var capability_id int64
+		if err := rows.Scan(&capability_id); err != nil {
+			return nil, err
+		}
+		items = append(items, capability_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listModels = `-- name: ListModels :many
-SELECT id, name, model_key, provider_key, provider_name, input_modalities, aliases, description, release_date, context_length, is_enabled, ability_tags, note, import_source, deleted_at, created_at, updated_at FROM models
+SELECT id, name, model_key, provider_key, provider_name, input_modalities, aliases, description, release_date, context_length, is_enabled, note, import_source, deleted_at, created_at, updated_at FROM models
 WHERE is_enabled AND deleted_at IS NULL
 ORDER BY name, id
 `
@@ -275,7 +658,6 @@ func (q *Queries) ListModels(ctx context.Context) ([]Model, error) {
 			&i.ReleaseDate,
 			&i.ContextLength,
 			&i.IsEnabled,
-			&i.AbilityTags,
 			&i.Note,
 			&i.ImportSource,
 			&i.DeletedAt,
@@ -292,10 +674,50 @@ func (q *Queries) ListModels(ctx context.Context) ([]Model, error) {
 	return items, nil
 }
 
-const listTags = `-- name: ListTags :many
-SELECT id, slug, name_zh, name_en, color, description, priority, is_enabled, created_at, updated_at FROM tags
+const listPurposes = `-- name: ListPurposes :many
+
+SELECT id, slug, name_zh, name_en, description_zh, description_en, is_high_risk, is_enabled, sort_order, created_at, updated_at FROM purposes
 WHERE is_enabled
-ORDER BY priority DESC, id
+ORDER BY sort_order, id
+`
+
+// 字典表查询：考察维度、考察目的、难度、标签、模型（开发方案 §5.5 字典组）。
+func (q *Queries) ListPurposes(ctx context.Context) ([]Purpose, error) {
+	rows, err := q.db.Query(ctx, listPurposes)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Purpose{}
+	for rows.Next() {
+		var i Purpose
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.NameZh,
+			&i.NameEn,
+			&i.DescriptionZh,
+			&i.DescriptionEn,
+			&i.IsHighRisk,
+			&i.IsEnabled,
+			&i.SortOrder,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTags = `-- name: ListTags :many
+SELECT id, slug, name_zh, name_en, color, description, priority, is_enabled, created_at, updated_at, kind FROM tags
+WHERE is_enabled
+ORDER BY kind, priority DESC, id
 `
 
 func (q *Queries) ListTags(ctx context.Context) ([]Tag, error) {
@@ -318,6 +740,7 @@ func (q *Queries) ListTags(ctx context.Context) ([]Tag, error) {
 			&i.IsEnabled,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}
@@ -327,4 +750,107 @@ func (q *Queries) ListTags(ctx context.Context) ([]Tag, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const replaceModelCapabilities = `-- name: ReplaceModelCapabilities :exec
+DELETE FROM model_capabilities WHERE model_id = $1
+`
+
+func (q *Queries) ReplaceModelCapabilities(ctx context.Context, modelID int64) error {
+	_, err := q.db.Exec(ctx, replaceModelCapabilities, modelID)
+	return err
+}
+
+const updateCapability = `-- name: UpdateCapability :one
+UPDATE capabilities
+SET name_zh = $2, name_en = $3, group_key = $4,
+    description_zh = $5, description_en = $6, is_enabled = $7, sort_order = $8, updated_at = now()
+WHERE id = $1
+RETURNING id, slug, name_zh, name_en, group_key, description_zh, description_en, is_enabled, sort_order, created_at, updated_at
+`
+
+type UpdateCapabilityParams struct {
+	ID            int64
+	NameZh        string
+	NameEn        string
+	GroupKey      string
+	DescriptionZh string
+	DescriptionEn string
+	IsEnabled     bool
+	SortOrder     int32
+}
+
+func (q *Queries) UpdateCapability(ctx context.Context, arg UpdateCapabilityParams) (Capability, error) {
+	row := q.db.QueryRow(ctx, updateCapability,
+		arg.ID,
+		arg.NameZh,
+		arg.NameEn,
+		arg.GroupKey,
+		arg.DescriptionZh,
+		arg.DescriptionEn,
+		arg.IsEnabled,
+		arg.SortOrder,
+	)
+	var i Capability
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.NameZh,
+		&i.NameEn,
+		&i.GroupKey,
+		&i.DescriptionZh,
+		&i.DescriptionEn,
+		&i.IsEnabled,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const updatePurpose = `-- name: UpdatePurpose :one
+UPDATE purposes
+SET name_zh = $2, name_en = $3, description_zh = $4, description_en = $5,
+    is_high_risk = $6, is_enabled = $7, sort_order = $8, updated_at = now()
+WHERE id = $1
+RETURNING id, slug, name_zh, name_en, description_zh, description_en, is_high_risk, is_enabled, sort_order, created_at, updated_at
+`
+
+type UpdatePurposeParams struct {
+	ID            int64
+	NameZh        string
+	NameEn        string
+	DescriptionZh string
+	DescriptionEn string
+	IsHighRisk    bool
+	IsEnabled     bool
+	SortOrder     int32
+}
+
+func (q *Queries) UpdatePurpose(ctx context.Context, arg UpdatePurposeParams) (Purpose, error) {
+	row := q.db.QueryRow(ctx, updatePurpose,
+		arg.ID,
+		arg.NameZh,
+		arg.NameEn,
+		arg.DescriptionZh,
+		arg.DescriptionEn,
+		arg.IsHighRisk,
+		arg.IsEnabled,
+		arg.SortOrder,
+	)
+	var i Purpose
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.NameZh,
+		&i.NameEn,
+		&i.DescriptionZh,
+		&i.DescriptionEn,
+		&i.IsHighRisk,
+		&i.IsEnabled,
+		&i.SortOrder,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

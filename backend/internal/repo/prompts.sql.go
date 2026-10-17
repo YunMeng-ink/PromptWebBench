@@ -175,7 +175,7 @@ func (q *Queries) DeletePromptStatsForMajorChange(ctx context.Context, promptID 
 }
 
 const getLatestPromptVersion = `-- name: GetLatestPromptVersion :one
-SELECT id, prompt_id, version_no, major, minor, title, body, description, category_id, ability_id, difficulty_id, visibility, sensitive_level, is_major, change_note, author_id, created_at FROM prompt_versions
+SELECT id, prompt_id, version_no, major, minor, title, body, description, difficulty_id, visibility, sensitive_level, is_major, change_note, author_id, created_at, purpose_id, capability_id FROM prompt_versions
 WHERE prompt_id = $1
 ORDER BY major DESC, minor DESC
 LIMIT 1
@@ -193,8 +193,6 @@ func (q *Queries) GetLatestPromptVersion(ctx context.Context, promptID int64) (P
 		&i.Title,
 		&i.Body,
 		&i.Description,
-		&i.CategoryID,
-		&i.AbilityID,
 		&i.DifficultyID,
 		&i.Visibility,
 		&i.SensitiveLevel,
@@ -202,14 +200,16 @@ func (q *Queries) GetLatestPromptVersion(ctx context.Context, promptID int64) (P
 		&i.ChangeNote,
 		&i.AuthorID,
 		&i.CreatedAt,
+		&i.PurposeID,
+		&i.CapabilityID,
 	)
 	return i, err
 }
 
 const getPrompt = `-- name: GetPrompt :one
-SELECT p.id, p.title, p.body, p.description, p.category_id, p.ability_id, p.difficulty_id, p.visibility, p.sensitive_level, p.uploader_id, p.original_uploader_id, p.current_version_id, p.latest_version_no, p.major_modified, p.comment_count, p.favorite_count, p.deleted_at, p.created_at, p.updated_at, c.is_high_risk
+SELECT p.id, p.title, p.body, p.description, p.difficulty_id, p.visibility, p.sensitive_level, p.uploader_id, p.original_uploader_id, p.current_version_id, p.latest_version_no, p.major_modified, p.comment_count, p.favorite_count, p.deleted_at, p.created_at, p.updated_at, p.purpose_id, p.capability_id, pu.is_high_risk
 FROM prompts p
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
 WHERE p.id = $1 AND p.deleted_at IS NULL
 `
 
@@ -218,8 +218,6 @@ type GetPromptRow struct {
 	Title              string
 	Body               string
 	Description        string
-	CategoryID         int64
-	AbilityID          pgtype.Int8
 	DifficultyID       pgtype.Int8
 	Visibility         string
 	SensitiveLevel     string
@@ -233,6 +231,8 @@ type GetPromptRow struct {
 	DeletedAt          pgtype.Timestamptz
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
+	PurposeID          int64
+	CapabilityID       int64
 	IsHighRisk         bool
 }
 
@@ -244,8 +244,6 @@ func (q *Queries) GetPrompt(ctx context.Context, id int64) (GetPromptRow, error)
 		&i.Title,
 		&i.Body,
 		&i.Description,
-		&i.CategoryID,
-		&i.AbilityID,
 		&i.DifficultyID,
 		&i.Visibility,
 		&i.SensitiveLevel,
@@ -259,15 +257,20 @@ func (q *Queries) GetPrompt(ctx context.Context, id int64) (GetPromptRow, error)
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PurposeID,
+		&i.CapabilityID,
 		&i.IsHighRisk,
 	)
 	return i, err
 }
 
 const getPromptIncludingDeleted = `-- name: GetPromptIncludingDeleted :one
-SELECT p.id, p.title, p.body, p.description, p.category_id, p.ability_id, p.difficulty_id, p.visibility, p.sensitive_level, p.uploader_id, p.original_uploader_id, p.current_version_id, p.latest_version_no, p.major_modified, p.comment_count, p.favorite_count, p.deleted_at, p.created_at, p.updated_at, c.is_high_risk, c.name_zh AS category_name_zh, c.name_en AS category_name_en
+SELECT p.id, p.title, p.body, p.description, p.difficulty_id, p.visibility, p.sensitive_level, p.uploader_id, p.original_uploader_id, p.current_version_id, p.latest_version_no, p.major_modified, p.comment_count, p.favorite_count, p.deleted_at, p.created_at, p.updated_at, p.purpose_id, p.capability_id, pu.is_high_risk,
+       pu.name_zh AS purpose_name_zh, pu.name_en AS purpose_name_en,
+       cap.name_zh AS capability_name_zh, cap.name_en AS capability_name_en
 FROM prompts p
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
+JOIN capabilities cap ON cap.id = p.capability_id
 WHERE p.id = $1
 `
 
@@ -276,8 +279,6 @@ type GetPromptIncludingDeletedRow struct {
 	Title              string
 	Body               string
 	Description        string
-	CategoryID         int64
-	AbilityID          pgtype.Int8
 	DifficultyID       pgtype.Int8
 	Visibility         string
 	SensitiveLevel     string
@@ -291,12 +292,16 @@ type GetPromptIncludingDeletedRow struct {
 	DeletedAt          pgtype.Timestamptz
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
+	PurposeID          int64
+	CapabilityID       int64
 	IsHighRisk         bool
-	CategoryNameZh     string
-	CategoryNameEn     string
+	PurposeNameZh      string
+	PurposeNameEn      string
+	CapabilityNameZh   string
+	CapabilityNameEn   string
 }
 
-// 后台读取提示词：包含回收站中的条目，并带出类别的中英名称供列表与详情直接展示。
+// 后台读取提示词：包含回收站中的条目，并带出考察目的与考察维度的中英名称供列表与详情直接展示。
 func (q *Queries) GetPromptIncludingDeleted(ctx context.Context, id int64) (GetPromptIncludingDeletedRow, error) {
 	row := q.db.QueryRow(ctx, getPromptIncludingDeleted, id)
 	var i GetPromptIncludingDeletedRow
@@ -305,8 +310,6 @@ func (q *Queries) GetPromptIncludingDeleted(ctx context.Context, id int64) (GetP
 		&i.Title,
 		&i.Body,
 		&i.Description,
-		&i.CategoryID,
-		&i.AbilityID,
 		&i.DifficultyID,
 		&i.Visibility,
 		&i.SensitiveLevel,
@@ -320,15 +323,19 @@ func (q *Queries) GetPromptIncludingDeleted(ctx context.Context, id int64) (GetP
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PurposeID,
+		&i.CapabilityID,
 		&i.IsHighRisk,
-		&i.CategoryNameZh,
-		&i.CategoryNameEn,
+		&i.PurposeNameZh,
+		&i.PurposeNameEn,
+		&i.CapabilityNameZh,
+		&i.CapabilityNameEn,
 	)
 	return i, err
 }
 
 const getPromptVersion = `-- name: GetPromptVersion :one
-SELECT id, prompt_id, version_no, major, minor, title, body, description, category_id, ability_id, difficulty_id, visibility, sensitive_level, is_major, change_note, author_id, created_at FROM prompt_versions
+SELECT id, prompt_id, version_no, major, minor, title, body, description, difficulty_id, visibility, sensitive_level, is_major, change_note, author_id, created_at, purpose_id, capability_id FROM prompt_versions
 WHERE prompt_id = $1 AND version_no = $2
 `
 
@@ -349,8 +356,6 @@ func (q *Queries) GetPromptVersion(ctx context.Context, arg GetPromptVersionPara
 		&i.Title,
 		&i.Body,
 		&i.Description,
-		&i.CategoryID,
-		&i.AbilityID,
 		&i.DifficultyID,
 		&i.Visibility,
 		&i.SensitiveLevel,
@@ -358,6 +363,8 @@ func (q *Queries) GetPromptVersion(ctx context.Context, arg GetPromptVersionPara
 		&i.ChangeNote,
 		&i.AuthorID,
 		&i.CreatedAt,
+		&i.PurposeID,
+		&i.CapabilityID,
 	)
 	return i, err
 }
@@ -398,20 +405,20 @@ func (q *Queries) IncrementPromptFavoriteCount(ctx context.Context, id int64) er
 
 const insertPrompt = `-- name: InsertPrompt :one
 INSERT INTO prompts (
-    title, body, description, category_id, ability_id, difficulty_id,
+    title, body, description, purpose_id, capability_id, difficulty_id,
     visibility, sensitive_level, uploader_id, original_uploader_id,
     latest_version_no, major_modified
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9, $10, $11)
-RETURNING id, title, body, description, category_id, ability_id, difficulty_id, visibility, sensitive_level, uploader_id, original_uploader_id, current_version_id, latest_version_no, major_modified, comment_count, favorite_count, deleted_at, created_at, updated_at
+RETURNING id, title, body, description, difficulty_id, visibility, sensitive_level, uploader_id, original_uploader_id, current_version_id, latest_version_no, major_modified, comment_count, favorite_count, deleted_at, created_at, updated_at, purpose_id, capability_id
 `
 
 type InsertPromptParams struct {
 	Title           string
 	Body            string
 	Description     string
-	CategoryID      int64
-	AbilityID       pgtype.Int8
+	PurposeID       int64
+	CapabilityID    int64
 	DifficultyID    pgtype.Int8
 	Visibility      string
 	SensitiveLevel  string
@@ -425,8 +432,8 @@ func (q *Queries) InsertPrompt(ctx context.Context, arg InsertPromptParams) (Pro
 		arg.Title,
 		arg.Body,
 		arg.Description,
-		arg.CategoryID,
-		arg.AbilityID,
+		arg.PurposeID,
+		arg.CapabilityID,
 		arg.DifficultyID,
 		arg.Visibility,
 		arg.SensitiveLevel,
@@ -440,8 +447,6 @@ func (q *Queries) InsertPrompt(ctx context.Context, arg InsertPromptParams) (Pro
 		&i.Title,
 		&i.Body,
 		&i.Description,
-		&i.CategoryID,
-		&i.AbilityID,
 		&i.DifficultyID,
 		&i.Visibility,
 		&i.SensitiveLevel,
@@ -455,6 +460,8 @@ func (q *Queries) InsertPrompt(ctx context.Context, arg InsertPromptParams) (Pro
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PurposeID,
+		&i.CapabilityID,
 	)
 	return i, err
 }
@@ -462,11 +469,11 @@ func (q *Queries) InsertPrompt(ctx context.Context, arg InsertPromptParams) (Pro
 const insertPromptVersion = `-- name: InsertPromptVersion :one
 INSERT INTO prompt_versions (
     prompt_id, version_no, major, minor, title, body, description,
-    category_id, ability_id, difficulty_id, visibility, sensitive_level,
+    purpose_id, capability_id, difficulty_id, visibility, sensitive_level,
     is_major, change_note, author_id
 )
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-RETURNING id, prompt_id, version_no, major, minor, title, body, description, category_id, ability_id, difficulty_id, visibility, sensitive_level, is_major, change_note, author_id, created_at
+RETURNING id, prompt_id, version_no, major, minor, title, body, description, difficulty_id, visibility, sensitive_level, is_major, change_note, author_id, created_at, purpose_id, capability_id
 `
 
 type InsertPromptVersionParams struct {
@@ -477,8 +484,8 @@ type InsertPromptVersionParams struct {
 	Title          string
 	Body           string
 	Description    string
-	CategoryID     int64
-	AbilityID      pgtype.Int8
+	PurposeID      int64
+	CapabilityID   int64
 	DifficultyID   pgtype.Int8
 	Visibility     string
 	SensitiveLevel string
@@ -496,8 +503,8 @@ func (q *Queries) InsertPromptVersion(ctx context.Context, arg InsertPromptVersi
 		arg.Title,
 		arg.Body,
 		arg.Description,
-		arg.CategoryID,
-		arg.AbilityID,
+		arg.PurposeID,
+		arg.CapabilityID,
 		arg.DifficultyID,
 		arg.Visibility,
 		arg.SensitiveLevel,
@@ -515,8 +522,6 @@ func (q *Queries) InsertPromptVersion(ctx context.Context, arg InsertPromptVersi
 		&i.Title,
 		&i.Body,
 		&i.Description,
-		&i.CategoryID,
-		&i.AbilityID,
 		&i.DifficultyID,
 		&i.Visibility,
 		&i.SensitiveLevel,
@@ -524,14 +529,16 @@ func (q *Queries) InsertPromptVersion(ctx context.Context, arg InsertPromptVersi
 		&i.ChangeNote,
 		&i.AuthorID,
 		&i.CreatedAt,
+		&i.PurposeID,
+		&i.CapabilityID,
 	)
 	return i, err
 }
 
 const listOwnPrompts = `-- name: ListOwnPrompts :many
-SELECT p.id, p.title, p.body, p.description, p.category_id, p.ability_id, p.difficulty_id, p.visibility, p.sensitive_level, p.uploader_id, p.original_uploader_id, p.current_version_id, p.latest_version_no, p.major_modified, p.comment_count, p.favorite_count, p.deleted_at, p.created_at, p.updated_at, c.is_high_risk
+SELECT p.id, p.title, p.body, p.description, p.difficulty_id, p.visibility, p.sensitive_level, p.uploader_id, p.original_uploader_id, p.current_version_id, p.latest_version_no, p.major_modified, p.comment_count, p.favorite_count, p.deleted_at, p.created_at, p.updated_at, p.purpose_id, p.capability_id, pu.is_high_risk
 FROM prompts p
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
 WHERE p.uploader_id = $1 AND p.deleted_at IS NULL
 ORDER BY p.updated_at DESC, p.id DESC
 LIMIT $2 OFFSET $3
@@ -548,8 +555,6 @@ type ListOwnPromptsRow struct {
 	Title              string
 	Body               string
 	Description        string
-	CategoryID         int64
-	AbilityID          pgtype.Int8
 	DifficultyID       pgtype.Int8
 	Visibility         string
 	SensitiveLevel     string
@@ -563,6 +568,8 @@ type ListOwnPromptsRow struct {
 	DeletedAt          pgtype.Timestamptz
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
+	PurposeID          int64
+	CapabilityID       int64
 	IsHighRisk         bool
 }
 
@@ -580,8 +587,6 @@ func (q *Queries) ListOwnPrompts(ctx context.Context, arg ListOwnPromptsParams) 
 			&i.Title,
 			&i.Body,
 			&i.Description,
-			&i.CategoryID,
-			&i.AbilityID,
 			&i.DifficultyID,
 			&i.Visibility,
 			&i.SensitiveLevel,
@@ -595,6 +600,8 @@ func (q *Queries) ListOwnPrompts(ctx context.Context, arg ListOwnPromptsParams) 
 			&i.DeletedAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.PurposeID,
+			&i.CapabilityID,
 			&i.IsHighRisk,
 		); err != nil {
 			return nil, err
@@ -632,7 +639,7 @@ func (q *Queries) ListPromptTagIDs(ctx context.Context, promptID int64) ([]int64
 }
 
 const listPromptTags = `-- name: ListPromptTags :many
-SELECT t.id, t.slug, t.name_zh, t.name_en, t.color, t.description, t.priority, t.is_enabled, t.created_at, t.updated_at
+SELECT t.id, t.slug, t.name_zh, t.name_en, t.color, t.description, t.priority, t.is_enabled, t.created_at, t.updated_at, t.kind
 FROM tags t
 JOIN prompt_tags pt ON pt.tag_id = t.id
 WHERE pt.prompt_id = $1
@@ -659,6 +666,7 @@ func (q *Queries) ListPromptTags(ctx context.Context, promptID int64) ([]Tag, er
 			&i.IsEnabled,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Kind,
 		); err != nil {
 			return nil, err
 		}
@@ -671,7 +679,7 @@ func (q *Queries) ListPromptTags(ctx context.Context, promptID int64) ([]Tag, er
 }
 
 const listPromptVersions = `-- name: ListPromptVersions :many
-SELECT id, prompt_id, version_no, major, minor, title, body, description, category_id, ability_id, difficulty_id, visibility, sensitive_level, is_major, change_note, author_id, created_at FROM prompt_versions
+SELECT id, prompt_id, version_no, major, minor, title, body, description, difficulty_id, visibility, sensitive_level, is_major, change_note, author_id, created_at, purpose_id, capability_id FROM prompt_versions
 WHERE prompt_id = $1
 ORDER BY major DESC, minor DESC
 `
@@ -694,8 +702,6 @@ func (q *Queries) ListPromptVersions(ctx context.Context, promptID int64) ([]Pro
 			&i.Title,
 			&i.Body,
 			&i.Description,
-			&i.CategoryID,
-			&i.AbilityID,
 			&i.DifficultyID,
 			&i.Visibility,
 			&i.SensitiveLevel,
@@ -703,6 +709,8 @@ func (q *Queries) ListPromptVersions(ctx context.Context, promptID int64) ([]Pro
 			&i.ChangeNote,
 			&i.AuthorID,
 			&i.CreatedAt,
+			&i.PurposeID,
+			&i.CapabilityID,
 		); err != nil {
 			return nil, err
 		}
@@ -715,9 +723,9 @@ func (q *Queries) ListPromptVersions(ctx context.Context, promptID int64) ([]Pro
 }
 
 const lockPrompt = `-- name: LockPrompt :one
-SELECT p.id, p.title, p.body, p.description, p.category_id, p.ability_id, p.difficulty_id, p.visibility, p.sensitive_level, p.uploader_id, p.original_uploader_id, p.current_version_id, p.latest_version_no, p.major_modified, p.comment_count, p.favorite_count, p.deleted_at, p.created_at, p.updated_at, c.is_high_risk
+SELECT p.id, p.title, p.body, p.description, p.difficulty_id, p.visibility, p.sensitive_level, p.uploader_id, p.original_uploader_id, p.current_version_id, p.latest_version_no, p.major_modified, p.comment_count, p.favorite_count, p.deleted_at, p.created_at, p.updated_at, p.purpose_id, p.capability_id, pu.is_high_risk
 FROM prompts p
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
 WHERE p.id = $1 AND p.deleted_at IS NULL
 FOR UPDATE OF p
 `
@@ -727,8 +735,6 @@ type LockPromptRow struct {
 	Title              string
 	Body               string
 	Description        string
-	CategoryID         int64
-	AbilityID          pgtype.Int8
 	DifficultyID       pgtype.Int8
 	Visibility         string
 	SensitiveLevel     string
@@ -742,6 +748,8 @@ type LockPromptRow struct {
 	DeletedAt          pgtype.Timestamptz
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
+	PurposeID          int64
+	CapabilityID       int64
 	IsHighRisk         bool
 }
 
@@ -753,8 +761,6 @@ func (q *Queries) LockPrompt(ctx context.Context, id int64) (LockPromptRow, erro
 		&i.Title,
 		&i.Body,
 		&i.Description,
-		&i.CategoryID,
-		&i.AbilityID,
 		&i.DifficultyID,
 		&i.Visibility,
 		&i.SensitiveLevel,
@@ -768,15 +774,20 @@ func (q *Queries) LockPrompt(ctx context.Context, id int64) (LockPromptRow, erro
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PurposeID,
+		&i.CapabilityID,
 		&i.IsHighRisk,
 	)
 	return i, err
 }
 
 const lockPromptIncludingDeleted = `-- name: LockPromptIncludingDeleted :one
-SELECT p.id, p.title, p.body, p.description, p.category_id, p.ability_id, p.difficulty_id, p.visibility, p.sensitive_level, p.uploader_id, p.original_uploader_id, p.current_version_id, p.latest_version_no, p.major_modified, p.comment_count, p.favorite_count, p.deleted_at, p.created_at, p.updated_at, c.is_high_risk, c.name_zh AS category_name_zh, c.name_en AS category_name_en
+SELECT p.id, p.title, p.body, p.description, p.difficulty_id, p.visibility, p.sensitive_level, p.uploader_id, p.original_uploader_id, p.current_version_id, p.latest_version_no, p.major_modified, p.comment_count, p.favorite_count, p.deleted_at, p.created_at, p.updated_at, p.purpose_id, p.capability_id, pu.is_high_risk,
+       pu.name_zh AS purpose_name_zh, pu.name_en AS purpose_name_en,
+       cap.name_zh AS capability_name_zh, cap.name_en AS capability_name_en
 FROM prompts p
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
+JOIN capabilities cap ON cap.id = p.capability_id
 WHERE p.id = $1
 FOR UPDATE OF p
 `
@@ -786,8 +797,6 @@ type LockPromptIncludingDeletedRow struct {
 	Title              string
 	Body               string
 	Description        string
-	CategoryID         int64
-	AbilityID          pgtype.Int8
 	DifficultyID       pgtype.Int8
 	Visibility         string
 	SensitiveLevel     string
@@ -801,9 +810,13 @@ type LockPromptIncludingDeletedRow struct {
 	DeletedAt          pgtype.Timestamptz
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
+	PurposeID          int64
+	CapabilityID       int64
 	IsHighRisk         bool
-	CategoryNameZh     string
-	CategoryNameEn     string
+	PurposeNameZh      string
+	PurposeNameEn      string
+	CapabilityNameZh   string
+	CapabilityNameEn   string
 }
 
 // 锁定回收站中的提示词行：彻底删除前阻止并发的恢复与引用写入，
@@ -817,8 +830,6 @@ func (q *Queries) LockPromptIncludingDeleted(ctx context.Context, id int64) (Loc
 		&i.Title,
 		&i.Body,
 		&i.Description,
-		&i.CategoryID,
-		&i.AbilityID,
 		&i.DifficultyID,
 		&i.Visibility,
 		&i.SensitiveLevel,
@@ -832,9 +843,13 @@ func (q *Queries) LockPromptIncludingDeleted(ctx context.Context, id int64) (Loc
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PurposeID,
+		&i.CapabilityID,
 		&i.IsHighRisk,
-		&i.CategoryNameZh,
-		&i.CategoryNameEn,
+		&i.PurposeNameZh,
+		&i.PurposeNameEn,
+		&i.CapabilityNameZh,
+		&i.CapabilityNameEn,
 	)
 	return i, err
 }
@@ -883,7 +898,7 @@ SET current_version_id = $2,
     major_modified = major_modified OR $4,
     updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, title, body, description, category_id, ability_id, difficulty_id, visibility, sensitive_level, uploader_id, original_uploader_id, current_version_id, latest_version_no, major_modified, comment_count, favorite_count, deleted_at, created_at, updated_at
+RETURNING id, title, body, description, difficulty_id, visibility, sensitive_level, uploader_id, original_uploader_id, current_version_id, latest_version_no, major_modified, comment_count, favorite_count, deleted_at, created_at, updated_at, purpose_id, capability_id
 `
 
 type SetPromptCurrentVersionParams struct {
@@ -906,8 +921,6 @@ func (q *Queries) SetPromptCurrentVersion(ctx context.Context, arg SetPromptCurr
 		&i.Title,
 		&i.Body,
 		&i.Description,
-		&i.CategoryID,
-		&i.AbilityID,
 		&i.DifficultyID,
 		&i.Visibility,
 		&i.SensitiveLevel,
@@ -921,6 +934,8 @@ func (q *Queries) SetPromptCurrentVersion(ctx context.Context, arg SetPromptCurr
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PurposeID,
+		&i.CapabilityID,
 	)
 	return i, err
 }
@@ -944,14 +959,14 @@ UPDATE prompts
 SET title = $2,
     body = $3,
     description = $4,
-    category_id = $5,
-    ability_id = $6,
+    purpose_id = $5,
+    capability_id = $6,
     difficulty_id = $7,
     visibility = $8,
     sensitive_level = $9,
     updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL
-RETURNING id, title, body, description, category_id, ability_id, difficulty_id, visibility, sensitive_level, uploader_id, original_uploader_id, current_version_id, latest_version_no, major_modified, comment_count, favorite_count, deleted_at, created_at, updated_at
+RETURNING id, title, body, description, difficulty_id, visibility, sensitive_level, uploader_id, original_uploader_id, current_version_id, latest_version_no, major_modified, comment_count, favorite_count, deleted_at, created_at, updated_at, purpose_id, capability_id
 `
 
 type UpdatePromptContentParams struct {
@@ -959,8 +974,8 @@ type UpdatePromptContentParams struct {
 	Title          string
 	Body           string
 	Description    string
-	CategoryID     int64
-	AbilityID      pgtype.Int8
+	PurposeID      int64
+	CapabilityID   int64
 	DifficultyID   pgtype.Int8
 	Visibility     string
 	SensitiveLevel string
@@ -974,8 +989,8 @@ func (q *Queries) UpdatePromptContent(ctx context.Context, arg UpdatePromptConte
 		arg.Title,
 		arg.Body,
 		arg.Description,
-		arg.CategoryID,
-		arg.AbilityID,
+		arg.PurposeID,
+		arg.CapabilityID,
 		arg.DifficultyID,
 		arg.Visibility,
 		arg.SensitiveLevel,
@@ -986,8 +1001,6 @@ func (q *Queries) UpdatePromptContent(ctx context.Context, arg UpdatePromptConte
 		&i.Title,
 		&i.Body,
 		&i.Description,
-		&i.CategoryID,
-		&i.AbilityID,
 		&i.DifficultyID,
 		&i.Visibility,
 		&i.SensitiveLevel,
@@ -1001,6 +1014,8 @@ func (q *Queries) UpdatePromptContent(ctx context.Context, arg UpdatePromptConte
 		&i.DeletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.PurposeID,
+		&i.CapabilityID,
 	)
 	return i, err
 }

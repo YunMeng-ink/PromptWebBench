@@ -142,9 +142,12 @@ onMounted(async () => {
 <template>
   <section class="pb-notifications">
     <header class="pb-notifications__head">
-      <h1 class="pb-notifications__title">{{ t('notifications.title') }}</h1>
+      <div class="pb-notifications__heading">
+        <span class="pb-eyebrow" aria-hidden="true">Inbox</span>
+        <h1 class="pb-notifications__title">{{ t('notifications.title') }}</h1>
+      </div>
       <div class="pb-notifications__actions">
-        <el-button size="small" data-testid="notifications-mark-all" @click="markAllRead">
+        <el-button data-testid="notifications-mark-all" @click="markAllRead">
           {{ t('notifications.markAllRead') }}
         </el-button>
       </div>
@@ -184,9 +187,9 @@ onMounted(async () => {
     </p>
 
     <p v-if="loading" class="pb-notifications__hint">{{ t('notifications.loadFailed') }}</p>
-    <p v-else-if="items.length === 0" data-testid="notifications-empty">
-      {{ t('notifications.empty') }}
-    </p>
+    <div v-else-if="items.length === 0" class="pb-empty" data-testid="notifications-empty">
+      <span class="pb-empty__title">{{ t('notifications.empty') }}</span>
+    </div>
 
     <ul v-else class="pb-notifications__list" data-testid="notifications-list">
       <li
@@ -250,90 +253,128 @@ onMounted(async () => {
 
 <style scoped>
 .pb-notifications {
-  padding: var(--pb-space-lg) 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-md);
+  padding: var(--pb-space-xl) 0 var(--pb-space-2xl);
 }
 
 .pb-notifications__head {
-  align-items: center;
   display: flex;
+  align-items: flex-end;
   justify-content: space-between;
+  gap: var(--pb-space-lg);
+  padding-bottom: var(--pb-space-md);
+  border-bottom: 1px solid var(--pb-line);
+}
+
+.pb-notifications__heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-xs);
 }
 
 .pb-notifications__title {
-  font-size: 22px;
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
   margin: 0;
 }
 
 .pb-notifications__unread {
-  color: var(--pb-color-text-soft);
-  font-size: 13px;
-  margin: var(--pb-space-xs) 0 var(--pb-space-sm);
+  align-self: flex-start;
+  margin: 0;
+  padding: 3px 11px;
+  border-radius: var(--pb-radius-pill);
+  background: var(--pb-accent-soft);
+  color: var(--pb-accent-strong);
+  font-size: 12.5px;
 }
 
 .pb-notifications__filter {
-  margin-bottom: var(--pb-space-md);
+  max-width: 320px;
 }
 
 .pb-notifications__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-sm);
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
 .pb-notifications__item {
-  border-top: 1px solid var(--pb-color-border);
-  padding: var(--pb-space-sm) 0;
+  padding: var(--pb-space-md) var(--pb-space-lg);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-md);
+  border-left: 2px solid transparent;
 }
 
 .pb-notifications__item--unread {
-  background-color: var(--el-color-primary-light-9);
+  border-left-color: var(--pb-accent);
+  background: var(--pb-accent-soft);
 }
 
 .pb-notifications__item-head {
-  align-items: center;
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
   gap: var(--pb-space-sm);
 }
 
 .pb-notifications__kind {
-  background-color: var(--pb-color-surface-muted);
-  border-radius: var(--pb-radius-sm);
-  color: var(--pb-color-text-soft);
-  font-size: 12px;
-  padding: 1px var(--pb-space-xs);
+  padding: 1px 9px;
+  border-radius: var(--pb-radius-pill);
+  background: var(--pb-surface-muted);
+  color: var(--pb-ink-soft);
+  font-size: 11.5px;
 }
 
 .pb-notifications__item-title {
+  color: var(--pb-ink);
   font-weight: 600;
 }
 
 .pb-notifications__dot {
-  color: var(--el-color-primary);
-  font-size: 12px;
+  color: var(--pb-accent-strong);
+  font-size: 11.5px;
+  font-weight: 600;
 }
 
 .pb-notifications__body {
-  color: var(--pb-color-text-soft);
-  font-size: 13px;
   margin: var(--pb-space-xs) 0 0;
+  color: var(--pb-ink-soft);
+  font-size: 13.5px;
+  line-height: 1.7;
 }
 
 .pb-notifications__item-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: var(--pb-space-xs);
   margin-top: var(--pb-space-xs);
 }
 
 .pb-notifications__error {
-  color: var(--el-color-danger);
+  margin: 0;
+  padding: var(--pb-space-sm) var(--pb-space-md);
+  border-radius: var(--pb-radius-md);
+  background: var(--pb-accent-soft);
+  color: var(--pb-danger);
+  font-size: 13.5px;
 }
 
 .pb-notifications__notice,
 .pb-notifications__hint {
-  color: var(--pb-color-text-soft);
+  margin: 0;
+  color: var(--pb-ink-soft);
+  font-size: 13.5px;
 }
 
 .pb-notifications__pager {
+  justify-content: flex-end;
   margin-top: var(--pb-space-md);
 }
 </style>

@@ -476,10 +476,12 @@ type questionDTO struct {
 	Title               string   `json:"title"`
 	Body                string   `json:"body"`
 	Description         string   `json:"description"`
-	CategoryID          *int64   `json:"category_id,omitempty"`
-	CategoryNameZh      string   `json:"category_name_zh"`
-	CategoryNameEn      string   `json:"category_name_en"`
-	AbilityID           *int64   `json:"ability_id,omitempty"`
+	PurposeID           *int64   `json:"purpose_id,omitempty"`
+	PurposeNameZh       string   `json:"purpose_name_zh"`
+	PurposeNameEn       string   `json:"purpose_name_en"`
+	CapabilityID        *int64   `json:"capability_id,omitempty"`
+	CapabilityNameZh    string   `json:"capability_name_zh"`
+	CapabilityNameEn    string   `json:"capability_name_en"`
 	DifficultyID        *int64   `json:"difficulty_id,omitempty"`
 	SensitiveLevel      string   `json:"sensitive_level"`
 	SortOrder           int32    `json:"sort_order"`
@@ -495,8 +497,10 @@ type questionDTO struct {
 func toQuestionDTO(q library.Question) questionDTO {
 	return questionDTO{
 		ID: q.ID, LibraryID: q.LibraryID, Kind: string(q.Kind), Title: q.Title, Body: q.Body,
-		Description: q.Description, CategoryID: q.CategoryID, CategoryNameZh: q.CategoryNameZh,
-		CategoryNameEn: q.CategoryNameEn, AbilityID: q.AbilityID, DifficultyID: q.DifficultyID,
+		Description: q.Description, PurposeID: q.PurposeID, PurposeNameZh: q.PurposeNameZh,
+		PurposeNameEn: q.PurposeNameEn, CapabilityID: q.CapabilityID,
+		CapabilityNameZh: q.CapabilityNameZh, CapabilityNameEn: q.CapabilityNameEn,
+		DifficultyID:   q.DifficultyID,
 		SensitiveLevel: string(q.Sensitive), SortOrder: q.SortOrder, Tags: q.Tags,
 		SourcePromptID: q.SourcePromptID, SourceVersionNo: q.SourceVersionNo,
 		SourceAvailable: q.SourceAvailable, SourceMajorModified: q.SourceMajorModified,
@@ -551,8 +555,8 @@ type addQuestionBody struct {
 	Title        string   `json:"title,omitempty" maxLength:"200" doc:"派生题标题"`
 	Body         string   `json:"body,omitempty" maxLength:"200000" doc:"派生题正文"`
 	Description  string   `json:"description,omitempty" maxLength:"2000" doc:"题目说明"`
-	CategoryID   *int64   `json:"category_id,omitempty" minimum:"1" doc:"派生题类别"`
-	AbilityID    *int64   `json:"ability_id,omitempty" minimum:"1" doc:"派生题能力"`
+	PurposeID    *int64   `json:"purpose_id,omitempty" minimum:"1" doc:"派生题考察目的"`
+	CapabilityID *int64   `json:"capability_id,omitempty" minimum:"1" doc:"派生题考察维度"`
 	DifficultyID *int64   `json:"difficulty_id,omitempty" minimum:"1" doc:"派生题难度"`
 	Sensitive    string   `json:"sensitive_level,omitempty" enum:"low,medium,high" doc:"敏感级别，默认 low"`
 	Tags         []string `json:"tags,omitempty" doc:"题目标签"`
@@ -577,8 +581,8 @@ func (s *Server) handleAddLibraryQuestion(ctx context.Context, in *addQuestionIn
 		Title:        in.Body.Title,
 		Body:         in.Body.Body,
 		Description:  in.Body.Description,
-		CategoryID:   in.Body.CategoryID,
-		AbilityID:    in.Body.AbilityID,
+		PurposeID:    in.Body.PurposeID,
+		CapabilityID: in.Body.CapabilityID,
 		DifficultyID: in.Body.DifficultyID,
 		Sensitive:    sensitive,
 		Tags:         in.Body.Tags,
@@ -595,8 +599,8 @@ type updateQuestionBody struct {
 	Title        string `json:"title" required:"true" minLength:"1" maxLength:"200" doc:"题目标题"`
 	Body         string `json:"body" required:"true" minLength:"1" maxLength:"200000" doc:"题目正文"`
 	Description  string `json:"description,omitempty" maxLength:"2000" doc:"题目说明"`
-	CategoryID   *int64 `json:"category_id,omitempty" minimum:"1" doc:"题目类别"`
-	AbilityID    *int64 `json:"ability_id,omitempty" minimum:"1" doc:"题目能力"`
+	PurposeID    *int64 `json:"purpose_id,omitempty" minimum:"1" doc:"题目考察目的"`
+	CapabilityID *int64 `json:"capability_id,omitempty" minimum:"1" doc:"题目考察维度"`
 	DifficultyID *int64 `json:"difficulty_id,omitempty" minimum:"1" doc:"题目难度"`
 	Sensitive    string `json:"sensitive_level,omitempty" enum:"low,medium,high" doc:"敏感级别"`
 	Note         string `json:"change_note,omitempty" maxLength:"500" doc:"修改说明"`
@@ -620,8 +624,8 @@ func (s *Server) handleUpdateLibraryQuestion(ctx context.Context, in *updateQues
 		Title:        in.Body.Title,
 		Body:         in.Body.Body,
 		Description:  in.Body.Description,
-		CategoryID:   in.Body.CategoryID,
-		AbilityID:    in.Body.AbilityID,
+		PurposeID:    in.Body.PurposeID,
+		CapabilityID: in.Body.CapabilityID,
 		DifficultyID: in.Body.DifficultyID,
 		Sensitive:    sensitive,
 		Note:         in.Body.Note,

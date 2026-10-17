@@ -186,8 +186,10 @@ export async function createPrompt(page: Page, title: string): Promise<number> {
   await titleInput.fill(title)
   await page.getByTestId('prompt-body').fill('端到端测试使用的提示词正文。')
 
-  await page.getByTestId('prompt-category').locator('.el-select__wrapper').click()
-  await page.getByRole('option').first().click()
+  await page.getByTestId('prompt-purpose').locator('.el-select__wrapper').click()
+  await page.getByRole('option', { name: '边界探测', exact: true }).click()
+  await page.getByTestId('prompt-capability').locator('.el-select__wrapper').click()
+  await page.getByRole('option', { name: '推理', exact: true }).click()
 
   await page.getByTestId('prompt-submit').click()
   await expect(page).toHaveURL(/\/prompts\/\d+$/)
@@ -217,8 +219,10 @@ export async function createPromptWithVisibility(
   await titleInput.fill(title)
   await page.getByTestId('prompt-body').fill('开发者可见的提示词正文。')
 
-  await page.getByTestId('prompt-category').locator('.el-select__wrapper').click()
-  await page.getByRole('option').first().click()
+  await page.getByTestId('prompt-purpose').locator('.el-select__wrapper').click()
+  await page.getByRole('option', { name: '边界探测', exact: true }).click()
+  await page.getByTestId('prompt-capability').locator('.el-select__wrapper').click()
+  await page.getByRole('option', { name: '推理', exact: true }).click()
 
   await page.getByTestId('prompt-visibility').locator('.el-select__wrapper').click()
   await page.getByRole('option', { name: visibilityLabel(visibility) }).click()

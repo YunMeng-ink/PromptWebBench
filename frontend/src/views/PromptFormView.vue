@@ -12,7 +12,7 @@ import {
 import { useErrorMessage } from '@/composables/useErrorMessage'
 import { useAuthStore } from '@/stores/auth'
 import { useDictionaryStore } from '@/stores/dictionary'
-import { normalizeVisibility, visibleCategories } from '@/views/promptFormRules'
+import { normalizeVisibility, visiblePurposes } from '@/views/promptFormRules'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,8 +32,8 @@ interface Form {
   title: string
   body: string
   description: string
-  categoryID: number | undefined
-  abilityID: number | undefined
+  purposeID: number | undefined
+  capabilityID: number | undefined
   difficultyID: number | undefined
   visibility: Visibility
   sensitiveLevel: SensitiveLevel
@@ -47,8 +47,8 @@ function emptyForm(): Form {
     title: '',
     body: '',
     description: '',
-    categoryID: undefined,
-    abilityID: undefined,
+    purposeID: undefined,
+    capabilityID: undefined,
     difficultyID: undefined,
     visibility: 'public',
     sensitiveLevel: 'low',
@@ -63,7 +63,7 @@ const submitting = ref(false)
 /**
  * loaded 标记编辑表单已取回待修改的提示词。
  *
- * 表单在详情返回之前就已经渲染，此时提交会把占位取值（空正文、类别 0）发出去，
+ * 表单在详情返回之前就已经渲染，此时提交会把占位取值（空正文、考察目的 0）发出去，
  * 后端必然以字段校验失败拒绝。提交入口在详情到达前保持禁用，避免这种必然失败的请求。
  */
 const loaded = ref(false)
@@ -87,9 +87,22 @@ const sensitiveLevels = computed(() => [
   { value: 'high' as const, label: t('prompt.sensitiveHigh') },
 ])
 
-/** 高风险类别不出现在普通用户的表单中，与后端 C-19 的判定同源。 */
-const categoryOptions = computed(() =>
-  visibleCategories(dictionary.data.categories, auth.hasRole('developer')),
+/** 高风险考察目的不出现在普通用户的表单中，与后端 C-19 的判定同源。 */
+const purposeOptions = computed(() =>
+  visiblePurposes(dictionary.data.purposes, auth.hasRole('developer')),
+)
+
+const tagGroups = computed(() =>
+  [
+    {
+      label: t('prompt.themeTags'),
+      options: dictionary.data.tags.filter((tag) => tag.kind === 'theme'),
+    },
+    {
+      label: t('prompt.formTags'),
+      options: dictionary.data.tags.filter((tag) => tag.kind === 'form'),
+    },
+  ].filter((group) => group.options.length > 0),
 )
 
 function openFilePicker(): void {
@@ -123,8 +136,8 @@ function payload(): PromptPayload {
     title: form.value.title.trim(),
     body: form.value.body,
     description: form.value.description.trim(),
-    category_id: form.value.categoryID ?? 0,
-    ability_id: form.value.abilityID,
+    purpose_id: form.value.purposeID ?? 0,
+    capability_id: form.value.capabilityID ?? 0,
     difficulty_id: form.value.difficultyID,
     visibility: normalizeVisibility(form.value.visibility, auth.hasRole('developer')),
     sensitive_level: form.value.sensitiveLevel,
@@ -171,8 +184,8 @@ onMounted(async () => {
       title: detail.version.title,
       body: detail.version.body,
       description: detail.version.description,
-      categoryID: detail.prompt.category_id,
-      abilityID: detail.prompt.ability_id,
+      purposeID: detail.prompt.purpose_id,
+      capabilityID: detail.prompt.capability_id,
       difficultyID: detail.prompt.difficulty_id,
       visibility: detail.prompt.visibility,
       sensitiveLevel: detail.prompt.sensitive_level,
@@ -189,11 +202,19 @@ onMounted(async () => {
 
 <template>
   <section class="pb-prompt-form">
-    <h1 class="pb-prompt-form__title">
-      {{ isEdit ? t('prompt.editTitle') : t('prompt.uploadTitle') }}
-    </h1>
+    <header class="pb-prompt-form__head">
+      <span class="pb-eyebrow" aria-hidden="true">Compose</span>
+      <h1 class="pb-prompt-form__title">
+        {{ isEdit ? t('prompt.editTitle') : t('prompt.uploadTitle') }}
+      </h1>
+    </header>
 
-    <el-form data-testid="prompt-form" label-position="top" @submit.prevent="submit">
+    <el-form
+      class="pb-prompt-form__card"
+      data-testid="prompt-form"
+      label-position="top"
+      @submit.prevent="submit"
+    >
       <el-form-item :label="t('prompt.title')">
         <el-input v-model="form.title" data-testid="prompt-title" maxlength="200" show-word-limit />
       </el-form-item>
@@ -220,10 +241,14 @@ onMounted(async () => {
       </el-form-item>
 
       <div class="pb-prompt-form__row">
-        <el-form-item :label="t('prompt.category')">
-          <el-select v-model="form.categoryID" data-testid="prompt-category" :placeholder="t('prompt.category')">
+        <el-form-item :label="t('prompt.purpose')">
+          <el-select
+            v-model="form.purposeID"
+            data-testid="prompt-purpose"
+            :placeholder="t('prompt.purposePlaceholder')"
+          >
             <el-option
-              v-for="item in categoryOptions"
+              v-for="item in purposeOptions"
               :key="item.id"
               :label="localized(item.name_zh, item.name_en)"
               :value="item.id"
@@ -231,10 +256,14 @@ onMounted(async () => {
           </el-select>
         </el-form-item>
 
-        <el-form-item :label="t('prompt.ability')">
-          <el-select v-model="form.abilityID" data-testid="prompt-ability" clearable :placeholder="t('prompt.ability')">
+        <el-form-item :label="t('prompt.capability')">
+          <el-select
+            v-model="form.capabilityID"
+            data-testid="prompt-capability"
+            :placeholder="t('prompt.capabilityPlaceholder')"
+          >
             <el-option
-              v-for="item in dictionary.data.abilities"
+              v-for="item in dictionary.data.capabilities"
               :key="item.id"
               :label="localized(item.name_zh, item.name_en)"
               :value="item.id"
@@ -285,12 +314,18 @@ onMounted(async () => {
             collapse-tags
             :placeholder="t('prompt.tags')"
           >
-            <el-option
-              v-for="item in dictionary.data.tags"
-              :key="item.id"
-              :label="localized(item.name_zh, item.name_en)"
-              :value="item.id"
-            />
+            <el-option-group
+              v-for="group in tagGroups"
+              :key="group.label"
+              :label="group.label"
+            >
+              <el-option
+                v-for="item in group.options"
+                :key="item.id"
+                :label="localized(item.name_zh, item.name_en)"
+                :value="item.id"
+              />
+            </el-option-group>
           </el-select>
         </el-form-item>
       </div>
@@ -343,13 +378,34 @@ onMounted(async () => {
 
 <style scoped>
 .pb-prompt-form {
-  padding: var(--pb-space-lg) 0;
-  max-width: 900px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-lg);
+  max-width: 920px;
+  padding: var(--pb-space-xl) 0 var(--pb-space-2xl);
+}
+
+.pb-prompt-form__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-xs);
+  padding-bottom: var(--pb-space-md);
+  border-bottom: 1px solid var(--pb-line);
 }
 
 .pb-prompt-form__title {
-  font-size: 24px;
-  margin: 0 0 var(--pb-space-md);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  margin: 0;
+}
+
+.pb-prompt-form__card {
+  padding: var(--pb-space-xl);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-lg);
+  box-shadow: var(--pb-shadow-sm);
 }
 
 .pb-prompt-form__row {
@@ -367,24 +423,39 @@ onMounted(async () => {
 }
 
 .pb-prompt-form__hint {
-  color: var(--el-color-warning);
+  color: var(--pb-warning);
   font-size: 13px;
   margin: var(--pb-space-xs) 0 0;
 }
 
 .pb-prompt-form__actions {
   display: flex;
+  align-items: center;
   gap: var(--pb-space-sm);
-  margin-top: var(--pb-space-md);
+  margin-top: var(--pb-space-sm);
+  padding-top: var(--pb-space-lg);
+  border-top: 1px solid var(--pb-line);
+}
+
+.pb-prompt-form__actions :deep(.el-button:last-child) {
+  margin-left: auto;
 }
 
 .pb-prompt-form__notice {
-  color: var(--el-color-success);
   margin: var(--pb-space-sm) 0 0;
+  padding: var(--pb-space-sm) var(--pb-space-md);
+  border-radius: var(--pb-radius-md);
+  background: var(--el-color-success-light-9);
+  color: var(--pb-success);
+  font-size: 13.5px;
 }
 
 .pb-prompt-form__failure {
-  color: var(--el-color-danger);
   margin: var(--pb-space-sm) 0 0;
+  padding: var(--pb-space-sm) var(--pb-space-md);
+  border-radius: var(--pb-radius-md);
+  background: var(--pb-accent-soft);
+  color: var(--pb-danger);
+  font-size: 13.5px;
 }
 </style>

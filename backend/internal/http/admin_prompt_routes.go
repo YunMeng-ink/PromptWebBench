@@ -66,13 +66,14 @@ func (s *Server) registerAdminPromptRoutes() {
 }
 
 type adminListPromptsInput struct {
-	Page       int32  `query:"page" default:"1" minimum:"1"`
-	PageSize   int32  `query:"page_size" default:"20" minimum:"1" maximum:"100"`
-	Keyword    string `query:"keyword" maxLength:"100" doc:"标题、描述与正文中的关键词"`
-	Visibility string `query:"visibility" enum:",public,private,developer" doc:"按可见性筛选"`
-	Deleted    string `query:"deleted" enum:",true,false" doc:"按删除状态筛选：true 仅回收站，false 仅在库"`
-	CategoryID string `query:"category_id" doc:"按类别筛选"`
-	UploaderID string `query:"uploader_id" doc:"按上传者筛选"`
+	Page         int32  `query:"page" default:"1" minimum:"1"`
+	PageSize     int32  `query:"page_size" default:"20" minimum:"1" maximum:"100"`
+	Keyword      string `query:"keyword" maxLength:"100" doc:"标题、描述与正文中的关键词"`
+	Visibility   string `query:"visibility" enum:",public,private,developer" doc:"按可见性筛选"`
+	Deleted      string `query:"deleted" enum:",true,false" doc:"按删除状态筛选：true 仅回收站，false 仅在库"`
+	PurposeID    string `query:"purpose_id" doc:"按考察目的筛选"`
+	CapabilityID string `query:"capability_id" doc:"按考察维度筛选"`
+	UploaderID   string `query:"uploader_id" doc:"按上传者筛选"`
 }
 
 func (in *adminListPromptsInput) filter() (admin.PromptFilter, error) {
@@ -90,7 +91,10 @@ func (in *adminListPromptsInput) filter() (admin.PromptFilter, error) {
 		return &value, nil
 	}
 	var err error
-	if out.CategoryID, err = parse(in.CategoryID, "类别参数"); err != nil {
+	if out.PurposeID, err = parse(in.PurposeID, "考察目的参数"); err != nil {
+		return admin.PromptFilter{}, err
+	}
+	if out.CapabilityID, err = parse(in.CapabilityID, "考察维度参数"); err != nil {
 		return admin.PromptFilter{}, err
 	}
 	if out.UploaderID, err = parse(in.UploaderID, "上传者参数"); err != nil {
@@ -139,31 +143,34 @@ func (s *Server) handleAdminGetPrompt(ctx context.Context, in *adminPromptIDInpu
 
 	out := &adminPromptDetailResponse{}
 	out.Body.Prompt = adminPromptDTO{
-		ID:             detail.Prompt.ID,
-		Title:          detail.Prompt.Title,
-		Description:    detail.Prompt.Description,
-		CategoryID:     detail.Prompt.CategoryID,
-		CategoryNameZh: detail.Prompt.CategoryNameZh,
-		CategoryNameEn: detail.Prompt.CategoryNameEn,
-		AbilityID:      int64PtrOf(detail.Prompt.AbilityID),
-		DifficultyID:   int64PtrOf(detail.Prompt.DifficultyID),
-		Visibility:     detail.Prompt.Visibility,
-		SensitiveLevel: detail.Prompt.SensitiveLevel,
-		UploaderID:     detail.Prompt.UploaderID,
-		VersionNo:      detail.Prompt.LatestVersionNo,
-		MajorModified:  detail.Prompt.MajorModified,
-		HighRisk:       detail.Prompt.IsHighRisk,
-		CommentCount:   detail.Prompt.CommentCount,
-		FavoriteCount:  detail.Prompt.FavoriteCount,
-		Deleted:        detail.Prompt.DeletedAt.Valid,
-		CreatedAt:      timeString(detail.Prompt.CreatedAt),
-		UpdatedAt:      timeString(detail.Prompt.UpdatedAt),
+		ID:               detail.Prompt.ID,
+		Title:            detail.Prompt.Title,
+		Description:      detail.Prompt.Description,
+		PurposeID:        detail.Prompt.PurposeID,
+		PurposeNameZh:    detail.Prompt.PurposeNameZh,
+		PurposeNameEn:    detail.Prompt.PurposeNameEn,
+		CapabilityID:     detail.Prompt.CapabilityID,
+		CapabilityNameZh: detail.Prompt.CapabilityNameZh,
+		CapabilityNameEn: detail.Prompt.CapabilityNameEn,
+		DifficultyID:     int64PtrOf(detail.Prompt.DifficultyID),
+		Visibility:       detail.Prompt.Visibility,
+		SensitiveLevel:   detail.Prompt.SensitiveLevel,
+		UploaderID:       detail.Prompt.UploaderID,
+		VersionNo:        detail.Prompt.LatestVersionNo,
+		MajorModified:    detail.Prompt.MajorModified,
+		HighRisk:         detail.Prompt.IsHighRisk,
+		CommentCount:     detail.Prompt.CommentCount,
+		FavoriteCount:    detail.Prompt.FavoriteCount,
+		Deleted:          detail.Prompt.DeletedAt.Valid,
+		CreatedAt:        timeString(detail.Prompt.CreatedAt),
+		UpdatedAt:        timeString(detail.Prompt.UpdatedAt),
 	}
 	out.Body.Body = detail.Prompt.Body
 	out.Body.Tags = make([]tagDTO, 0, len(detail.Tags))
 	for _, tag := range detail.Tags {
 		out.Body.Tags = append(out.Body.Tags, tagDTO{
-			ID: tag.ID, Slug: tag.Slug, NameZh: tag.NameZh, NameEn: tag.NameEn, Color: tag.Color,
+			ID: tag.ID, Slug: tag.Slug, NameZh: tag.NameZh, NameEn: tag.NameEn,
+			Color: tag.Color, Kind: tag.Kind,
 		})
 	}
 	out.Body.Versions = make([]promptVersionDTO, 0, len(detail.Versions))

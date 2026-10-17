@@ -31,7 +31,7 @@ type ModelInput struct {
 	ReleaseDate     *time.Time
 	ContextLength   *int64
 	IsEnabled       bool
-	AbilityTags     []string
+	CapabilityIDs   []int64
 	Note            string
 }
 
@@ -63,8 +63,17 @@ func (in ModelInput) normalize() (ModelInput, error) {
 	if out.InputModalities, err = domain.NormalizeStringList(in.InputModalities, "输入模态"); err != nil {
 		return ModelInput{}, apperr.New(apperr.CodeValidationFailed, err.Error())
 	}
-	if out.AbilityTags, err = domain.NormalizeStringList(in.AbilityTags, "能力标签"); err != nil {
-		return ModelInput{}, apperr.New(apperr.CodeValidationFailed, err.Error())
+	seen := map[int64]bool{}
+	out.CapabilityIDs = make([]int64, 0, len(in.CapabilityIDs))
+	for _, capabilityID := range in.CapabilityIDs {
+		if capabilityID <= 0 {
+			return ModelInput{}, apperr.New(apperr.CodeValidationFailed, "考察维度取值非法")
+		}
+		if seen[capabilityID] {
+			continue
+		}
+		seen[capabilityID] = true
+		out.CapabilityIDs = append(out.CapabilityIDs, capabilityID)
 	}
 	if out.Aliases, err = domain.NormalizeStringList(in.Aliases, "模型别名"); err != nil {
 		return ModelInput{}, apperr.New(apperr.CodeValidationFailed, err.Error())
@@ -122,36 +131,48 @@ func (s *Service) CreateModel(ctx context.Context, operator domain.User, in Mode
 		return repo.Model{}, err
 	}
 
-	q := repo.New(s.pool)
-	if err := s.assertModelIdentityFree(ctx, q, normalized.ModelKey, normalized.ProviderKey, 0); err != nil {
-		return repo.Model{}, err
-	}
-	row, err := q.InsertModel(ctx, repo.InsertModelParams{
-		Name:            normalized.Name,
-		ModelKey:        normalized.ModelKey,
-		ProviderKey:     normalized.ProviderKey,
-		ProviderName:    normalized.ProviderName,
-		InputModalities: normalized.InputModalities,
-		Aliases:         normalized.Aliases,
-		Description:     normalized.Description,
-		ReleaseDate:     repoDate(normalized.ReleaseDate),
-		ContextLength:   repoInt8(normalized.ContextLength),
-		IsEnabled:       normalized.IsEnabled,
-		AbilityTags:     normalized.AbilityTags,
-		Note:            normalized.Note,
-		ImportSource:    "manual",
+	var created repo.Model
+	err = repo.InTx(ctx, s.pool, func(q *repo.Queries) error {
+		if err := s.assertModelIdentityFree(ctx, q, normalized.ModelKey, normalized.ProviderKey, 0); err != nil {
+			return err
+		}
+		if err := validateModelCapabilities(ctx, q, normalized.CapabilityIDs); err != nil {
+			return err
+		}
+		row, err := q.InsertModel(ctx, repo.InsertModelParams{
+			Name:            normalized.Name,
+			ModelKey:        normalized.ModelKey,
+			ProviderKey:     normalized.ProviderKey,
+			ProviderName:    normalized.ProviderName,
+			InputModalities: normalized.InputModalities,
+			Aliases:         normalized.Aliases,
+			Description:     normalized.Description,
+			ReleaseDate:     repoDate(normalized.ReleaseDate),
+			ContextLength:   repoInt8(normalized.ContextLength),
+			IsEnabled:       normalized.IsEnabled,
+			Note:            normalized.Note,
+			ImportSource:    "manual",
+		})
+		if err != nil {
+			if isUniqueViolation(err) {
+				return apperr.New(apperr.CodeDuplicateModel, "")
+			}
+			return fmt.Errorf("写入模型: %w", err)
+		}
+		if err := replaceModelCapabilities(ctx, q, row.ID, normalized.CapabilityIDs); err != nil {
+			return err
+		}
+		created = row
+		return nil
 	})
 	if err != nil {
-		if isUniqueViolation(err) {
-			return repo.Model{}, apperr.New(apperr.CodeDuplicateModel, "")
-		}
-		return repo.Model{}, fmt.Errorf("写入模型: %w", err)
-	}
-
-	if err := s.logModelChange(ctx, operator, oplog.ActionModelImport, row, nil, ip, "手工添加模型"); err != nil {
 		return repo.Model{}, err
 	}
-	return row, nil
+
+	if err := s.logModelChange(ctx, operator, oplog.ActionModelImport, created, nil, ip, "手工添加模型"); err != nil {
+		return repo.Model{}, err
+	}
+	return created, nil
 }
 
 // UpdateModel 编辑模型（需求 §17.3「编辑模型」）。平台模型 ID 不变。
@@ -179,6 +200,9 @@ func (s *Service) UpdateModel(ctx context.Context, operator domain.User, id int6
 		if err := s.assertModelIdentityFree(ctx, q, normalized.ModelKey, normalized.ProviderKey, id); err != nil {
 			return err
 		}
+		if err := validateModelCapabilities(ctx, q, normalized.CapabilityIDs); err != nil {
+			return err
+		}
 
 		row, err := q.UpdateModel(ctx, repo.UpdateModelParams{
 			ID:              id,
@@ -192,7 +216,6 @@ func (s *Service) UpdateModel(ctx context.Context, operator domain.User, id int6
 			ReleaseDate:     repoDate(normalized.ReleaseDate),
 			ContextLength:   repoInt8(normalized.ContextLength),
 			IsEnabled:       normalized.IsEnabled,
-			AbilityTags:     normalized.AbilityTags,
 			Note:            normalized.Note,
 		})
 		if err != nil {
@@ -201,6 +224,9 @@ func (s *Service) UpdateModel(ctx context.Context, operator domain.User, id int6
 			}
 			return fmt.Errorf("更新模型: %w", err)
 		}
+		if err := replaceModelCapabilities(ctx, q, row.ID, normalized.CapabilityIDs); err != nil {
+			return err
+		}
 		updated = row
 		return s.logModelChangeInTx(ctx, q, operator, oplog.ActionModelOverwrite, row, &current, ip, "编辑模型")
 	})
@@ -208,6 +234,73 @@ func (s *Service) UpdateModel(ctx context.Context, operator domain.User, id int6
 		return repo.Model{}, err
 	}
 	return updated, nil
+}
+
+// validateModelCapabilities 校验模型选择的考察维度存在且启用。
+func validateModelCapabilities(ctx context.Context, q *repo.Queries, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := q.GetCapabilitiesByIDs(ctx, ids)
+	if err != nil {
+		return fmt.Errorf("查询模型考察维度: %w", err)
+	}
+	if len(rows) != len(ids) {
+		return apperr.New(apperr.CodeInvalidClassification, "模型选择的考察维度不存在")
+	}
+	for _, row := range rows {
+		if !row.IsEnabled {
+			return apperr.New(apperr.CodeInvalidClassification, "模型选择的考察维度已停用")
+		}
+	}
+	return nil
+}
+
+// replaceModelCapabilities 整体替换模型的考察维度集合。
+func replaceModelCapabilities(ctx context.Context, q *repo.Queries, modelID int64, ids []int64) error {
+	if err := q.ReplaceModelCapabilities(ctx, modelID); err != nil {
+		return fmt.Errorf("清空模型考察维度: %w", err)
+	}
+	for _, capabilityID := range ids {
+		if err := q.AttachModelCapability(ctx, repo.AttachModelCapabilityParams{
+			ModelID:      modelID,
+			CapabilityID: capabilityID,
+		}); err != nil {
+			return fmt.Errorf("写入模型考察维度: %w", err)
+		}
+	}
+	return nil
+}
+
+// ModelCapabilityIDs 返回模型选择的考察维度，供后台详情与写入响应回显。
+func (s *Service) ModelCapabilityIDs(ctx context.Context, modelID int64) ([]int64, error) {
+	if err := s.ensure(); err != nil {
+		return nil, err
+	}
+	ids, err := repo.New(s.pool).ListModelCapabilityIDs(ctx, modelID)
+	if err != nil {
+		return nil, fmt.Errorf("查询模型考察维度: %w", err)
+	}
+	return ids, nil
+}
+
+// ModelCapabilityIDsByModel 批量返回一页模型选择的考察维度，避免逐条查询。
+func (s *Service) ModelCapabilityIDsByModel(ctx context.Context, modelIDs []int64) (map[int64][]int64, error) {
+	if err := s.ensure(); err != nil {
+		return nil, err
+	}
+	out := make(map[int64][]int64, len(modelIDs))
+	if len(modelIDs) == 0 {
+		return out, nil
+	}
+	rows, err := repo.New(s.pool).ListModelCapabilitiesForModels(ctx, modelIDs)
+	if err != nil {
+		return nil, fmt.Errorf("查询模型考察维度: %w", err)
+	}
+	for _, row := range rows {
+		out[row.ModelID] = append(out[row.ModelID], row.CapabilityID)
+	}
+	return out, nil
 }
 
 // SetModelEnabled 启用或禁用模型（需求 §17.3）。禁用后不再出现在前台字典中。

@@ -40,8 +40,10 @@ export interface MeExport {
     visibility: string
     sensitive_level: string
     version_no: string
-    category_name_zh: string
-    category_name_en: string
+    purpose_name_zh: string
+    purpose_name_en: string
+    capability_name_zh: string
+    capability_name_en: string
     created_at: string
     updated_at: string
   }[]

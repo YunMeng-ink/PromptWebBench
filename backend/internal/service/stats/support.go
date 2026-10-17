@@ -7,7 +7,7 @@ import (
 	"github.com/promptbench/backend/internal/repo"
 )
 
-// promptFromRow 把 GetPrompt 的行映射为提示词实体，使可见性判定拿到类别的高风险标记。
+// promptFromRow 把 GetPrompt 的行映射为提示词实体，使可见性判定拿到考察目的的高风险标记。
 func promptFromRow(row repo.GetPromptRow) (domain.Prompt, error) {
 	visibility, ok := domain.ParseVisibility(row.Visibility)
 	if !ok {
@@ -26,16 +26,14 @@ func promptFromRow(row repo.GetPromptRow) (domain.Prompt, error) {
 		ID:            row.ID,
 		Title:         row.Title,
 		Description:   row.Description,
-		CategoryID:    row.CategoryID,
+		PurposeID:     row.PurposeID,
+		CapabilityID:  row.CapabilityID,
 		Visibility:    visibility,
 		Sensitive:     sensitive,
 		HighRisk:      row.IsHighRisk,
 		UploaderID:    row.UploaderID,
 		LatestVersion: version,
 		MajorModified: row.MajorModified,
-	}
-	if row.AbilityID.Valid {
-		out.AbilityID = &row.AbilityID.Int64
 	}
 	if row.DifficultyID.Valid {
 		out.DifficultyID = &row.DifficultyID.Int64

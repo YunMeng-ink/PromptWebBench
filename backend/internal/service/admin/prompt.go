@@ -19,9 +19,10 @@ type PromptFilter struct {
 	Keyword    string
 	Visibility string
 	// Deleted 取 ""（不限）、"true"（仅回收站）或 "false"（仅在库）。
-	Deleted    string
-	CategoryID *int64
-	UploaderID *int64
+	Deleted      string
+	PurposeID    *int64
+	CapabilityID *int64
+	UploaderID   *int64
 }
 
 // ListPrompts 返回提示词列表（需求 §17.2「查看所有提示词、搜索、筛选」）。
@@ -40,24 +41,26 @@ func (s *Service) ListPrompts(ctx context.Context, f PromptFilter, page, pageSiz
 
 	q := repo.New(s.pool)
 	params := repo.AdminListPromptsParams{
-		Keyword:     f.Keyword,
-		Visibility:  f.Visibility,
-		Deleted:     f.Deleted,
-		CategoryID:  repo.Int8OrNull(deref(f.CategoryID)),
-		UploaderID:  repo.Int8OrNull(deref(f.UploaderID)),
-		LimitCount:  pageSize,
-		OffsetCount: (page - 1) * pageSize,
+		Keyword:      f.Keyword,
+		Visibility:   f.Visibility,
+		Deleted:      f.Deleted,
+		PurposeID:    repo.Int8OrNull(deref(f.PurposeID)),
+		CapabilityID: repo.Int8OrNull(deref(f.CapabilityID)),
+		UploaderID:   repo.Int8OrNull(deref(f.UploaderID)),
+		LimitCount:   pageSize,
+		OffsetCount:  (page - 1) * pageSize,
 	}
 	rows, err := q.AdminListPrompts(ctx, params)
 	if err != nil {
 		return Page[repo.AdminListPromptsRow]{}, fmt.Errorf("查询提示词列表: %w", err)
 	}
 	total, err := q.AdminCountPrompts(ctx, repo.AdminCountPromptsParams{
-		Keyword:    f.Keyword,
-		Visibility: f.Visibility,
-		Deleted:    f.Deleted,
-		CategoryID: params.CategoryID,
-		UploaderID: params.UploaderID,
+		Keyword:      f.Keyword,
+		Visibility:   f.Visibility,
+		Deleted:      f.Deleted,
+		PurposeID:    params.PurposeID,
+		CapabilityID: params.CapabilityID,
+		UploaderID:   params.UploaderID,
 	})
 	if err != nil {
 		return Page[repo.AdminListPromptsRow]{}, fmt.Errorf("统计提示词数量: %w", err)
@@ -228,8 +231,8 @@ func (s *Service) ForceMajorMark(ctx context.Context, operator domain.User, prom
 		Title:         row.Title,
 		Body:          row.Body,
 		Description:   row.Description,
-		CategoryID:    row.CategoryID,
-		AbilityID:     int8Ptr(row.AbilityID),
+		PurposeID:     row.PurposeID,
+		CapabilityID:  row.CapabilityID,
 		DifficultyID:  int8Ptr(row.DifficultyID),
 		Visibility:    domain.Visibility(row.Visibility),
 		Sensitive:     domain.SensitiveLevel(row.SensitiveLevel),

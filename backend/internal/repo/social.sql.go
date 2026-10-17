@@ -390,13 +390,15 @@ func (q *Queries) ListFavoriteItemCountsByPrompt(ctx context.Context, promptID i
 const listFavoriteItems = `-- name: ListFavoriteItems :many
 SELECT fi.id AS item_id,
        fi.created_at AS added_at,
-       p.id, p.title, p.description, p.category_id, p.ability_id, p.difficulty_id,
+       p.id, p.title, p.description, p.purpose_id, p.capability_id, p.difficulty_id,
        p.visibility, p.sensitive_level, p.uploader_id, p.latest_version_no,
        p.major_modified, p.comment_count, p.favorite_count, p.created_at, p.updated_at,
-       c.name_zh AS category_name_zh, c.name_en AS category_name_en, c.is_high_risk
+       pu.name_zh AS purpose_name_zh, pu.name_en AS purpose_name_en, pu.is_high_risk,
+       cap.name_zh AS capability_name_zh, cap.name_en AS capability_name_en
 FROM favorite_items fi
 JOIN prompts p ON p.id = fi.prompt_id
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
+JOIN capabilities cap ON cap.id = p.capability_id
 WHERE fi.favorite_id = $1
   AND p.deleted_at IS NULL
 ORDER BY fi.created_at DESC, fi.id DESC
@@ -410,26 +412,28 @@ type ListFavoriteItemsParams struct {
 }
 
 type ListFavoriteItemsRow struct {
-	ItemID          int64
-	AddedAt         pgtype.Timestamptz
-	ID              int64
-	Title           string
-	Description     string
-	CategoryID      int64
-	AbilityID       pgtype.Int8
-	DifficultyID    pgtype.Int8
-	Visibility      string
-	SensitiveLevel  string
-	UploaderID      int64
-	LatestVersionNo string
-	MajorModified   bool
-	CommentCount    int32
-	FavoriteCount   int32
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
-	CategoryNameZh  string
-	CategoryNameEn  string
-	IsHighRisk      bool
+	ItemID           int64
+	AddedAt          pgtype.Timestamptz
+	ID               int64
+	Title            string
+	Description      string
+	PurposeID        int64
+	CapabilityID     int64
+	DifficultyID     pgtype.Int8
+	Visibility       string
+	SensitiveLevel   string
+	UploaderID       int64
+	LatestVersionNo  string
+	MajorModified    bool
+	CommentCount     int32
+	FavoriteCount    int32
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	PurposeNameZh    string
+	PurposeNameEn    string
+	IsHighRisk       bool
+	CapabilityNameZh string
+	CapabilityNameEn string
 }
 
 // 收藏夹条目列表。可见性复查在应用层完成：条目里的提示词可能已被改为私有或
@@ -450,8 +454,8 @@ func (q *Queries) ListFavoriteItems(ctx context.Context, arg ListFavoriteItemsPa
 			&i.ID,
 			&i.Title,
 			&i.Description,
-			&i.CategoryID,
-			&i.AbilityID,
+			&i.PurposeID,
+			&i.CapabilityID,
 			&i.DifficultyID,
 			&i.Visibility,
 			&i.SensitiveLevel,
@@ -462,9 +466,11 @@ func (q *Queries) ListFavoriteItems(ctx context.Context, arg ListFavoriteItemsPa
 			&i.FavoriteCount,
 			&i.CreatedAt,
 			&i.UpdatedAt,
-			&i.CategoryNameZh,
-			&i.CategoryNameEn,
+			&i.PurposeNameZh,
+			&i.PurposeNameEn,
 			&i.IsHighRisk,
+			&i.CapabilityNameZh,
+			&i.CapabilityNameEn,
 		); err != nil {
 			return nil, err
 		}

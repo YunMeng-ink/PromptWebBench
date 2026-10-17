@@ -27,17 +27,19 @@ type Export struct {
 
 // ExportPrompt 是导出文件里的一条提示词。
 type ExportPrompt struct {
-	ID             int64  `json:"id"`
-	Title          string `json:"title"`
-	Body           string `json:"body"`
-	Description    string `json:"description"`
-	Visibility     string `json:"visibility"`
-	SensitiveLevel string `json:"sensitive_level"`
-	VersionNo      string `json:"version_no"`
-	CategoryNameZh string `json:"category_name_zh"`
-	CategoryNameEn string `json:"category_name_en"`
-	CreatedAt      string `json:"created_at"`
-	UpdatedAt      string `json:"updated_at"`
+	ID               int64  `json:"id"`
+	Title            string `json:"title"`
+	Body             string `json:"body"`
+	Description      string `json:"description"`
+	Visibility       string `json:"visibility"`
+	SensitiveLevel   string `json:"sensitive_level"`
+	VersionNo        string `json:"version_no"`
+	PurposeNameZh    string `json:"purpose_name_zh"`
+	PurposeNameEn    string `json:"purpose_name_en"`
+	CapabilityNameZh string `json:"capability_name_zh"`
+	CapabilityNameEn string `json:"capability_name_en"`
+	CreatedAt        string `json:"created_at"`
+	UpdatedAt        string `json:"updated_at"`
 }
 
 // ExportRating 是导出文件里的一条评分。
@@ -94,10 +96,13 @@ func (s *Service) ExportMyData(ctx context.Context, userID int64) (Export, error
 		out.Prompts = append(out.Prompts, ExportPrompt{
 			ID: row.ID, Title: row.Title, Body: row.Body, Description: row.Description,
 			Visibility: row.Visibility, SensitiveLevel: row.SensitiveLevel,
-			VersionNo:      row.LatestVersionNo,
-			CategoryNameZh: row.CategoryNameZh, CategoryNameEn: row.CategoryNameEn,
-			CreatedAt: row.CreatedAt.Time.UTC().Format("2006-01-02T15:04:05Z"),
-			UpdatedAt: row.UpdatedAt.Time.UTC().Format("2006-01-02T15:04:05Z"),
+			VersionNo:        row.LatestVersionNo,
+			PurposeNameZh:    row.PurposeNameZh,
+			PurposeNameEn:    row.PurposeNameEn,
+			CapabilityNameZh: row.CapabilityNameZh,
+			CapabilityNameEn: row.CapabilityNameEn,
+			CreatedAt:        row.CreatedAt.Time.UTC().Format("2006-01-02T15:04:05Z"),
+			UpdatedAt:        row.UpdatedAt.Time.UTC().Format("2006-01-02T15:04:05Z"),
 		})
 	}
 	for _, row := range ratings {

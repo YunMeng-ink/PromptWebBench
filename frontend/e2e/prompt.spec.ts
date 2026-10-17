@@ -62,12 +62,12 @@ test('普通用户的可见性选项不含开发者可见', async ({ page }) => 
   await expect(page.getByRole('option', { name: '开发者可见' })).toHaveCount(0)
 })
 
-test('普通用户的类别列表不含高风险类别', async ({ page }) => {
+test('普通用户的考察目的列表不含高风险条目', async ({ page }) => {
   await loginShared(page)
 
   await openAsShared(page, '/upload')
-  await page.getByTestId('prompt-category').locator('.el-select__wrapper').click()
-  await expect(page.getByRole('option', { name: '越狱对抗' })).toHaveCount(0)
+  await page.getByTestId('prompt-purpose').locator('.el-select__wrapper').click()
+  await expect(page.getByRole('option', { name: '对抗探测' })).toHaveCount(0)
 })
 
 test('普通修改生成次版本并保留历史版本', async ({ page }) => {
@@ -124,7 +124,8 @@ test('私有提示词对游客展示未找到', async ({ browser }) => {
       .find((part) => part.startsWith('pb_csrf='))
       ?.slice('pb_csrf='.length)
 
-    const categories = await (await fetch('/api/v1/categories')).json()
+    const purposes = await (await fetch('/api/v1/purposes')).json()
+    const capabilities = await (await fetch('/api/v1/capabilities')).json()
     const response = await fetch('/api/v1/prompts', {
       method: 'POST',
       headers: {
@@ -134,7 +135,8 @@ test('私有提示词对游客展示未找到', async ({ browser }) => {
       body: JSON.stringify({
         title: `私有提示词-${Date.now()}`,
         body: '正文',
-        category_id: categories.items[0].id,
+        purpose_id: purposes.items[0].id,
+        capability_id: capabilities.items[0].id,
         visibility: 'private',
       }),
     })

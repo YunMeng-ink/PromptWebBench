@@ -15,9 +15,15 @@ export function kindKey(kind: string): string {
   return kind === 'derived' ? 'library.kindDerived' : 'library.kindReference'
 }
 
-/** localizedCategory 按当前语言选择题目的类别名称。 */
-export function localizedCategory(question: LibraryQuestion, locale: string): string {
-  const name = locale === 'en' ? question.category_name_en : question.category_name_zh
+/** localizedPurpose 按当前语言选择题目的考察目的名称。 */
+export function localizedPurpose(question: LibraryQuestion, locale: string): string {
+  const name = locale === 'en' ? question.purpose_name_en : question.purpose_name_zh
+  return name === '' ? PLACEHOLDER : name
+}
+
+/** localizedCapability 按当前语言选择题目的考察维度名称。 */
+export function localizedCapability(question: LibraryQuestion, locale: string): string {
+  const name = locale === 'en' ? question.capability_name_en : question.capability_name_zh
   return name === '' ? PLACEHOLDER : name
 }
 
@@ -56,7 +62,8 @@ export function remainingDays(expiresAt: string, now: Date = new Date()): number
 /** CopyLabels 是「复制完整信息」里各字段的字段名，由语言包提供。 */
 export interface CopyLabels {
   title: string
-  category: string
+  purpose: string
+  capability: string
   version: string
   tags: string
   description: string
@@ -68,7 +75,8 @@ export interface CopyLabels {
 /** PromptCopyInput 是提示词详情页可用于复制的内容。 */
 export interface PromptCopyInput {
   title: string
-  category: string
+  purpose: string
+  capability: string
   versionNo: string
   tags: string[]
   description: string
@@ -85,7 +93,8 @@ export function promptFullText(input: PromptCopyInput, labels: CopyLabels): stri
   return joinFields(
     [
       [labels.title, input.title],
-      [labels.category, input.category],
+      [labels.purpose, input.purpose],
+      [labels.capability, input.capability],
       [labels.version, input.versionNo],
       [labels.tags, input.tags.join('、')],
       [labels.description, input.description],
@@ -100,7 +109,8 @@ export function promptFullText(input: PromptCopyInput, labels: CopyLabels): stri
 export interface QuestionCopyInput {
   title: string
   kindName: string
-  category: string
+  purpose: string
+  capability: string
   tags: string[]
   description: string
   source: string
@@ -113,7 +123,8 @@ export function questionFullText(input: QuestionCopyInput, labels: CopyLabels): 
     [
       [labels.title, input.title],
       [labels.kind, input.kindName],
-      [labels.category, input.category],
+      [labels.purpose, input.purpose],
+      [labels.capability, input.capability],
       [labels.tags, input.tags.join('、')],
       [labels.description, input.description],
       [labels.source, input.source === PLACEHOLDER ? '' : input.source],

@@ -94,7 +94,8 @@ func promptFromRow(row repo.GetPromptRow) (domain.Prompt, error) {
 		Title:         row.Title,
 		Body:          row.Body,
 		Description:   row.Description,
-		CategoryID:    row.CategoryID,
+		PurposeID:     row.PurposeID,
+		CapabilityID:  row.CapabilityID,
 		Visibility:    visibility,
 		Sensitive:     sensitive,
 		HighRisk:      row.IsHighRisk,
@@ -103,9 +104,6 @@ func promptFromRow(row repo.GetPromptRow) (domain.Prompt, error) {
 		MajorModified: row.MajorModified,
 		CommentCount:  row.CommentCount,
 		FavoriteCount: row.FavoriteCount,
-	}
-	if row.AbilityID.Valid {
-		out.AbilityID = &row.AbilityID.Int64
 	}
 	if row.DifficultyID.Valid {
 		out.DifficultyID = &row.DifficultyID.Int64

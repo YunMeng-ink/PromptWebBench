@@ -8,17 +8,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-type Ability struct {
-	ID        int64
-	Slug      string
-	NameZh    string
-	NameEn    string
-	IsEnabled bool
-	SortOrder int32
-	CreatedAt pgtype.Timestamptz
-	UpdatedAt pgtype.Timestamptz
-}
-
 type Announcement struct {
 	ID          int64
 	Title       string
@@ -41,16 +30,18 @@ type ApiToken struct {
 	ExpiresAt   pgtype.Timestamptz
 }
 
-type Category struct {
-	ID         int64
-	Slug       string
-	NameZh     string
-	NameEn     string
-	IsHighRisk bool
-	IsEnabled  bool
-	SortOrder  int32
-	CreatedAt  pgtype.Timestamptz
-	UpdatedAt  pgtype.Timestamptz
+type Capability struct {
+	ID            int64
+	Slug          string
+	NameZh        string
+	NameEn        string
+	GroupKey      string
+	DescriptionZh string
+	DescriptionEn string
+	IsEnabled     bool
+	SortOrder     int32
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
 }
 
 type Comment struct {
@@ -181,14 +172,14 @@ type LibraryQuestion struct {
 	Title                 pgtype.Text
 	Body                  pgtype.Text
 	Description           string
-	CategoryID            pgtype.Int8
-	AbilityID             pgtype.Int8
 	DifficultyID          pgtype.Int8
 	SensitiveLevel        pgtype.Text
 	SortOrder             int32
 	DeletedAt             pgtype.Timestamptz
 	CreatedAt             pgtype.Timestamptz
 	UpdatedAt             pgtype.Timestamptz
+	PurposeID             pgtype.Int8
+	CapabilityID          pgtype.Int8
 }
 
 type LibraryQuestionRevision struct {
@@ -220,12 +211,16 @@ type Model struct {
 	ReleaseDate     pgtype.Date
 	ContextLength   pgtype.Int8
 	IsEnabled       bool
-	AbilityTags     []string
 	Note            string
 	ImportSource    string
 	DeletedAt       pgtype.Timestamptz
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
+}
+
+type ModelCapability struct {
+	ModelID      int64
+	CapabilityID int64
 }
 
 type ModelImportLog struct {
@@ -288,8 +283,6 @@ type Prompt struct {
 	Title              string
 	Body               string
 	Description        string
-	CategoryID         int64
-	AbilityID          pgtype.Int8
 	DifficultyID       pgtype.Int8
 	Visibility         string
 	SensitiveLevel     string
@@ -303,6 +296,8 @@ type Prompt struct {
 	DeletedAt          pgtype.Timestamptz
 	CreatedAt          pgtype.Timestamptz
 	UpdatedAt          pgtype.Timestamptz
+	PurposeID          int64
+	CapabilityID       int64
 }
 
 type PromptModelStat struct {
@@ -364,8 +359,6 @@ type PromptVersion struct {
 	Title          string
 	Body           string
 	Description    string
-	CategoryID     int64
-	AbilityID      pgtype.Int8
 	DifficultyID   pgtype.Int8
 	Visibility     string
 	SensitiveLevel string
@@ -373,6 +366,8 @@ type PromptVersion struct {
 	ChangeNote     string
 	AuthorID       int64
 	CreatedAt      pgtype.Timestamptz
+	PurposeID      int64
+	CapabilityID   int64
 }
 
 type PromptVersionRating struct {
@@ -387,6 +382,20 @@ type PromptVersionRating struct {
 	RatedAt         pgtype.Timestamptz
 	ArchivedAt      pgtype.Timestamptz
 	ArchiveReason   string
+}
+
+type Purpose struct {
+	ID            int64
+	Slug          string
+	NameZh        string
+	NameEn        string
+	DescriptionZh string
+	DescriptionEn string
+	IsHighRisk    bool
+	IsEnabled     bool
+	SortOrder     int32
+	CreatedAt     pgtype.Timestamptz
+	UpdatedAt     pgtype.Timestamptz
 }
 
 type Rating struct {
@@ -477,6 +486,7 @@ type Tag struct {
 	IsEnabled   bool
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
+	Kind        string
 }
 
 type TransferLog struct {

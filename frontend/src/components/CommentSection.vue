@@ -343,15 +343,28 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.pb-comments {
+  margin: 0;
+  padding: var(--pb-space-lg) var(--pb-space-xl) var(--pb-space-xl);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-lg);
+  box-shadow: var(--pb-shadow-sm);
+}
+
 .pb-comments__title {
+  margin: 0 0 var(--pb-space-md);
   font-size: 18px;
-  margin: var(--pb-space-lg) 0 var(--pb-space-sm);
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
 .pb-comments__editor {
   display: flex;
   flex-direction: column;
-  gap: var(--pb-space-xs);
+  gap: var(--pb-space-sm);
+  padding-bottom: var(--pb-space-md);
+  border-bottom: 1px solid var(--pb-line);
 }
 
 .pb-comments__submit {
@@ -366,27 +379,35 @@ onMounted(async () => {
 }
 
 .pb-comments__item {
-  border-top: 1px solid var(--pb-color-border);
-  padding: var(--pb-space-sm) 0;
+  padding: var(--pb-space-md) 0;
+  border-top: 1px solid var(--pb-line);
+}
+
+.pb-comments__item:first-child {
+  border-top: 0;
 }
 
 .pb-comments__head {
-  align-items: baseline;
   display: flex;
+  align-items: baseline;
   gap: var(--pb-space-sm);
 }
 
 .pb-comments__author {
+  color: var(--pb-ink);
   font-weight: 600;
 }
 
 .pb-comments__time {
-  color: var(--pb-color-text-faint);
+  color: var(--pb-ink-faint);
   font-size: 12px;
 }
 
 .pb-comments__body {
-  margin: var(--pb-space-xs) 0;
+  margin: 6px 0;
+  color: var(--pb-ink-soft);
+  font-size: 14px;
+  line-height: 1.7;
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -398,28 +419,35 @@ onMounted(async () => {
 }
 
 .pb-comments__reply-editor {
-  margin-top: var(--pb-space-xs);
+  margin-top: var(--pb-space-sm);
 }
 
 .pb-comments__reply-actions {
   display: flex;
-  gap: var(--pb-space-xs);
   justify-content: flex-end;
+  gap: var(--pb-space-xs);
   margin-top: var(--pb-space-xs);
 }
 
 .pb-comments__reply {
-  border-left: 2px solid var(--pb-color-border);
   margin-top: var(--pb-space-xs);
-  padding-left: var(--pb-space-sm);
+  padding-left: var(--pb-space-md);
+  border-left: 2px solid var(--pb-line-strong);
 }
 
 .pb-comments__error {
-  color: var(--el-color-danger);
+  margin: 0;
+  padding: var(--pb-space-sm) var(--pb-space-md);
+  border-radius: var(--pb-radius-md);
+  background: var(--pb-accent-soft);
+  color: var(--pb-danger);
+  font-size: 13.5px;
 }
 
 .pb-comments__notice,
 .pb-comments__hint {
-  color: var(--pb-color-text-soft);
+  margin: var(--pb-space-sm) 0 0;
+  color: var(--pb-ink-faint);
+  font-size: 13.5px;
 }
 </style>

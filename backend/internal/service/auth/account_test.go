@@ -35,8 +35,8 @@ func TestExportMyDataCoversThreeKinds(t *testing.T) {
 	if exported.Prompts[0].Title != "导出的提示词" {
 		t.Fatalf("提示词标题 = %q", exported.Prompts[0].Title)
 	}
-	if exported.Prompts[0].CategoryNameZh == "" {
-		t.Error("导出应带出类别名称")
+	if exported.Prompts[0].PurposeNameZh == "" || exported.Prompts[0].CapabilityNameZh == "" {
+		t.Error("导出应带出考察目的与考察维度名称")
 	}
 	if exported.Ratings[0].ModelName != "export-model" {
 		t.Fatalf("评分模型名 = %q", exported.Ratings[0].ModelName)
@@ -180,21 +180,24 @@ func seedPrompt(t *testing.T, h *harness, uploaderID int64, title string) int64 
 	t.Helper()
 	ctx := context.Background()
 
-	var categoryID int64
-	if err := h.pool.QueryRow(ctx, `SELECT id FROM categories WHERE slug = 'reasoning'`).Scan(&categoryID); err != nil {
-		t.Fatalf("读取类别失败: %v", err)
+	var purposeID, capabilityID int64
+	if err := h.pool.QueryRow(ctx, `SELECT id FROM purposes WHERE slug = 'capability_boundary'`).Scan(&purposeID); err != nil {
+		t.Fatalf("读取考察目的失败: %v", err)
+	}
+	if err := h.pool.QueryRow(ctx, `SELECT id FROM capabilities WHERE slug = 'reasoning'`).Scan(&capabilityID); err != nil {
+		t.Fatalf("读取考察维度失败: %v", err)
 	}
 
 	var promptID, versionID int64
 	if err := h.pool.QueryRow(ctx, `
-		INSERT INTO prompts (title, body, category_id, uploader_id)
-		VALUES ($1, '正文', $2, $3) RETURNING id`, title, categoryID, uploaderID).Scan(&promptID); err != nil {
+		INSERT INTO prompts (title, body, purpose_id, capability_id, uploader_id)
+		VALUES ($1, '正文', $2, $3, $4) RETURNING id`, title, purposeID, capabilityID, uploaderID).Scan(&promptID); err != nil {
 		t.Fatalf("创建提示词失败: %v", err)
 	}
 	if err := h.pool.QueryRow(ctx, `
-		INSERT INTO prompt_versions (prompt_id, version_no, major, minor, title, body, category_id, visibility, sensitive_level, author_id)
-		VALUES ($1, 'v1.0', 1, 0, $2, '正文', $3, 'public', 'low', $4) RETURNING id`,
-		promptID, title, categoryID, uploaderID).Scan(&versionID); err != nil {
+		INSERT INTO prompt_versions (prompt_id, version_no, major, minor, title, body, purpose_id, capability_id, visibility, sensitive_level, author_id)
+		VALUES ($1, 'v1.0', 1, 0, $2, '正文', $3, $4, 'public', 'low', $5) RETURNING id`,
+		promptID, title, purposeID, capabilityID, uploaderID).Scan(&versionID); err != nil {
 		t.Fatalf("创建提示词版本失败: %v", err)
 	}
 	if _, err := h.pool.Exec(ctx,

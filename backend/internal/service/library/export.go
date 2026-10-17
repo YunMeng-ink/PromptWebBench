@@ -68,11 +68,12 @@ func writeLibraryHeader(builder *strings.Builder, lib domain.Library, ownerName,
 	builder.WriteString("- 题目数量：" + itoa(count) + "\n\n")
 }
 
-// writeQuestion 写出单道题目的九项要素：顺序、标题、类别、标签、正文、说明、
-// 来源提示词、来源版本、修改说明。
+// writeQuestion 写出单道题目的十项要素：顺序、标题、考察目的、考察维度、标签、正文、
+// 说明、来源提示词、来源版本、修改说明。
 func writeQuestion(builder *strings.Builder, order int, question Question, derivationNote string) {
 	builder.WriteString("## " + itoa(order) + ". " + blankIfEmpty(question.Title) + "\n\n")
-	builder.WriteString("- 题目类别：" + categoryLabel(question) + "\n")
+	builder.WriteString("- 考察目的：" + purposeLabel(question) + "\n")
+	builder.WriteString("- 考察维度：" + capabilityLabel(question) + "\n")
 	builder.WriteString("- 题目标签：" + tagsLabel(question.Tags) + "\n")
 	builder.WriteString("- 题目类型：" + kindLabel(question.Kind) + "\n")
 	builder.WriteString("- 来源提示词：" + sourceLabel(question) + "\n")
@@ -85,13 +86,24 @@ func writeQuestion(builder *strings.Builder, order int, question Question, deriv
 	builder.WriteString("\n\n")
 }
 
-// categoryLabel 返回题目的类别名称。两类名称都为空时给出占位符。
-func categoryLabel(question Question) string {
-	if question.CategoryNameZh != "" {
-		return question.CategoryNameZh
+// purposeLabel 返回题目的考察目的名称。两类名称都为空时给出占位符。
+func purposeLabel(question Question) string {
+	if question.PurposeNameZh != "" {
+		return question.PurposeNameZh
 	}
-	if question.CategoryNameEn != "" {
-		return question.CategoryNameEn
+	if question.PurposeNameEn != "" {
+		return question.PurposeNameEn
+	}
+	return "—"
+}
+
+// capabilityLabel 返回题目的考察维度名称。两类名称都为空时给出占位符。
+func capabilityLabel(question Question) string {
+	if question.CapabilityNameZh != "" {
+		return question.CapabilityNameZh
+	}
+	if question.CapabilityNameEn != "" {
+		return question.CapabilityNameEn
 	}
 	return "—"
 }

@@ -20,11 +20,16 @@ func TestModelCreateUpdateAndDelete(t *testing.T) {
 	ctx := context.Background()
 	operator := h.operator(t)
 
+	var codingID int64
+	if err := h.pool.QueryRow(ctx, `SELECT id FROM capabilities WHERE slug = 'coding'`).Scan(&codingID); err != nil {
+		t.Fatalf("读取考察维度失败: %v", err)
+	}
+
 	created, err := h.service.CreateModel(ctx, operator, admin.ModelInput{
 		Name: "手工模型", ModelKey: "manual-model", ProviderKey: "manual-lab",
 		ProviderName: "手工厂商", InputModalities: []string{"text", "text", "  image "},
 		Aliases: []string{"别名一"}, Description: "说明", ContextLength: ptrInt64(32000),
-		IsEnabled: true, AbilityTags: []string{"coding"}, Note: "备注",
+		IsEnabled: true, CapabilityIDs: []int64{codingID, codingID}, Note: "备注",
 	}, "")
 	if err != nil {
 		t.Fatalf("添加模型失败: %v", err)
@@ -37,10 +42,17 @@ func TestModelCreateUpdateAndDelete(t *testing.T) {
 		created.InputModalities[1] != "image" {
 		t.Fatalf("输入模态 = %v，期望 [text image]", created.InputModalities)
 	}
+	capabilityIDs, err := h.service.ModelCapabilityIDs(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("读取模型考察维度失败: %v", err)
+	}
+	if len(capabilityIDs) != 1 || capabilityIDs[0] != codingID {
+		t.Fatalf("模型考察维度 = %v，期望 [%d]", capabilityIDs, codingID)
+	}
 
 	updated, err := h.service.UpdateModel(ctx, operator, created.ID, admin.ModelInput{
 		Name: "手工模型（改）", ModelKey: "manual-model", ProviderKey: "manual-lab",
-		ProviderName: "手工厂商", IsEnabled: false,
+		ProviderName: "手工厂商", IsEnabled: false, CapabilityIDs: []int64{codingID},
 	}, "")
 	if err != nil {
 		t.Fatalf("编辑模型失败: %v", err)

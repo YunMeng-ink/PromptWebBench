@@ -5,9 +5,11 @@
 -- name: ExportMyPrompts :many
 SELECT p.id, p.title, p.body, p.description, p.visibility, p.sensitive_level,
        p.latest_version_no, p.created_at, p.updated_at,
-       c.name_zh AS category_name_zh, c.name_en AS category_name_en
+       pu.name_zh AS purpose_name_zh, pu.name_en AS purpose_name_en,
+       cap.name_zh AS capability_name_zh, cap.name_en AS capability_name_en
 FROM prompts p
-JOIN categories c ON c.id = p.category_id
+JOIN purposes pu ON pu.id = p.purpose_id
+JOIN capabilities cap ON cap.id = p.capability_id
 WHERE p.uploader_id = $1 AND p.deleted_at IS NULL
 ORDER BY p.created_at ASC, p.id ASC;
 

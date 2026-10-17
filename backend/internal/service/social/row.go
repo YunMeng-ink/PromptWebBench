@@ -11,7 +11,7 @@ import (
 
 // promptFromRow 把 GetPrompt 的行映射为提示词实体。
 //
-// 高风险标记必须一并带入：漏掉它会让「类别高风险 + 可见性 public」的提示词
+// 高风险标记必须一并带入：漏掉它会让「考察目的高风险 + 可见性 public」的提示词
 // 对普通用户可见，正是 C-20 要防止的绕过形态。
 func promptFromRow(row repo.GetPromptRow) (domain.Prompt, error) {
 	visibility, ok := domain.ParseVisibility(row.Visibility)
@@ -31,7 +31,8 @@ func promptFromRow(row repo.GetPromptRow) (domain.Prompt, error) {
 		ID:            row.ID,
 		Title:         row.Title,
 		Description:   row.Description,
-		CategoryID:    row.CategoryID,
+		PurposeID:     row.PurposeID,
+		CapabilityID:  row.CapabilityID,
 		Visibility:    visibility,
 		Sensitive:     sensitive,
 		HighRisk:      row.IsHighRisk,
@@ -40,9 +41,6 @@ func promptFromRow(row repo.GetPromptRow) (domain.Prompt, error) {
 		MajorModified: row.MajorModified,
 		CommentCount:  row.CommentCount,
 		FavoriteCount: row.FavoriteCount,
-	}
-	if row.AbilityID.Valid {
-		out.AbilityID = &row.AbilityID.Int64
 	}
 	if row.DifficultyID.Valid {
 		out.DifficultyID = &row.DifficultyID.Int64
@@ -78,7 +76,8 @@ func promptFromItemRow(row repo.ListFavoriteItemsRow) (domain.Prompt, error) {
 		ID:            row.ID,
 		Title:         row.Title,
 		Description:   row.Description,
-		CategoryID:    row.CategoryID,
+		PurposeID:     row.PurposeID,
+		CapabilityID:  row.CapabilityID,
 		Visibility:    visibility,
 		Sensitive:     sensitive,
 		HighRisk:      row.IsHighRisk,
@@ -87,9 +86,6 @@ func promptFromItemRow(row repo.ListFavoriteItemsRow) (domain.Prompt, error) {
 		MajorModified: row.MajorModified,
 		CommentCount:  row.CommentCount,
 		FavoriteCount: row.FavoriteCount,
-	}
-	if row.AbilityID.Valid {
-		out.AbilityID = &row.AbilityID.Int64
 	}
 	if row.DifficultyID.Valid {
 		out.DifficultyID = &row.DifficultyID.Int64
