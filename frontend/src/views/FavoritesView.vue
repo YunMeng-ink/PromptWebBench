@@ -2,7 +2,7 @@
 // 条目列表由后端逐条复查可见性，前端不做二次判断。
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import { type Favorite, type FavoriteItem, socialApi } from '@/api/social'
@@ -155,6 +155,19 @@ function localized(zh: string, en: string): string {
 onMounted(async () => {
   await auth.connect()
   await loadFavorites()
+})
+
+// 同路由参数切换（他人收藏夹之间）时组件复用：复位全部状态并重载。
+watch(ownerId, () => {
+  favorites.value = []
+  selected.value = null
+  items.value = []
+  itemsTotal.value = 0
+  itemsPage.value = 1
+  loading.value = true
+  failure.value = ''
+  notice.value = ''
+  void loadFavorites()
 })
 </script>
 

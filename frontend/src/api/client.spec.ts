@@ -164,4 +164,37 @@ describe('登录态探测的 401 语义', () => {
 
     expect(handler).not.toHaveBeenCalled()
   })
+
+  it('401 业务错误（invalid_credentials）不触发 401 处理', async () => {
+    const handler = vi.fn()
+    setUnauthorizedHandler(handler)
+    fetchMock.mockResolvedValue(
+      stubResponse({
+        status: 401,
+        body: { error: { code: 'invalid_credentials', message: '邮箱或密码错误' } },
+      }),
+    )
+
+    const error = (await api
+      .patch('/me/password', { old: 'x' })
+      .catch((thrown: unknown) => thrown)) as ApiError
+
+    expect(handler).not.toHaveBeenCalled()
+    expect(error.code).toBe('invalid_credentials')
+  })
+
+  it('FormData 写请求不设置 JSON 头且携带 CSRF 头', async () => {
+    document.cookie = `${CSRF_COOKIE_NAME}=token-123; path=/`
+    fetchMock.mockResolvedValue(stubResponse({ status: 200, body: {} }))
+
+    const form = new FormData()
+    form.append('file', new File(['x'], 'a.md'))
+    await api.post('/prompts/import-markdown', form)
+
+    const call = fetchMock.mock.calls[0]
+    const headers = (call?.[1] as RequestInit | undefined)?.headers as Record<string, string>
+    expect(headers[CSRF_HEADER_NAME]).toBe('token-123')
+    expect(headers['Content-Type']).toBeUndefined()
+    expect((call?.[1] as RequestInit | undefined)?.body).toBe(form)
+  })
 })

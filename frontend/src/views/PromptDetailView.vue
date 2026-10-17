@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { type PromptDetail, promptApi } from '@/api/prompt'
@@ -303,8 +303,12 @@ async function reloadFavorited(): Promise<void> {
   }
 }
 
-onMounted(async () => {
-  await auth.connect()
+/** loadDetail 加载当前路由参数对应的提示词详情与全部附属数据。 */
+async function loadDetail(): Promise<void> {
+  loading.value = true
+  failure.value = ''
+  detail.value = null
+  ratings.value = []
   if (promptID.value === null) {
     loading.value = false
     failure.value = t('prompt.notFound')
@@ -321,6 +325,17 @@ onMounted(async () => {
   }
   await reloadStats()
   await reloadFavorited()
+}
+
+onMounted(async () => {
+  await auth.connect()
+  await loadDetail()
+})
+
+// 同路由参数切换（前进/后退或站内跳转）时组件复用，onMounted 不会再执行：
+// 监视参数变化并整体重载，防止内容、评分与操作对象错位。
+watch(promptID, () => {
+  void loadDetail()
 })
 </script>
 

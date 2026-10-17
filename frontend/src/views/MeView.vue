@@ -144,6 +144,15 @@ async function copyToken(): Promise<void> {
   noticeText.value = t('me.tokenCopied')
 }
 
+/** formatDate 把 RFC3339 时间转为本地可读形式。 */
+function formatDate(raw: string): string {
+  const parsed = new Date(raw)
+  if (Number.isNaN(parsed.getTime())) {
+    return raw
+  }
+  return parsed.toLocaleString()
+}
+
 /** exportData 下载「我的数据」JSON 文件（G-08）。 */
 async function exportData(): Promise<void> {
   exporting.value = true
@@ -157,7 +166,8 @@ async function exportData(): Promise<void> {
     link.href = url
     link.download = exported.filename
     link.click()
-    URL.revokeObjectURL(url)
+    // 延迟撤销：Firefox 在下载尚未启动时撤销会中止保存动作。
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
     noticeText.value = t('me.exportStarted')
   } catch (error) {
     errorText.value = messageOf(error)
@@ -292,6 +302,10 @@ async function deleteAccount(): Promise<void> {
         <p class="pb-me__hint">{{ t('me.tokenHint') }}</p>
         <p v-if="tokenStatus.present" data-testid="me-token-present">
           {{ t('me.tokenPresent', { prefix: tokenStatus.prefix }) }}
+          <span class="pb-me__token-meta">
+            {{ t('me.tokenExpires', { date: formatDate(tokenStatus.expires_at ?? '') }) }}
+            <em v-if="tokenStatus.expired" data-testid="me-token-expired">{{ t('me.tokenExpired') }}</em>
+          </span>
         </p>
         <p v-else data-testid="me-token-absent">{{ t('me.tokenAbsent') }}</p>
 

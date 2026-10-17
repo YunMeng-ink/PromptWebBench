@@ -13,8 +13,9 @@ import (
 
 const countMyRatings = `-- name: CountMyRatings :one
 SELECT count(*)::bigint
-FROM ratings
-WHERE user_id = $1 AND deleted_at IS NULL
+FROM ratings r
+JOIN prompts p ON p.id = r.prompt_id
+WHERE r.user_id = $1 AND r.deleted_at IS NULL AND p.deleted_at IS NULL
 `
 
 func (q *Queries) CountMyRatings(ctx context.Context, userID int64) (int64, error) {
@@ -67,7 +68,6 @@ func (q *Queries) CountRatingChangesInDay(ctx context.Context, arg CountRatingCh
 }
 
 const createRating = `-- name: CreateRating :one
-
 INSERT INTO ratings (user_id, prompt_id, prompt_version_id, model_id, score)
 VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT DO NOTHING
@@ -82,10 +82,6 @@ type CreateRatingParams struct {
 	Score           int16
 }
 
-// ratings 与 rating_change_logs 的读写。
-//
-// 每日限额一律在事务内统计，窗口边界由应用层按 UTC 自然日计算后作为参数传入（C-03、
-// 开发方案 §3.4）：SQL 中不出现 date_trunc 与任何依赖会话时区的表达式。
 func (q *Queries) CreateRating(ctx context.Context, arg CreateRatingParams) (Rating, error) {
 	row := q.db.QueryRow(ctx, createRating,
 		arg.UserID,
@@ -180,10 +176,12 @@ func (q *Queries) InsertRatingChangeLog(ctx context.Context, arg InsertRatingCha
 }
 
 const listMyRatings = `-- name: ListMyRatings :many
-SELECT r.id, r.user_id, r.prompt_id, r.prompt_version_id, r.model_id, r.score, r.edit_count, r.deleted_at, r.created_at, r.updated_at, p.title AS prompt_title
+SELECT r.id, r.user_id, r.prompt_id, r.prompt_version_id, r.model_id, r.score, r.edit_count, r.deleted_at, r.created_at, r.updated_at, p.title AS prompt_title, p.visibility AS prompt_visibility,
+       p.uploader_id AS prompt_uploader_id, c.is_high_risk AS prompt_is_high_risk
 FROM ratings r
 JOIN prompts p ON p.id = r.prompt_id
-WHERE r.user_id = $1 AND r.deleted_at IS NULL
+JOIN categories c ON c.id = p.category_id
+WHERE r.user_id = $1 AND r.deleted_at IS NULL AND p.deleted_at IS NULL
 ORDER BY r.created_at DESC, r.id DESC
 LIMIT $2 OFFSET $3
 `
@@ -195,19 +193,24 @@ type ListMyRatingsParams struct {
 }
 
 type ListMyRatingsRow struct {
-	ID              int64
-	UserID          int64
-	PromptID        int64
-	PromptVersionID int64
-	ModelID         int64
-	Score           int16
-	EditCount       int32
-	DeletedAt       pgtype.Timestamptz
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
-	PromptTitle     string
+	ID               int64
+	UserID           int64
+	PromptID         int64
+	PromptVersionID  int64
+	ModelID          int64
+	Score            int16
+	EditCount        int32
+	DeletedAt        pgtype.Timestamptz
+	CreatedAt        pgtype.Timestamptz
+	UpdatedAt        pgtype.Timestamptz
+	PromptTitle      string
+	PromptVisibility string
+	PromptUploaderID int64
+	PromptIsHighRisk bool
 }
 
+// 我的评分列表带出提示词的可见性要素，服务层按 domain.Viewer 复查（C-20）：
+// 已删除的提示词不进列表，改为受限的提示词不再带出标题。
 func (q *Queries) ListMyRatings(ctx context.Context, arg ListMyRatingsParams) ([]ListMyRatingsRow, error) {
 	rows, err := q.db.Query(ctx, listMyRatings, arg.UserID, arg.Limit, arg.Offset)
 	if err != nil {
@@ -229,6 +232,9 @@ func (q *Queries) ListMyRatings(ctx context.Context, arg ListMyRatingsParams) ([
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.PromptTitle,
+			&i.PromptVisibility,
+			&i.PromptUploaderID,
+			&i.PromptIsHighRisk,
 		); err != nil {
 			return nil, err
 		}
@@ -360,6 +366,22 @@ func (q *Queries) LockRating(ctx context.Context, id int64) (Rating, error) {
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const lockRatingUser = `-- name: LockRatingUser :exec
+
+SELECT pg_advisory_xact_lock((5::bigint << 32) + $1::bigint)
+`
+
+// ratings 与 rating_change_logs 的读写。
+//
+// 每日限额一律在事务内统计，窗口边界由应用层按 UTC 自然日计算后作为参数传入（C-03、
+// 开发方案 §3.4）：SQL 中不出现 date_trunc 与任何依赖会话时区的表达式。
+// 锁键 = 命名空间 << 32 + 对象标识。命名空间：5 评分每日限额。
+// 同一用户的限额计数与写入必须先取得该锁，否则并发事务各自读到未超限的计数。
+func (q *Queries) LockRatingUser(ctx context.Context, userID int64) error {
+	_, err := q.db.Exec(ctx, lockRatingUser, userID)
+	return err
 }
 
 const softDeleteRating = `-- name: SoftDeleteRating :one

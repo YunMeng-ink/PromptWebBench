@@ -25,6 +25,22 @@ UPDATE email_verifications
 SET consumed_at = now()
 WHERE id = $1;
 
+-- 记录一次验证码校验失败并返回失败计数：达到上限的验证码由调用方作废。
+-- 同一（邮箱、用途）只有一个生效验证码（新码申请时旧码作废），子查询 LIMIT 1 只是兜底。
+-- name: RecordVerificationFailure :one
+UPDATE email_verifications
+SET failed_attempts = failed_attempts + 1
+WHERE id = (
+    SELECT ev.id FROM email_verifications ev
+    WHERE lower(ev.email) = lower($1)
+      AND ev.purpose = $2
+      AND ev.consumed_at IS NULL
+      AND ev.expires_at > now()
+    ORDER BY ev.created_at DESC
+    LIMIT 1
+)
+RETURNING id, failed_attempts;
+
 -- name: CountRecentEmailVerifications :one
 SELECT count(*) FROM email_verifications
 WHERE lower(email) = lower($1) AND purpose = $2 AND created_at >= $3;
@@ -46,12 +62,13 @@ RETURNING *;
 -- name: GetUserByAPITokenHash :one
 SELECT u.* FROM api_tokens t
 JOIN users u ON u.id = t.user_id
-WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND u.deleted_at IS NULL;
+WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.expires_at > now()
+  AND u.deleted_at IS NULL;
 
 -- name: TouchAPIToken :exec
 UPDATE api_tokens
 SET last_used_at = now()
-WHERE token_hash = $1 AND revoked_at IS NULL;
+WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now();
 
 -- name: GetActiveAPIToken :one
 SELECT * FROM api_tokens

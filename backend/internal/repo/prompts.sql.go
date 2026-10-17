@@ -111,6 +111,24 @@ func (q *Queries) CountPrivatePrompts(ctx context.Context, uploaderID int64) (in
 	return column_1, err
 }
 
+const decrementPromptCommentCount = `-- name: DecrementPromptCommentCount :exec
+UPDATE prompts SET comment_count = GREATEST(comment_count - 1, 0) WHERE id = $1
+`
+
+func (q *Queries) DecrementPromptCommentCount(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, decrementPromptCommentCount, id)
+	return err
+}
+
+const decrementPromptFavoriteCount = `-- name: DecrementPromptFavoriteCount :exec
+UPDATE prompts SET favorite_count = GREATEST(favorite_count - 1, 0) WHERE id = $1
+`
+
+func (q *Queries) DecrementPromptFavoriteCount(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, decrementPromptFavoriteCount, id)
+	return err
+}
+
 const deletePromptModelStatsForMajorChange = `-- name: DeletePromptModelStatsForMajorChange :exec
 DELETE FROM prompt_model_stats WHERE prompt_id = $1
 `
@@ -344,17 +362,41 @@ func (q *Queries) GetPromptVersion(ctx context.Context, arg GetPromptVersionPara
 	return i, err
 }
 
-const hardDeletePrompt = `-- name: HardDeletePrompt :exec
-DELETE FROM prompts WHERE id = $1
+const hardDeletePrompt = `-- name: HardDeletePrompt :execrows
+DELETE FROM prompts WHERE id = $1 AND deleted_at IS NOT NULL
 `
 
-func (q *Queries) HardDeletePrompt(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, hardDeletePrompt, id)
+// 彻底删除回收站中的提示词。deleted_at 条件使并发恢复提交后本语句不命中：
+// 清理事务回滚或跳过，恢复方胜出，杜绝「清理竞态删除在线提示词」。
+func (q *Queries) HardDeletePrompt(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, hardDeletePrompt, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const incrementPromptCommentCount = `-- name: IncrementPromptCommentCount :exec
+UPDATE prompts SET comment_count = comment_count + 1 WHERE id = $1
+`
+
+// 评论数与收藏数的冗余计数：详情页与后台热门排序直接读取，
+// 与对应的评论写入、收藏条目写入同事务维护，保证两者一致。
+func (q *Queries) IncrementPromptCommentCount(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, incrementPromptCommentCount, id)
+	return err
+}
+
+const incrementPromptFavoriteCount = `-- name: IncrementPromptFavoriteCount :exec
+UPDATE prompts SET favorite_count = favorite_count + 1 WHERE id = $1
+`
+
+func (q *Queries) IncrementPromptFavoriteCount(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, incrementPromptFavoriteCount, id)
 	return err
 }
 
 const insertPrompt = `-- name: InsertPrompt :one
-
 INSERT INTO prompts (
     title, body, description, category_id, ability_id, difficulty_id,
     visibility, sensitive_level, uploader_id, original_uploader_id,
@@ -378,7 +420,6 @@ type InsertPromptParams struct {
 	MajorModified   bool
 }
 
-// prompts 与 prompt_versions 的读取与写入。
 func (q *Queries) InsertPrompt(ctx context.Context, arg InsertPromptParams) (Prompt, error) {
 	row := q.db.QueryRow(ctx, insertPrompt,
 		arg.Title,
@@ -730,6 +771,85 @@ func (q *Queries) LockPrompt(ctx context.Context, id int64) (LockPromptRow, erro
 		&i.IsHighRisk,
 	)
 	return i, err
+}
+
+const lockPromptIncludingDeleted = `-- name: LockPromptIncludingDeleted :one
+SELECT p.id, p.title, p.body, p.description, p.category_id, p.ability_id, p.difficulty_id, p.visibility, p.sensitive_level, p.uploader_id, p.original_uploader_id, p.current_version_id, p.latest_version_no, p.major_modified, p.comment_count, p.favorite_count, p.deleted_at, p.created_at, p.updated_at, c.is_high_risk, c.name_zh AS category_name_zh, c.name_en AS category_name_en
+FROM prompts p
+JOIN categories c ON c.id = p.category_id
+WHERE p.id = $1
+FOR UPDATE OF p
+`
+
+type LockPromptIncludingDeletedRow struct {
+	ID                 int64
+	Title              string
+	Body               string
+	Description        string
+	CategoryID         int64
+	AbilityID          pgtype.Int8
+	DifficultyID       pgtype.Int8
+	Visibility         string
+	SensitiveLevel     string
+	UploaderID         int64
+	OriginalUploaderID pgtype.Int8
+	CurrentVersionID   pgtype.Int8
+	LatestVersionNo    string
+	MajorModified      bool
+	CommentCount       int32
+	FavoriteCount      int32
+	DeletedAt          pgtype.Timestamptz
+	CreatedAt          pgtype.Timestamptz
+	UpdatedAt          pgtype.Timestamptz
+	IsHighRisk         bool
+	CategoryNameZh     string
+	CategoryNameEn     string
+}
+
+// 锁定回收站中的提示词行：彻底删除前阻止并发的恢复与引用写入，
+// 使「引用计数 → 删除」两步与「读提示词 → 插引用」互斥（C-21）。
+// 列与 GetPromptIncludingDeleted 一致，服务层复用同一转换函数。
+func (q *Queries) LockPromptIncludingDeleted(ctx context.Context, id int64) (LockPromptIncludingDeletedRow, error) {
+	row := q.db.QueryRow(ctx, lockPromptIncludingDeleted, id)
+	var i LockPromptIncludingDeletedRow
+	err := row.Scan(
+		&i.ID,
+		&i.Title,
+		&i.Body,
+		&i.Description,
+		&i.CategoryID,
+		&i.AbilityID,
+		&i.DifficultyID,
+		&i.Visibility,
+		&i.SensitiveLevel,
+		&i.UploaderID,
+		&i.OriginalUploaderID,
+		&i.CurrentVersionID,
+		&i.LatestVersionNo,
+		&i.MajorModified,
+		&i.CommentCount,
+		&i.FavoriteCount,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.IsHighRisk,
+		&i.CategoryNameZh,
+		&i.CategoryNameEn,
+	)
+	return i, err
+}
+
+const lockPromptOwner = `-- name: LockPromptOwner :exec
+
+SELECT pg_advisory_xact_lock((4::bigint << 32) + $1::bigint)
+`
+
+// prompts 与 prompt_versions 的读取与写入。
+// 锁键 = 命名空间 << 32 + 对象标识。命名空间：1 收藏夹、2 统计重算、3 题库、
+// 4 私有提示词额度。高位置命名空间使不同域的同号对象不再互相阻塞。
+func (q *Queries) LockPromptOwner(ctx context.Context, ownerID int64) error {
+	_, err := q.db.Exec(ctx, lockPromptOwner, ownerID)
+	return err
 }
 
 const replacePromptTags = `-- name: ReplacePromptTags :exec

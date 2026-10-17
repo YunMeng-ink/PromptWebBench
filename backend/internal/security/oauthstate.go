@@ -37,23 +37,30 @@ func (s *OAuthStateSigner) Sign(nonce string) string {
 
 // Verify 校验 state 的签名与签发时间。
 func (s *OAuthStateSigner) Verify(state string) error {
+	_, err := s.NonceOf(state)
+	return err
+}
+
+// NonceOf 校验签名与签发时间，通过后返回 state 中携带的一次性随机数。
+// 回调用它和发起登录时写入浏览器的 Cookie 比对，把授权流程绑定到同一浏览器。
+func (s *OAuthStateSigner) NonceOf(state string) (string, error) {
 	parts := strings.Split(state, ".")
 	if len(parts) != 3 {
-		return ErrInvalidOAuthState
+		return "", ErrInvalidOAuthState
 	}
 	nonce, issuedRaw, signature := parts[0], parts[1], parts[2]
 	payload := nonce + "." + issuedRaw
 	if !hmac.Equal([]byte(signature), []byte(s.mac(payload))) {
-		return ErrInvalidOAuthState
+		return "", ErrInvalidOAuthState
 	}
 	issued, err := strconv.ParseInt(issuedRaw, 10, 64)
 	if err != nil {
-		return ErrInvalidOAuthState
+		return "", ErrInvalidOAuthState
 	}
 	if s.now().Sub(time.Unix(issued, 0)) > s.ttl {
-		return ErrInvalidOAuthState
+		return "", ErrInvalidOAuthState
 	}
-	return nil
+	return nonce, nil
 }
 
 func (s *OAuthStateSigner) mac(payload string) string {

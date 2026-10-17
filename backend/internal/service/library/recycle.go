@@ -325,8 +325,13 @@ func (s *Service) PurgeQuestion(ctx context.Context, v domain.Viewer, questionID
 			return apperr.New(apperr.CodeInvalidState, "该题目不在回收站中")
 		}
 
-		if err := q.HardDeleteLibraryQuestion(ctx, questionID); err != nil {
+		deleted, err := q.HardDeleteLibraryQuestion(ctx, questionID)
+		if err != nil {
 			return wrap("彻底删除题目", questionID, err)
+		}
+		if deleted == 0 {
+			// 并发恢复已提交：恢复方会标记回收站记录，此处让清理方失败。
+			return apperr.New(apperr.CodeInvalidState, "该题目已被恢复")
 		}
 		if err := q.MarkRecycleBinPurged(ctx, repo.MarkRecycleBinPurgedParams{
 			ObjectType: string(domain.RecycleObjectLibraryQuestion),
@@ -443,13 +448,30 @@ func (s *Service) PurgeLibrary(ctx context.Context, v domain.Viewer, libraryID i
 			return wrap("查询回收站记录", libraryID, err)
 		}
 
+		// 锁定题库行：并发恢复提交后删除语句不命中，恢复方胜出。
+		row, err := q.LockLibraryIncludingDeleted(ctx, libraryID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return apperr.New(apperr.CodeInvalidState, "该题库已被清理")
+			}
+			return wrap("锁定题库", libraryID, err)
+		}
+		if !row.DeletedAt.Valid {
+			return apperr.New(apperr.CodeInvalidState, "该题库已被恢复")
+		}
+
 		// 先结清库内题目的回收站记录，再删库：题目随库级联删除后，
 		// 这些记录已无对象可指向。
 		if err := q.MarkLibraryRecycleBinPurged(ctx, libraryID); err != nil {
 			return wrap("结清题库内题目回收站记录", libraryID, err)
 		}
-		if err := q.HardDeleteLibrary(ctx, libraryID); err != nil {
+		deleted, err := q.HardDeleteLibrary(ctx, libraryID)
+		if err != nil {
 			return wrap("彻底删除题库", libraryID, err)
+		}
+		if deleted == 0 {
+			// 行锁持有期间恢复无法提交，此处仅在并发清理时出现。
+			return apperr.New(apperr.CodeInvalidState, "该题库已被清理")
 		}
 		if err := q.MarkRecycleBinPurged(ctx, repo.MarkRecycleBinPurgedParams{
 			ObjectType: string(domain.RecycleObjectLibrary),
@@ -553,8 +575,13 @@ func (s *Service) purgeExpiredEntry(ctx context.Context, objectType domain.Recyc
 				}
 				return wrap("查询到期题目", entry.ObjectID, err)
 			}
-			if err := q.HardDeleteLibraryQuestion(ctx, entry.ObjectID); err != nil {
+			deleted, err := q.HardDeleteLibraryQuestion(ctx, entry.ObjectID)
+			if err != nil {
 				return wrap("清理到期题目", entry.ObjectID, err)
+			}
+			if deleted == 0 {
+				// 并发恢复已提交：恢复方已标记回收站记录，此处跳过。
+				return nil
 			}
 			if ref.Kind == string(domain.QuestionReference) {
 				if err := q.DecrementLibraryQuestionCount(ctx, ref.LibraryID); err != nil {
@@ -567,11 +594,30 @@ func (s *Service) purgeExpiredEntry(ctx context.Context, objectType domain.Recyc
 		})
 	case domain.RecycleObjectLibrary:
 		return repo.InTx(ctx, s.pool, func(q *repo.Queries) error {
+			row, err := q.LockLibraryIncludingDeleted(ctx, entry.ObjectID)
+			if err != nil {
+				if errors.Is(err, pgx.ErrNoRows) {
+					// 题库行已被其他路径删除，回收站记录可以直接结清。
+					return q.MarkRecycleBinPurged(ctx, repo.MarkRecycleBinPurgedParams{
+						ObjectType: entry.ObjectType, ObjectID: entry.ObjectID,
+					})
+				}
+				return wrap("锁定到期题库", entry.ObjectID, err)
+			}
+			if !row.DeletedAt.Valid {
+				// 并发恢复已提交：恢复方已标记回收站记录，此处跳过。
+				return nil
+			}
 			if err := q.MarkLibraryRecycleBinPurged(ctx, entry.ObjectID); err != nil {
 				return wrap("结清题库内题目回收站记录", entry.ObjectID, err)
 			}
-			if err := q.HardDeleteLibrary(ctx, entry.ObjectID); err != nil {
+			deleted, err := q.HardDeleteLibrary(ctx, entry.ObjectID)
+			if err != nil {
 				return wrap("清理到期题库", entry.ObjectID, err)
+			}
+			if deleted == 0 {
+				// 行锁持有期间恢复无法提交，此处仅在并发清理时出现。
+				return nil
 			}
 			return q.MarkRecycleBinPurged(ctx, repo.MarkRecycleBinPurgedParams{
 				ObjectType: entry.ObjectType, ObjectID: entry.ObjectID,

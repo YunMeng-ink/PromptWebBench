@@ -88,6 +88,18 @@ RETURNING id;
 -- name: DeleteFavoriteItems :exec
 DELETE FROM favorite_items WHERE favorite_id = $1;
 
+-- 提示词彻底删除前：统计各收藏夹内将随外键级联删除的条目数，用于校正 item_count。
+-- name: ListFavoriteItemCountsByPrompt :many
+SELECT favorite_id, count(*)::int AS item_count
+FROM favorite_items
+WHERE prompt_id = $1
+GROUP BY favorite_id;
+
+-- name: AdjustFavoriteItemCount :exec
+UPDATE favorites
+SET item_count = GREATEST(item_count - sqlc.arg(delta)::int, 0), updated_at = now()
+WHERE id = sqlc.arg(id) AND deleted_at IS NULL;
+
 -- 收藏夹条目列表。可见性复查在应用层完成：条目里的提示词可能已被改为私有或
 -- 高风险，此时不能再展示（开发方案 §6.5 验收标准）。
 -- 这里取出判定所需的全部列，由 repo.FilterVisibleItems 逐条过 domain.Viewer。

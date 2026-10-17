@@ -153,3 +153,40 @@ func TestResolveAPITokenRejectsUnknownToken(t *testing.T) {
 	_, err := h.service.ResolveAPIToken(context.Background(), "pb_deadbeef")
 	expectCode(t, err, apperr.CodeUnauthorized)
 }
+
+// TestAPITokenExpiresAndStatusReports 覆盖令牌有效期：签发 90 天后到期，
+// 到期后解析失败，状态接口带出到期时间与过期标记。
+func TestAPITokenExpiresAndStatusReports(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	userID := h.registerAndVerify(t, "expiry@example.com", testPassword)
+
+	token, err := h.service.GenerateAPIToken(ctx, userID, "expiry", "127.0.0.1")
+	if err != nil {
+		t.Fatalf("生成令牌失败: %v", err)
+	}
+	status, err := h.service.APITokenStatus(ctx, userID)
+	if err != nil {
+		t.Fatalf("查询令牌状态失败: %v", err)
+	}
+	if !status.Present || status.Expired || status.ExpiresAt.IsZero() {
+		t.Fatalf("新令牌应处于有效状态并带出到期时间：%+v", status)
+	}
+
+	// 把到期时刻提前到过去：令牌失效。
+	if _, err := h.pool.Exec(ctx,
+		`UPDATE api_tokens SET expires_at = now() - interval '1 minute'
+		 WHERE user_id = $1 AND revoked_at IS NULL`, userID); err != nil {
+		t.Fatalf("调整到期时刻失败: %v", err)
+	}
+	if _, err := h.service.ResolveAPIToken(ctx, token.Plain); err == nil {
+		t.Fatal("过期令牌应解析失败")
+	}
+	status, err = h.service.APITokenStatus(ctx, userID)
+	if err != nil {
+		t.Fatalf("查询令牌状态失败: %v", err)
+	}
+	if !status.Present || !status.Expired {
+		t.Fatalf("过期令牌应带出过期标记：%+v", status)
+	}
+}

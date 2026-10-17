@@ -28,10 +28,17 @@ type pageInput struct {
 	PageSize int32 `query:"page_size" default:"20" minimum:"1" maximum:"100" doc:"每页条数，默认 20，上限 100"`
 }
 
+// maxPageNumber 是页码上限：(page-1)*page_size 全程 int32 运算，超大页码会溢出成
+// 负 OFFSET 并让数据库报错转 500。此处统一夹紧，全部列表端点共用。
+const maxPageNumber = 100000
+
 // pageValues 返回夹紧后的分页取值。请求层已做形态校验，此处的夹紧是纵深防御。
 func pageValues(page, size int32) (int32, int32) {
 	if page < 1 {
 		page = 1
+	}
+	if page > maxPageNumber {
+		page = maxPageNumber
 	}
 	if size < 1 {
 		size = defaultPageSize

@@ -16,6 +16,7 @@ import (
 	"github.com/promptbench/backend/internal/config"
 	"github.com/promptbench/backend/internal/domain"
 	"github.com/promptbench/backend/internal/platform/pgtest"
+	"github.com/promptbench/backend/internal/repo"
 	"github.com/promptbench/backend/internal/service/social"
 )
 
@@ -575,6 +576,52 @@ func TestDerivedQuestionDoesNotConsumeCapacity(t *testing.T) {
 	}
 }
 
+// TestDerivingReferenceQuestionReturnsCapacity 覆盖 C-22 的转换路径：
+// 引用题被修改成为派生题后立即归还容量，容量不会被永久占用。
+func TestDerivingReferenceQuestionReturnsCapacity(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	ownerID, _, owner := f.developer(t)
+	lib := f.library(t, owner, "转换容量题库")
+	if err := f.config.Set(ctx, "library_question_limit", 1, "单个私有题库题目上限", 0); err != nil {
+		t.Fatalf("设置容量失败: %v", err)
+	}
+
+	promptID := f.prompt(t, ownerID, "转换来源", "来源正文", "public")
+	question, err := f.svc.AddQuestion(ctx, owner, lib.Entity.ID, AddQuestionInput{PromptID: &promptID})
+	if err != nil {
+		t.Fatalf("添加引用题失败: %v", err)
+	}
+
+	readCount := func() int32 {
+		t.Helper()
+		var count int32
+		if err := f.pool.QueryRow(ctx,
+			`SELECT question_count FROM libraries WHERE id = $1`, lib.Entity.ID).Scan(&count); err != nil {
+			t.Fatalf("读取题目计数失败: %v", err)
+		}
+		return count
+	}
+	if readCount() != 1 {
+		t.Fatalf("添加引用题后计数 = %d，期望 1", readCount())
+	}
+
+	if _, err := f.svc.UpdateQuestion(ctx, owner, question.ID, UpdateQuestionInput{
+		Title: "派生化", Body: "派生正文", Note: "转为派生题",
+	}); err != nil {
+		t.Fatalf("引用题转派生题失败: %v", err)
+	}
+	if readCount() != 0 {
+		t.Fatalf("转换后计数 = %d，期望归还至 0", readCount())
+	}
+
+	// 归还后的容量立即可用。
+	second := f.prompt(t, ownerID, "第二条引用", "正文二", "public")
+	if _, err := f.svc.AddQuestion(ctx, owner, lib.Entity.ID, AddQuestionInput{PromptID: &second}); err != nil {
+		t.Fatalf("归还容量后添加引用题失败: %v", err)
+	}
+}
+
 // TestSourcePromptDeletionBehaviour 覆盖「删除被引用的提示词（引用检查）」：
 // 来源提示词被软删除后，引用题留在库中但标注来源不可用，成员可删除它归还容量；
 // 来源提示词被恢复后题目自动恢复可读；来源未被解除引用时，彻底删除在数据库层被拒绝。
@@ -633,6 +680,62 @@ func TestSourcePromptDeletionBehaviour(t *testing.T) {
 	}
 	if _, err := f.pool.Exec(ctx, `DELETE FROM prompts WHERE id = $1`, promptID); err != nil {
 		t.Fatalf("解除引用后彻底删除提示词失败: %v", err)
+	}
+}
+
+// TestDerivedQuestionKeepsSourceVisibilityAfterSourceDeletion 覆盖 C-20 的派生题通道：
+// 来源提示词软删除后，派生题仍按来源可见性复查，受限内容不对普通协作者放行。
+func TestDerivedQuestionKeepsSourceVisibilityAfterSourceDeletion(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	ownerID, _, owner := f.developer(t)
+	lib := f.library(t, owner, "可见性题库")
+	_, collaboratorName, collaborator := f.user(t)
+	collaborator = f.invite(t, owner, lib.Entity.ID, collaborator.UserID, collaboratorName)
+
+	promptID := f.prompt(t, ownerID, "受限来源", "受限正文", "developer")
+	question, err := f.svc.AddQuestion(ctx, owner, lib.Entity.ID, AddQuestionInput{PromptID: &promptID})
+	if err != nil {
+		t.Fatalf("添加引用题失败: %v", err)
+	}
+	if _, err := f.svc.GetQuestion(ctx, collaborator, question.ID); err == nil {
+		t.Fatal("普通协作者竟能看到开发者可见来源的引用题")
+	}
+
+	// 修改引用题使其转为派生题（正文改存库内副本）。
+	derived, err := f.svc.UpdateQuestion(ctx, owner, question.ID, UpdateQuestionInput{
+		Title: "受限派生题", Body: "受限正文副本", Note: "转为派生题",
+	})
+	if err != nil {
+		t.Fatalf("引用题转派生题失败: %v", err)
+	}
+	if derived.Kind != domain.QuestionDerived {
+		t.Fatalf("题目类型为 %v，期望转为派生题", derived.Kind)
+	}
+	if _, err := f.svc.GetQuestion(ctx, collaborator, question.ID); err == nil {
+		t.Fatal("普通协作者竟能看到受限派生题")
+	}
+
+	// 软删除来源提示词：协作者依然不可见（修复前此处因来源缺失而放行）。
+	if _, err := f.pool.Exec(ctx, `UPDATE prompts SET deleted_at = now() WHERE id = $1`, promptID); err != nil {
+		t.Fatalf("软删除提示词失败: %v", err)
+	}
+	if _, err := f.svc.GetQuestion(ctx, collaborator, question.ID); err == nil {
+		t.Fatal("来源软删除后普通协作者竟能看到受限派生题")
+	}
+	if _, err := f.svc.GetQuestion(ctx, owner, question.ID); err != nil {
+		t.Fatalf("所有者应始终可见: %v", err)
+	}
+
+	// 无来源的派生题不受影响，协作者可见。
+	plain, err := f.svc.AddQuestion(ctx, owner, lib.Entity.ID, AddQuestionInput{
+		Title: "无来源派生题", Body: "独立正文",
+	})
+	if err != nil {
+		t.Fatalf("添加无来源派生题失败: %v", err)
+	}
+	if _, err := f.svc.GetQuestion(ctx, collaborator, plain.ID); err != nil {
+		t.Fatalf("协作者应能看到无来源派生题: %v", err)
 	}
 }
 
@@ -1108,6 +1211,38 @@ func TestPurgeExpiredRecycleBinEntries(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("到期清理后题库计数为 %d，期望 0", count)
+	}
+}
+
+// TestHardDeleteGuardsRequireDeletedState 验证彻底删除语句只作用于回收站中的行：
+// 对在线对象影响 0 行，清理竞态下恢复方胜出；锁定读取能命中回收站中的行。
+func TestHardDeleteGuardsRequireDeletedState(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	q := repo.New(f.pool)
+
+	ownerID, _, owner := f.developer(t)
+	lib := f.library(t, owner, "护栏题库")
+	promptID := f.prompt(t, ownerID, "护栏提示词", "正文", "public")
+	question, err := f.svc.AddQuestion(ctx, owner, lib.Entity.ID, AddQuestionInput{PromptID: &promptID})
+	if err != nil {
+		t.Fatalf("添加题目失败: %v", err)
+	}
+
+	if rows, err := q.HardDeletePrompt(ctx, promptID); err != nil || rows != 0 {
+		t.Fatalf("在线提示词被彻底删除语句命中：rows=%d err=%v", rows, err)
+	}
+	if rows, err := q.HardDeleteLibraryQuestion(ctx, question.ID); err != nil || rows != 0 {
+		t.Fatalf("在线题目被彻底删除语句命中：rows=%d err=%v", rows, err)
+	}
+	if rows, err := q.HardDeleteLibrary(ctx, lib.Entity.ID); err != nil || rows != 0 {
+		t.Fatalf("在线题库被彻底删除语句命中：rows=%d err=%v", rows, err)
+	}
+	if _, err := q.LockPromptIncludingDeleted(ctx, promptID); err != nil {
+		t.Fatalf("锁定在线提示词行失败: %v", err)
+	}
+	if _, err := q.LockLibraryIncludingDeleted(ctx, lib.Entity.ID); err != nil {
+		t.Fatalf("锁定在线题库行失败: %v", err)
 	}
 }
 

@@ -48,7 +48,8 @@ type Question struct {
 	CreatedAt time.Time
 	UpdatedAt time.Time
 
-	// SourceAccess 是题目内容所属提示词的可见性要素；为空表示没有来源可复查。
+	// SourceAccess 是题目内容所属提示词的可见性要素；为空表示来源行不存在
+	// （无来源的派生题，或彻底删除被绕过后残留的异常行）。
 	SourceAccess *domain.Access
 }
 
@@ -56,12 +57,14 @@ type Question struct {
 //
 // 两层判定：题库成员身份（非成员一律不可见）与内容所属提示词的可见性。
 // 后者复用 domain.Viewer.CanView，与提示词详情、收藏夹条目同出一条规则（C-20）。
+// 有来源但来源行缺失时按不可见处理（fail-closed）：彻底删除被引用检查阻止，
+// 此分支只在数据异常时兜底；无来源的派生题不在此列。
 func (q Question) canView(actor domain.LibraryActor) bool {
 	if !actor.Can(domain.CapViewLibrary) {
 		return false
 	}
 	if q.SourceAccess == nil {
-		return true
+		return q.SourcePromptID == nil
 	}
 	return actor.Viewer.CanView(*q.SourceAccess)
 }
@@ -159,14 +162,17 @@ func (s *Service) insertReferenceQuestion(
 	ctx context.Context, q *repo.Queries, v domain.Viewer, lib domain.Library,
 	promptID int64, sortOrder int32, tags []string,
 ) (int64, error) {
-	prompt, err := q.GetPrompt(ctx, promptID)
+	// 锁定来源提示词行：与彻底删除流程互斥。清理方先锁行并复查引用计数，
+	// 若本事务先取得锁，清理方会看到新插入的引用而放弃删除；若清理方先删除，
+	// 此处锁定的读取不命中（行已不在或已删除），引用写入随之失败。
+	prompt, err := q.LockPrompt(ctx, promptID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, notFound("提示词")
 		}
 		return 0, wrap("查询来源提示词", promptID, err)
 	}
-	access, err := promptAccessFromRow(prompt)
+	access, err := promptAccessFromColumns(prompt.ID, prompt.Visibility, prompt.IsHighRisk, prompt.UploaderID)
 	if err != nil {
 		return 0, err
 	}
@@ -355,6 +361,14 @@ func (s *Service) UpdateQuestion(
 		if before.Kind == domain.QuestionReference {
 			// 引用题内容被修改即成为派生题：保留来源提示词标识供追溯。
 			after, err = q.DeriveLibraryQuestion(ctx, params)
+			if err == nil {
+				// 容量只计引用题（C-22）：引用转派生后立即归还容量，
+				// 否则容量被永久占用、用户在未达上限时被提前拒绝。
+				err = q.DecrementLibraryQuestionCount(ctx, ref.LibraryID)
+				if err != nil {
+					return wrap("归还题库题目计数", ref.LibraryID, err)
+				}
+			}
 		} else {
 			after, err = q.UpdateLibraryQuestionContent(ctx, repo.UpdateLibraryQuestionContentParams(params))
 		}

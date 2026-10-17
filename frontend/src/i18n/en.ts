@@ -379,6 +379,8 @@ const en: MessageSchema = {
     tokenHint:
       'The API token lets you call the user API as yourself. One token is active per account.',
     tokenPresent: 'Current token prefix: {prefix}',
+    tokenExpires: 'Expires: {date}',
+    tokenExpired: 'expired',
     tokenAbsent: 'No active token.',
     tokenCreate: 'Generate token',
     tokenRevoke: 'Revoke token',
@@ -928,6 +930,7 @@ const en: MessageSchema = {
     email_not_verified: 'Email not verified',
     already_verified: 'Email already verified',
     invalid_code: 'The verification code is wrong or expired',
+    oauth_state_invalid: 'The third-party login request has expired, please start again',
     invalid_invite: 'The invite code is invalid, exhausted, or disabled',
     registration_closed: 'Registration is closed',
     email_not_allowed: 'This email domain is not on the allowlist',

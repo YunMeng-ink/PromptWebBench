@@ -456,6 +456,54 @@ func TestPurgeExpiredPromptsSkipsReferencedPrompt(t *testing.T) {
 	}
 }
 
+// TestExpiredBatchExcludesReferencedPrompts 覆盖回收站队首阻塞：
+// 被引用的到期提示词直接排除出清理批次，其后到期的对象不会被拖住。
+func TestExpiredBatchExcludesReferencedPrompts(t *testing.T) {
+	h := newFullHarness(t)
+	ctx := context.Background()
+	operator := h.operator(t)
+
+	ownerID := pgtest.SeedUser(t, h.pool, pgtest.UserOptions{Email: "batch@example.com", Verified: true})
+	referencedID := pgtest.SeedPrompt(t, h.pool, ownerID, "被引用的到期提示词")
+	plainID := pgtest.SeedPrompt(t, h.pool, ownerID, "无引用的到期提示词")
+	if err := h.prompt.Delete(ctx, operator, referencedID, ""); err != nil {
+		t.Fatalf("删除被引用提示词失败: %v", err)
+	}
+	if err := h.prompt.Delete(ctx, operator, plainID, ""); err != nil {
+		t.Fatalf("删除普通提示词失败: %v", err)
+	}
+	h.seedLibraryWithReference(t, ownerID, referencedID)
+
+	// 两条都到期，被引用的那条到期更早：修复前它会排到批首并拖住后续条目。
+	if _, err := h.pool.Exec(ctx, `
+		UPDATE recycle_bin SET expires_at = now() - interval '2 hours'
+		WHERE object_type = 'prompt' AND object_id = $1`, referencedID); err != nil {
+		t.Fatalf("调整到期时刻失败: %v", err)
+	}
+	if _, err := h.pool.Exec(ctx, `
+		UPDATE recycle_bin SET expires_at = now() - interval '1 hour'
+		WHERE object_type = 'prompt' AND object_id = $1`, plainID); err != nil {
+		t.Fatalf("调整到期时刻失败: %v", err)
+	}
+
+	entries, err := repo.New(h.pool).ListExpiredRecycleBinEntries(ctx, 10)
+	if err != nil {
+		t.Fatalf("读取到期批次失败: %v", err)
+	}
+	seenPlain := false
+	for _, entry := range entries {
+		if entry.ObjectType == "prompt" && entry.ObjectID == referencedID {
+			t.Fatal("被引用的到期提示词应排除出清理批次")
+		}
+		if entry.ObjectType == "prompt" && entry.ObjectID == plainID {
+			seenPlain = true
+		}
+	}
+	if !seenPlain {
+		t.Fatal("批次中缺少无引用的到期提示词，清理被队首阻塞")
+	}
+}
+
 // ---------- 模块 8：操作日志 ----------
 
 func TestOperationLogsCoverDeclaredActionsAndFilter(t *testing.T) {

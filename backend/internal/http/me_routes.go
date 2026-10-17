@@ -158,9 +158,11 @@ func (s *Server) handleChangePassword(ctx context.Context, in *changePasswordInp
 
 type apiTokenStatusResponse struct {
 	Body struct {
-		Present   bool   `json:"present" doc:"是否存在有效令牌"`
+		Present   bool   `json:"present" doc:"是否存在令牌"`
 		Prefix    string `json:"prefix,omitempty" doc:"令牌前缀，用于辨识"`
 		CreatedAt string `json:"created_at,omitempty" doc:"创建时间"`
+		ExpiresAt string `json:"expires_at,omitempty" doc:"到期时间"`
+		Expired   bool   `json:"expired" doc:"是否已过期"`
 	}
 }
 
@@ -178,6 +180,8 @@ func (s *Server) handleGetAPIToken(ctx context.Context, _ *struct{}) (*apiTokenS
 	if status.Present {
 		out.Body.Prefix = status.Prefix
 		out.Body.CreatedAt = status.CreatedAt.UTC().Format("2006-01-02T15:04:05Z")
+		out.Body.ExpiresAt = status.ExpiresAt.UTC().Format("2006-01-02T15:04:05Z")
+		out.Body.Expired = status.Expired
 	}
 	return out, nil
 }

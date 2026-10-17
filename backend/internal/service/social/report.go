@@ -91,6 +91,10 @@ func (s *Service) CreateReport(ctx context.Context, v domain.Viewer, in ReportIn
 			Detail:     in.Detail,
 		})
 		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				// 唯一索引兜底：并发下另一笔已插入待处理举报。
+				return apperr.New(apperr.CodeInvalidState, "你已举报过该内容，管理员正在处理")
+			}
 			return wrap("写入举报", in.ObjectID, err)
 		}
 

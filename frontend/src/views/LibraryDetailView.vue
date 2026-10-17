@@ -2,7 +2,7 @@
 // 题库详情：题目、成员、导出与回收站。
 // 角色决定可用的操作（需求 §10.4、§10.5），真正的权限判定在后端。
 
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -269,6 +269,21 @@ onMounted(async () => {
   await auth.connect()
   await load()
 })
+
+// 同路由参数切换时组件复用：复位全部状态并重载，防止展示与操作错位。
+watch(
+  () => route.params.id,
+  () => {
+    library.value = null
+    questions.value = []
+    members.value = []
+    recycled.value = []
+    loading.value = true
+    failure.value = ''
+    notice.value = ''
+    void load()
+  },
+)
 </script>
 
 <template>

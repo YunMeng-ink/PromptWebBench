@@ -83,12 +83,13 @@ func questionFromRow(row repo.ListLibraryQuestionsRow, lib domain.Library) (Ques
 			UploaderID: row.SourceUploaderID.Int64,
 		}
 		source = &access
-		out.SourceAvailable = true
+		// 来源提示词已软删除时正文不可取，但仍保留可见性要素供派生题复查。
+		out.SourceAvailable = !row.SourceDeletedAt.Valid
 	}
 	out.SourceAccess = source
 
 	if kind == domain.QuestionReference {
-		if source == nil {
+		if source == nil || row.SourceDeletedAt.Valid {
 			// 来源提示词已被删除：引用题没有正文可取。题目仍保留在库中并标注来源不可用，
 			// 使成员可以删掉它并归还容量；来源提示词被恢复后，题目随之恢复可读。
 			out.Title = domain.LibraryQuestionSourceMissing
@@ -129,15 +130,21 @@ func questionFromRow(row repo.ListLibraryQuestionsRow, lib domain.Library) (Ques
 // promptAccessFromRow 由提示词行取出可见性判定要素。
 //
 // 判定规则本身只存在于 domain.Viewer；这里做的只是把数据库列整理成判定输入。
+// 行类型由调用方展开为列传入：sqlc 为 GetPrompt 与 LockPrompt 生成同构但不同名的行类型。
 func promptAccessFromRow(row repo.GetPromptRow) (domain.Access, error) {
-	level, ok := domain.ParseVisibility(row.Visibility)
+	return promptAccessFromColumns(row.ID, row.Visibility, row.IsHighRisk, row.UploaderID)
+}
+
+// promptAccessFromColumns 是 promptAccessFromRow 的列展开形式，供锁定读取复用。
+func promptAccessFromColumns(id int64, visibility string, isHighRisk bool, uploaderID int64) (domain.Access, error) {
+	level, ok := domain.ParseVisibility(visibility)
 	if !ok {
-		return domain.Access{}, unexpectedValue("提示词可见性", row.ID, row.Visibility)
+		return domain.Access{}, unexpectedValue("提示词可见性", id, visibility)
 	}
 	return domain.Access{
 		Level:      level,
-		HighRisk:   row.IsHighRisk,
-		UploaderID: row.UploaderID,
+		HighRisk:   isHighRisk,
+		UploaderID: uploaderID,
 	}, nil
 }
 

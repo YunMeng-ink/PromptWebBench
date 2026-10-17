@@ -25,6 +25,8 @@ type APITokenStatus struct {
 	Present   bool
 	Prefix    string
 	CreatedAt time.Time
+	ExpiresAt time.Time
+	Expired   bool
 }
 
 // GenerateAPIToken 生成唯一有效令牌：先撤销既有令牌，再签发新令牌（需求 §16.3）。
@@ -90,5 +92,7 @@ func (s *Service) APITokenStatus(ctx context.Context, userID int64) (APITokenSta
 		Present:   true,
 		Prefix:    record.TokenPrefix,
 		CreatedAt: record.CreatedAt.Time,
+		ExpiresAt: record.ExpiresAt.Time,
+		Expired:   !record.ExpiresAt.Time.After(s.now()),
 	}, nil
 }

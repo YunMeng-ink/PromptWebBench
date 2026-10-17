@@ -133,14 +133,15 @@ func (s *Service) Purge(ctx context.Context, actor domain.User, id int64, ip str
 	}
 
 	err := repo.InTx(ctx, s.pool, func(q *repo.Queries) error {
-		row, err := q.GetPromptIncludingDeleted(ctx, id)
+		// 先锁定行再判定状态：与恢复、引用写入串行化，杜绝清理竞态。
+		row, err := q.LockPromptIncludingDeleted(ctx, id)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
 				return apperr.New(apperr.CodeNotFound, "")
 			}
 			return fmt.Errorf("查询提示词: %w", err)
 		}
-		locked, err := promptFromRow(fieldsOfIncludingDeleted(row))
+		locked, err := promptFromRow(fieldsOfLockIncludingDeleted(row))
 		if err != nil {
 			return err
 		}
@@ -160,8 +161,28 @@ func (s *Service) Purge(ctx context.Context, actor domain.User, id int64, ip str
 				fmt.Sprintf("该提示词被 %d 道题库题目引用，请先解除引用", references))
 		}
 
-		if err := q.HardDeletePrompt(ctx, id); err != nil {
+		// 彻底删除会级联清除 favorite_items：先统计再删除，随后校正各收藏夹计数，
+		// 否则 item_count 虚高会侵蚀收藏夹容量。
+		favoriteCounts, err := q.ListFavoriteItemCountsByPrompt(ctx, id)
+		if err != nil {
+			return fmt.Errorf("统计收藏夹条目: %w", err)
+		}
+
+		deleted, err := q.HardDeletePrompt(ctx, id)
+		if err != nil {
 			return fmt.Errorf("彻底删除提示词: %w", err)
+		}
+		if deleted == 0 {
+			// 行锁持有期间恢复事务不可能提交，此处只在行已被其他清理者删除时出现。
+			return apperr.New(apperr.CodeInvalidState, "该提示词已被清理")
+		}
+		for _, fc := range favoriteCounts {
+			if err := q.AdjustFavoriteItemCount(ctx, repo.AdjustFavoriteItemCountParams{
+				ID:    fc.FavoriteID,
+				Delta: fc.ItemCount,
+			}); err != nil {
+				return fmt.Errorf("校正收藏夹条目计数: %w", err)
+			}
 		}
 		if err := q.MarkRecycleBinPurged(ctx, repo.MarkRecycleBinPurgedParams{
 			ObjectType: string(domain.RecycleObjectPrompt),

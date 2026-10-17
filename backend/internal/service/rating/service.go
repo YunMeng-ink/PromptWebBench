@@ -193,6 +193,10 @@ func (s *Service) Update(ctx context.Context, actor domain.User, in SubmitInput,
 			return fmt.Errorf("查询评分: %w", err)
 		}
 
+		// 先取用户锁再计数：并发修改各自读到未超限后都写入会突破每日限额。
+		if err := q.LockRatingUser(ctx, actor.ID); err != nil {
+			return fmt.Errorf("锁定每日评分修改限额: %w", err)
+		}
 		if err := s.checkDailyLimit(ctx, q, actor.ID, actionUpdate, dailyLimit); err != nil {
 			return err
 		}
@@ -267,6 +271,10 @@ func (s *Service) Delete(ctx context.Context, actor domain.User, promptID, model
 			return fmt.Errorf("查询评分: %w", err)
 		}
 
+		// 先取用户锁再计数：并发删除各自读到未超限后都写入会突破每日限额。
+		if err := q.LockRatingUser(ctx, actor.ID); err != nil {
+			return fmt.Errorf("锁定每日评分删除限额: %w", err)
+		}
 		if err := s.checkDailyLimit(ctx, q, actor.ID, actionDelete, dailyLimit); err != nil {
 			return err
 		}

@@ -43,7 +43,7 @@ func (q *Queries) CountRecentEmailVerifications(ctx context.Context, arg CountRe
 const createAPIToken = `-- name: CreateAPIToken :one
 INSERT INTO api_tokens (user_id, token_hash, token_prefix)
 VALUES ($1, $2, $3)
-RETURNING id, user_id, token_hash, token_prefix, revoked_at, last_used_at, created_at
+RETURNING id, user_id, token_hash, token_prefix, revoked_at, last_used_at, created_at, expires_at
 `
 
 type CreateAPITokenParams struct {
@@ -63,6 +63,7 @@ func (q *Queries) CreateAPIToken(ctx context.Context, arg CreateAPITokenParams) 
 		&i.RevokedAt,
 		&i.LastUsedAt,
 		&i.CreatedAt,
+		&i.ExpiresAt,
 	)
 	return i, err
 }
@@ -71,7 +72,7 @@ const createEmailVerification = `-- name: CreateEmailVerification :one
 
 INSERT INTO email_verifications (user_id, email, code, purpose, expires_at)
 VALUES ($1, $2, $3, $4, $5)
-RETURNING id, user_id, email, code, purpose, expires_at, consumed_at, created_at
+RETURNING id, user_id, email, code, purpose, expires_at, consumed_at, created_at, failed_attempts
 `
 
 type CreateEmailVerificationParams struct {
@@ -101,6 +102,7 @@ func (q *Queries) CreateEmailVerification(ctx context.Context, arg CreateEmailVe
 		&i.ExpiresAt,
 		&i.ConsumedAt,
 		&i.CreatedAt,
+		&i.FailedAttempts,
 	)
 	return i, err
 }
@@ -138,7 +140,7 @@ func (q *Queries) CreateOAuthAccount(ctx context.Context, arg CreateOAuthAccount
 }
 
 const getActiveAPIToken = `-- name: GetActiveAPIToken :one
-SELECT id, user_id, token_hash, token_prefix, revoked_at, last_used_at, created_at FROM api_tokens
+SELECT id, user_id, token_hash, token_prefix, revoked_at, last_used_at, created_at, expires_at FROM api_tokens
 WHERE user_id = $1 AND revoked_at IS NULL
 `
 
@@ -153,12 +155,13 @@ func (q *Queries) GetActiveAPIToken(ctx context.Context, userID int64) (ApiToken
 		&i.RevokedAt,
 		&i.LastUsedAt,
 		&i.CreatedAt,
+		&i.ExpiresAt,
 	)
 	return i, err
 }
 
 const getActiveEmailVerification = `-- name: GetActiveEmailVerification :one
-SELECT id, user_id, email, code, purpose, expires_at, consumed_at, created_at FROM email_verifications
+SELECT id, user_id, email, code, purpose, expires_at, consumed_at, created_at, failed_attempts FROM email_verifications
 WHERE lower(email) = lower($1)
   AND purpose = $2
   AND code = $3
@@ -186,6 +189,7 @@ func (q *Queries) GetActiveEmailVerification(ctx context.Context, arg GetActiveE
 		&i.ExpiresAt,
 		&i.ConsumedAt,
 		&i.CreatedAt,
+		&i.FailedAttempts,
 	)
 	return i, err
 }
@@ -217,7 +221,8 @@ func (q *Queries) GetOAuthAccount(ctx context.Context, arg GetOAuthAccountParams
 const getUserByAPITokenHash = `-- name: GetUserByAPITokenHash :one
 SELECT u.id, u.username, u.email, u.password_hash, u.role, u.status, u.is_system, u.bio, u.avatar_url, u.token_version, u.email_verified_at, u.last_read_announcement_at, u.banned_at, u.banned_reason, u.deleted_at, u.created_at, u.updated_at FROM api_tokens t
 JOIN users u ON u.id = t.user_id
-WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND u.deleted_at IS NULL
+WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.expires_at > now()
+  AND u.deleted_at IS NULL
 `
 
 func (q *Queries) GetUserByAPITokenHash(ctx context.Context, tokenHash string) (User, error) {
@@ -242,6 +247,40 @@ func (q *Queries) GetUserByAPITokenHash(ctx context.Context, tokenHash string) (
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
+	return i, err
+}
+
+const recordVerificationFailure = `-- name: RecordVerificationFailure :one
+UPDATE email_verifications
+SET failed_attempts = failed_attempts + 1
+WHERE id = (
+    SELECT ev.id FROM email_verifications ev
+    WHERE lower(ev.email) = lower($1)
+      AND ev.purpose = $2
+      AND ev.consumed_at IS NULL
+      AND ev.expires_at > now()
+    ORDER BY ev.created_at DESC
+    LIMIT 1
+)
+RETURNING id, failed_attempts
+`
+
+type RecordVerificationFailureParams struct {
+	Lower   string
+	Purpose string
+}
+
+type RecordVerificationFailureRow struct {
+	ID             int64
+	FailedAttempts int32
+}
+
+// 记录一次验证码校验失败并返回失败计数：达到上限的验证码由调用方作废。
+// 同一（邮箱、用途）只有一个生效验证码（新码申请时旧码作废），子查询 LIMIT 1 只是兜底。
+func (q *Queries) RecordVerificationFailure(ctx context.Context, arg RecordVerificationFailureParams) (RecordVerificationFailureRow, error) {
+	row := q.db.QueryRow(ctx, recordVerificationFailure, arg.Lower, arg.Purpose)
+	var i RecordVerificationFailureRow
+	err := row.Scan(&i.ID, &i.FailedAttempts)
 	return i, err
 }
 
@@ -275,7 +314,7 @@ func (q *Queries) SupersedeEmailVerifications(ctx context.Context, arg Supersede
 const touchAPIToken = `-- name: TouchAPIToken :exec
 UPDATE api_tokens
 SET last_used_at = now()
-WHERE token_hash = $1 AND revoked_at IS NULL
+WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > now()
 `
 
 func (q *Queries) TouchAPIToken(ctx context.Context, tokenHash string) error {

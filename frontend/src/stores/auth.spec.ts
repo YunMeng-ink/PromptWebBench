@@ -68,7 +68,6 @@ describe('登录态 store', () => {
 
     expect(auth.status).toBe('guest')
     expect(auth.user).toBeNull()
-    expect(auth.redirectTarget).toBeNull()
   })
 
   it('探测成功时记录账户信息', async () => {
@@ -83,7 +82,7 @@ describe('登录态 store', () => {
     expect(auth.user?.email).toBe('alice@example.com')
   })
 
-  it('非 silent 请求收到 401 时记录跳转目标', async () => {
+  it('非 silent 请求收到 401 时落到游客态', async () => {
     const auth = useAuthStore()
     auth.connect()
     auth.markAuthenticated(currentUserFixture() as never)
@@ -94,7 +93,7 @@ describe('登录态 store', () => {
     await auth.updateProfile({ bio: 'x' }).catch(() => undefined)
 
     expect(auth.status).toBe('guest')
-    expect(auth.redirectTarget).toBe('/me')
+    expect(auth.user).toBeNull()
   })
 
   it('登出后回到游客态', async () => {

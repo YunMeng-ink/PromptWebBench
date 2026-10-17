@@ -165,7 +165,7 @@ func (s *Server) handleListMyRatings(ctx context.Context, in *listMyRatingsInput
 		return nil, err
 	}
 	page, size := pageValues(in.Page, in.PageSize)
-	ratings, total, err := s.deps.Rating.ListMine(ctx, actor.ID, page, size)
+	ratings, total, err := s.deps.Rating.ListMine(ctx, domain.ViewerFor(actor), page, size)
 	if err != nil {
 		return nil, err
 	}

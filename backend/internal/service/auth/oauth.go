@@ -19,17 +19,24 @@ import (
 // gitHubProvider 是 oauth_accounts.provider 的取值。
 const gitHubProvider = "github"
 
-// GitHubAuthorizeURL 生成授权跳转地址，并附带签名后的 state。
-func (s *Service) GitHubAuthorizeURL(ctx context.Context) (string, error) {
+// GitHubAuthorizeURL 生成授权跳转地址与签名后的 state，并返回其中携带的
+// 一次性随机数：接口层把它写入浏览器 Cookie，使回调能校验登录流程的发起方。
+func (s *Service) GitHubAuthorizeURL(ctx context.Context) (string, string, error) {
 	if err := s.requireGitHub(); err != nil {
-		return "", err
+		return "", "", err
 	}
 
 	nonce, err := security.GenerateOAuthState()
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return s.github.AuthorizeURL(s.stateSigner.Sign(nonce), s.gitHubCallbackURL()), nil
+	return s.github.AuthorizeURL(s.stateSigner.Sign(nonce), s.gitHubCallbackURL()), nonce, nil
+}
+
+// OAuthStateNonce 校验 state 的签名与时效，并返回其中的一次性随机数。
+// 校验是本地签名运算，不依赖 GitHub 配置：未配置时回调在后续换取令牌处拒绝。
+func (s *Service) OAuthStateNonce(state string) (string, error) {
+	return s.stateSigner.NonceOf(state)
 }
 
 // GitHubLandingURL 是授权完成或失败后浏览器应落在的前端地址。

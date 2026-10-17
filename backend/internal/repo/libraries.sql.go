@@ -346,22 +346,30 @@ func (q *Queries) GetUserForLibraryInvite(ctx context.Context, username string) 
 	return i, err
 }
 
-const hardDeleteLibrary = `-- name: HardDeleteLibrary :exec
-DELETE FROM libraries WHERE id = $1
+const hardDeleteLibrary = `-- name: HardDeleteLibrary :execrows
+DELETE FROM libraries WHERE id = $1 AND deleted_at IS NOT NULL
 `
 
-func (q *Queries) HardDeleteLibrary(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, hardDeleteLibrary, id)
-	return err
+// 彻底删除回收站中的题库。deleted_at 条件使并发恢复提交后本语句不命中。
+func (q *Queries) HardDeleteLibrary(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, hardDeleteLibrary, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
-const hardDeleteLibraryQuestion = `-- name: HardDeleteLibraryQuestion :exec
-DELETE FROM library_questions WHERE id = $1
+const hardDeleteLibraryQuestion = `-- name: HardDeleteLibraryQuestion :execrows
+DELETE FROM library_questions WHERE id = $1 AND deleted_at IS NOT NULL
 `
 
-func (q *Queries) HardDeleteLibraryQuestion(ctx context.Context, id int64) error {
-	_, err := q.db.Exec(ctx, hardDeleteLibraryQuestion, id)
-	return err
+// 彻底删除回收站中的题目。deleted_at 条件使并发恢复提交后本语句不命中。
+func (q *Queries) HardDeleteLibraryQuestion(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, hardDeleteLibraryQuestion, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const incrementLibraryQuestionCount = `-- name: IncrementLibraryQuestionCount :one
@@ -588,13 +596,21 @@ func (q *Queries) InsertRecycleBinEntry(ctx context.Context, arg InsertRecycleBi
 }
 
 const listExpiredRecycleBinEntries = `-- name: ListExpiredRecycleBinEntries :many
-SELECT id, object_type, object_id, owner_id, library_id, snapshot, deleted_by, deleted_at, expires_at, restored_at, purged_at, created_at FROM recycle_bin
-WHERE restored_at IS NULL AND purged_at IS NULL AND expires_at <= now()
-ORDER BY expires_at
+SELECT rb.id, rb.object_type, rb.object_id, rb.owner_id, rb.library_id, rb.snapshot, rb.deleted_by, rb.deleted_at, rb.expires_at, rb.restored_at, rb.purged_at, rb.created_at FROM recycle_bin rb
+WHERE rb.restored_at IS NULL AND rb.purged_at IS NULL AND rb.expires_at <= now()
+  AND (
+    rb.object_type <> 'prompt'
+    OR NOT EXISTS (
+        SELECT 1 FROM library_questions lq WHERE lq.source_prompt_id = rb.object_id
+    )
+  )
+ORDER BY rb.expires_at
 LIMIT $1
 `
 
 // 回收站自动清理：到期且未恢复的记录（需求 §11.3）。
+// 被题库引用的提示词会长期占住 expires_at 最前的批位、拖住后续条目，
+// 这里直接把它们排除出批次：引用解除后自然回到候选集。清理事务内仍复查引用计数（C-21）。
 func (q *Queries) ListExpiredRecycleBinEntries(ctx context.Context, limitCount int32) ([]RecycleBin, error) {
 	rows, err := q.db.Query(ctx, listExpiredRecycleBinEntries, limitCount)
 	if err != nil {
@@ -889,11 +905,12 @@ SELECT
     p.uploader_id       AS source_uploader_id,
     p.latest_version_no AS source_version_no,
     p.major_modified    AS source_major_modified,
+    p.deleted_at        AS source_deleted_at,
     COALESCE(pc.is_high_risk, false) AS source_is_high_risk,
     COALESCE(pc.name_zh, dc.name_zh, '') AS category_name_zh,
     COALESCE(pc.name_en, dc.name_en, '') AS category_name_en
 FROM library_questions q
-LEFT JOIN prompts p ON p.id = q.source_prompt_id AND p.deleted_at IS NULL
+LEFT JOIN prompts p ON p.id = q.source_prompt_id
 LEFT JOIN categories pc ON pc.id = p.category_id
 LEFT JOIN categories dc ON dc.id = q.category_id
 WHERE q.library_id = $1
@@ -934,13 +951,15 @@ type ListLibraryQuestionsRow struct {
 	SourceUploaderID      pgtype.Int8
 	SourceVersionNo       pgtype.Text
 	SourceMajorModified   pgtype.Bool
+	SourceDeletedAt       pgtype.Timestamptz
 	SourceIsHighRisk      bool
 	CategoryNameZh        string
 	CategoryNameEn        string
 }
 
-// 题目的来源提示词字段：引用题的正文取自来源提示词当前版本，
-// source_* 全为空表示来源提示词已被删除，此时引用题无正文可读。
+// 题目的来源提示词字段：引用题的正文取自来源提示词当前版本。
+// 来源提示词软删除后仍联出可见性要素与删除标记：派生题继续按来源可见性复查（C-20），
+// 引用题按删除标记显示「来源不可用」。彻底删除被引用检查阻止，此 JOIN 不会因来源缺失而放行。
 // 题库内全部题目（可按需带上回收站中的题目）。回收站列表与正常列表共用这一条语句，
 // 使两者的可见性判定与字段解析只有一份实现。
 // include_deleted 为真时回收站中的题目一并返回，调用方按 deleted_at 区分。
@@ -981,6 +1000,7 @@ func (q *Queries) ListLibraryQuestions(ctx context.Context, arg ListLibraryQuest
 			&i.SourceUploaderID,
 			&i.SourceVersionNo,
 			&i.SourceMajorModified,
+			&i.SourceDeletedAt,
 			&i.SourceIsHighRisk,
 			&i.CategoryNameZh,
 			&i.CategoryNameEn,
@@ -1073,6 +1093,27 @@ func (q *Queries) ListOwnedLibraryRecycleBin(ctx context.Context, ownerID int64)
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockLibraryIncludingDeleted = `-- name: LockLibraryIncludingDeleted :one
+SELECT id, owner_id, name, description, question_count, deleted_at, created_at, updated_at FROM libraries WHERE id = $1 FOR UPDATE
+`
+
+// 锁定回收站中的题库行：彻底删除前阻止并发的恢复（C-21）。
+func (q *Queries) LockLibraryIncludingDeleted(ctx context.Context, id int64) (Library, error) {
+	row := q.db.QueryRow(ctx, lockLibraryIncludingDeleted, id)
+	var i Library
+	err := row.Scan(
+		&i.ID,
+		&i.OwnerID,
+		&i.Name,
+		&i.Description,
+		&i.QuestionCount,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const lockLibraryOwner = `-- name: LockLibraryOwner :exec

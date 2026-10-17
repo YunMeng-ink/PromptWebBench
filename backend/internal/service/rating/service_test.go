@@ -265,6 +265,61 @@ func TestDailyLimitWindowIsUTCNaturalDay(t *testing.T) {
 	}
 }
 
+// TestDailyEditLimitUnderConcurrentUpdates 覆盖每日限额的并发场景：
+// 同一用户并发修改评分时，计数与写入在锁内串行，成功次数不超过限额。
+func TestDailyEditLimitUnderConcurrentUpdates(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	user := f.user(t)
+
+	if _, err := f.pool.Exec(ctx,
+		`UPDATE config SET value = '2'::jsonb WHERE key = 'rating_daily_edit_limit'`); err != nil {
+		t.Fatalf("调整日限额失败: %v", err)
+	}
+	if err := f.config.Refresh(ctx); err != nil {
+		t.Fatalf("刷新配置缓存失败: %v", err)
+	}
+
+	promptID, modelID := f.promptAndModel(t, user.ID)
+	if _, err := f.svc.Submit(ctx, user, SubmitInput{
+		PromptID: promptID, ModelID: modelID, Score: 1}, ""); err != nil {
+		t.Fatalf("首次评分失败: %v", err)
+	}
+
+	const workers = 6
+	results := make([]error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, results[i] = f.svc.Update(ctx, user, SubmitInput{
+				PromptID: promptID, ModelID: modelID, Score: 2 + i%3}, "")
+		}(i)
+	}
+	wg.Wait()
+
+	success := 0
+	for _, err := range results {
+		if err == nil {
+			success++
+			continue
+		}
+		assertCode(t, err, apperr.CodeQuotaExceeded)
+	}
+	if success != 2 {
+		t.Fatalf("并发修改成功 %d 次，期望恰为每日限额 2 次", success)
+	}
+	var updates int64
+	if err := f.pool.QueryRow(ctx,
+		`SELECT count(*) FROM rating_change_logs WHERE prompt_id = $1 AND action = 'update'`, promptID).Scan(&updates); err != nil {
+		t.Fatalf("统计修改日志失败: %v", err)
+	}
+	if updates != 2 {
+		t.Fatalf("修改日志 %d 条，期望 2 条（未超卖）", updates)
+	}
+}
+
 func TestDeleteRespectsDailyLimit(t *testing.T) {
 	// 需求 §3.4：每日删除上限 5 次。
 	f := newFixture(t)
@@ -600,6 +655,57 @@ func TestListByPromptToleratesModelsWithoutRatings(t *testing.T) {
 	}
 	if unrated.MyScore != nil {
 		t.Error("未评分模型不应带有当前用户的评分")
+	}
+}
+
+// TestListMineExcludesHiddenPrompts 覆盖 C-20：我的评分列表复查提示词可见性，
+// 已删除或改为受限的提示词不再带出标题。
+func TestListMineExcludesHiddenPrompts(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	user := f.user(t)
+
+	publicPrompt, publicModel := f.promptAndModel(t, user.ID)
+	if _, err := f.svc.Submit(ctx, user, SubmitInput{
+		PromptID: publicPrompt, ModelID: publicModel, Score: 3}, ""); err != nil {
+		t.Fatalf("提交评分失败: %v", err)
+	}
+
+	hiddenPrompt := pgtest.SeedPrompt(t, f.pool, user.ID, "将被隐藏的提示词")
+	var hiddenModel int64
+	if err := f.pool.QueryRow(ctx,
+		`INSERT INTO models (name, model_key, provider_key) VALUES ('隐藏模型', 'hidden-model', 'test') RETURNING id`).Scan(&hiddenModel); err != nil {
+		t.Fatalf("插入模型失败: %v", err)
+	}
+	if _, err := f.svc.Submit(ctx, user, SubmitInput{
+		PromptID: hiddenPrompt, ModelID: hiddenModel, Score: 4}, ""); err != nil {
+		t.Fatalf("提交评分失败: %v", err)
+	}
+
+	// 改为开发者可见：普通用户复查失败，标题不再带出（总数仍含未删除的评分）。
+	if _, err := f.pool.Exec(ctx,
+		`UPDATE prompts SET visibility = 'developer' WHERE id = $1`, hiddenPrompt); err != nil {
+		t.Fatalf("修改可见性失败: %v", err)
+	}
+	items, total, err := f.svc.ListMine(ctx, domain.ViewerFor(user), 1, 20)
+	if err != nil {
+		t.Fatalf("查询我的评分失败: %v", err)
+	}
+	if total != 2 || len(items) != 1 || items[0].PromptTitle != "被评分的提示词" {
+		t.Fatalf("受限提示词不应带出标题：total=%d items=%+v", total, items)
+	}
+
+	// 软删除隐藏提示词：总数与条目都只含公开提示词。
+	if _, err := f.pool.Exec(ctx,
+		`UPDATE prompts SET deleted_at = now() WHERE id = $1`, hiddenPrompt); err != nil {
+		t.Fatalf("软删除提示词失败: %v", err)
+	}
+	items, total, err = f.svc.ListMine(ctx, domain.ViewerFor(user), 1, 20)
+	if err != nil {
+		t.Fatalf("查询我的评分失败: %v", err)
+	}
+	if total != 1 || len(items) != 1 || items[0].PromptTitle != "被评分的提示词" {
+		t.Fatalf("已删除提示词不应出现在列表：total=%d items=%+v", total, items)
 	}
 }
 

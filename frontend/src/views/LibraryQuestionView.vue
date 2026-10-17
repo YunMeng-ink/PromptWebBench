@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 题库题目详情：正文、标签、修改记录，以及复制按钮（需求 §10.8）。
 
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute } from 'vue-router'
 import {
@@ -169,6 +169,16 @@ async function removeTag(tag: string): Promise<void> {
 onMounted(async () => {
   await auth.connect()
   await load()
+})
+
+// 同路由参数切换时组件复用：复位全部状态并重载，防止展示与操作错位。
+watch(questionId, () => {
+  question.value = null
+  revisions.value = []
+  loading.value = true
+  failure.value = ''
+  notice.value = ''
+  void load()
 })
 </script>
 

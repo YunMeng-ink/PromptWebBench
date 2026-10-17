@@ -328,7 +328,7 @@ func (s *Server) registerWebRoutes() {
 func (s *Server) webHandler(root fs.FS) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		p := c.Request().URL.Path
-		if strings.HasPrefix(p, APIPrefix+"/") {
+		if p == APIPrefix || strings.HasPrefix(p, APIPrefix+"/") {
 			return NewError(apperr.CodeNotFound, "")
 		}
 		c.Response().Header().Set(echo.HeaderCacheControl, webCacheControl(p))

@@ -901,3 +901,51 @@ func TestDeveloperFavoriteQuotaDiffers(t *testing.T) {
 	})
 	assertCode(t, err, apperr.CodeQuotaExceeded)
 }
+
+// TestPromptCountersFollowCommentAndFavoriteWrites 覆盖冗余计数维护：
+// 评论数与收藏数随各自写入同事务增减，详情页与后台热门排序取到真实值。
+func TestPromptCountersFollowCommentAndFavoriteWrites(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	uploaderID, author := f.user(t)
+	promptID := f.prompt(t, uploaderID, "计数源提示词")
+
+	assertCounters := func(wantComment, wantFavorite int64) {
+		t.Helper()
+		var c, fav int64
+		if err := f.pool.QueryRow(ctx,
+			`SELECT comment_count, favorite_count FROM prompts WHERE id = $1`, promptID).Scan(&c, &fav); err != nil {
+			t.Fatalf("读取提示词计数失败: %v", err)
+		}
+		if c != wantComment || fav != wantFavorite {
+			t.Fatalf("计数 comment=%d favorite=%d，期望 %d/%d", c, fav, wantComment, wantFavorite)
+		}
+	}
+
+	comment, err := f.svc.CreateComment(ctx, author, promptID, nil, "顶层评论")
+	if err != nil {
+		t.Fatalf("创建评论失败: %v", err)
+	}
+	assertCounters(1, 0)
+
+	if err := f.svc.DeleteComment(ctx, author, comment.ID, "127.0.0.1"); err != nil {
+		t.Fatalf("删除评论失败: %v", err)
+	}
+	assertCounters(0, 0)
+
+	favorite, err := f.svc.CreateFavorite(ctx, author, FavoriteInput{
+		Name: "计数收藏夹", Visibility: domain.FavoritePrivate,
+	})
+	if err != nil {
+		t.Fatalf("创建收藏夹失败: %v", err)
+	}
+	if err := f.svc.AddItem(ctx, author, favorite.Entity.ID, promptID); err != nil {
+		t.Fatalf("加入收藏夹失败: %v", err)
+	}
+	assertCounters(0, 1)
+
+	if err := f.svc.RemoveItem(ctx, author, favorite.Entity.ID, promptID); err != nil {
+		t.Fatalf("移除收藏夹条目失败: %v", err)
+	}
+	assertCounters(0, 0)
+}

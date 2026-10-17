@@ -89,6 +89,7 @@ RETURNING like_count;
 -- name: InsertReport :one
 INSERT INTO reports (reporter_id, object_type, object_id, reason, detail)
 VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (reporter_id, object_type, object_id) WHERE status = 'pending' DO NOTHING
 RETURNING *;
 
 -- 同一用户对同一对象同时只保留一条待处理举报，避免重复刷单。

@@ -100,7 +100,7 @@ func Load() (Env, error) {
 
 		PublicBaseURL:    strings.TrimSuffix(getenv("PUBLIC_BASE_URL", "http://localhost:5173"), "/"),
 		CORSAllowOrigins: splitNonEmpty(getenv("CORS_ALLOW_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173")),
-		CookieSecure:     getenv("COOKIE_SECURE", "false") == "true",
+		CookieSecure:     cookieSecure(),
 	}
 
 	e.TrustedProxies = splitNonEmpty(os.Getenv("TRUSTED_PROXIES"))
@@ -124,10 +124,23 @@ func Load() (Env, error) {
 	if len(e.JWTSecret) < 32 {
 		return Env{}, fmt.Errorf("JWT_SECRET 必须为至少 32 字节的十六进制字符串，当前长度为 %d", len(e.JWTSecret))
 	}
+	// 拒绝示例占位值：部署方若照抄 .env.example 的旧示例密钥，会话可被任意伪造。
+	if e.JWTSecret == "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" {
+		return Env{}, fmt.Errorf("JWT_SECRET 是示例占位值，请用 openssl rand -hex 32 生成独立密钥")
+	}
 	if e.DBName == "" || e.DBUser == "" {
 		return Env{}, fmt.Errorf("DB_NAME 与 DB_USER 不可为空")
 	}
 	return e, nil
+}
+
+// cookieSecure 求会话 Cookie 的 Secure 取值：显式配置优先；
+// 未配置时按 PUBLIC_BASE_URL 的协议推导，HTTPS 部署默认安全取值。
+func cookieSecure() bool {
+	if raw := os.Getenv("COOKIE_SECURE"); raw != "" {
+		return raw == "true"
+	}
+	return strings.HasPrefix(os.Getenv("PUBLIC_BASE_URL"), "https://")
 }
 
 func getenv(key, fallback string) string {

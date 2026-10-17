@@ -202,7 +202,7 @@ func (s *Service) issueVerificationCode(ctx context.Context, q *repo.Queries, us
 	}
 	if err := s.mail.SendVerificationCode(ctx, email, code, purpose); err != nil {
 		s.logger.Error("验证码邮件发送失败",
-			slog.String("email", email),
+			slog.String("email", maskEmail(email)),
 			slog.String("purpose", string(purpose)),
 			slog.String("error", err.Error()),
 		)
@@ -241,7 +241,13 @@ func (s *Service) enforceCodeRate(ctx context.Context, q *repo.Queries, email st
 	return nil
 }
 
+// maxVerificationFailures 是同一验证码允许的最大错误次数（防分布式穷举）：
+// 6 位数字验证码空间有限，只靠按地址限流挡不住多来源猜测，错误达到上限即作废。
+const maxVerificationFailures = 5
+
 // consumeVerificationCode 校验并一次性消费验证码。
+// 校验失败按（邮箱、用途）累计失败次数，达到上限作废当前验证码：必须重新申请，
+// 攻击者无法在 15 分钟有效期内对单个验证码无限穷举。
 func (s *Service) consumeVerificationCode(ctx context.Context, q *repo.Queries, email string, purpose domain.VerificationPurpose, code string) error {
 	record, err := q.GetActiveEmailVerification(ctx, repo.GetActiveEmailVerificationParams{
 		Lower:   email,
@@ -249,12 +255,34 @@ func (s *Service) consumeVerificationCode(ctx context.Context, q *repo.Queries, 
 		Code:    strings.TrimSpace(code),
 	})
 	if err != nil {
+		failed, failErr := q.RecordVerificationFailure(ctx, repo.RecordVerificationFailureParams{
+			Lower:   email,
+			Purpose: string(purpose),
+		})
+		if failErr == nil && failed.FailedAttempts >= maxVerificationFailures {
+			if err := q.ConsumeEmailVerification(ctx, failed.ID); err != nil {
+				return fmt.Errorf("作废验证码: %w", err)
+			}
+		}
+		return apperr.New(apperr.CodeInvalidCode, "")
+	}
+	if record.FailedAttempts >= maxVerificationFailures {
+		// 防御性兜底：计数达到上限的行本应在失败路径被作废。
 		return apperr.New(apperr.CodeInvalidCode, "")
 	}
 	if err := q.ConsumeEmailVerification(ctx, record.ID); err != nil {
 		return fmt.Errorf("消费验证码: %w", err)
 	}
 	return nil
+}
+
+// maskEmail 脱敏邮箱用于日志：保留首字符与域名，中间以 *** 代替。
+func maskEmail(email string) string {
+	at := strings.Index(email, "@")
+	if at <= 0 {
+		return "***"
+	}
+	return email[:1] + "***@" + email[at+1:]
 }
 
 // deriveUniqueUsername 由候选基名推导登录名，冲突时追加序号，仍冲突则追加随机后缀。

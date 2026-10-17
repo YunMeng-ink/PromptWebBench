@@ -24,6 +24,7 @@ const (
 	CodeEmailNotVerified          Code = "email_not_verified"
 	CodeAlreadyVerified           Code = "already_verified"
 	CodeInvalidCode               Code = "invalid_code"
+	CodeInvalidOAuthState         Code = "oauth_state_invalid"
 	CodeInvalidInvite             Code = "invalid_invite"
 	CodeRegistrationClosed        Code = "registration_closed"
 	CodeEmailNotAllowed           Code = "email_not_allowed"
@@ -77,6 +78,7 @@ var specs = map[Code]spec{
 	CodeEmailNotVerified:          {403, "邮箱未验证"},
 	CodeAlreadyVerified:           {409, "邮箱已验证"},
 	CodeInvalidCode:               {422, "验证码错误或已过期"},
+	CodeInvalidOAuthState:         {422, "OAuth 登录请求已过期，请重新发起"},
 	CodeInvalidInvite:             {422, "邀请码无效、已用完或已禁用"},
 	CodeRegistrationClosed:        {403, "注册已关闭"},
 	CodeEmailNotAllowed:           {422, "邮箱后缀不在白名单内"},

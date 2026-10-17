@@ -102,8 +102,15 @@ function toApiError(status: number, payload: unknown): ApiError {
 export async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const method = options.method ?? 'GET'
   const headers: Record<string, string> = { Accept: 'application/json' }
+  let body: BodyInit | null = null
   if (options.body !== undefined) {
-    headers['Content-Type'] = 'application/json'
+    if (options.body instanceof FormData) {
+      // multipart 边界由浏览器按 FormData 自动生成，不设置 Content-Type。
+      body = options.body
+    } else {
+      headers['Content-Type'] = 'application/json'
+      body = JSON.stringify(options.body)
+    }
   }
   if (isWriteMethod(method)) {
     const token = readCookie(CSRF_COOKIE_NAME)
@@ -116,7 +123,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     method,
     headers,
     credentials: 'include',
-    body: options.body === undefined ? null : JSON.stringify(options.body),
+    body,
     signal: options.signal ?? null,
   })
 
@@ -127,7 +134,9 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   const payload = await readPayload(response)
   if (!response.ok) {
     const error = toApiError(response.status, payload)
-    if (response.status === 401) {
+    // 只有会话失效（unauthorized）才把界面打回游客态；401 下的业务错误
+    // （如修改密码输错旧口令的 invalid_credentials）只作为普通错误抛出。
+    if (response.status === 401 && error.code === 'unauthorized') {
       unauthorizedHandler?.({ path, silent: options.silent === true })
     }
     throw error

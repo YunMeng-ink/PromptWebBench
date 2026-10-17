@@ -109,6 +109,19 @@ func fieldsOfLockPrompt(r repo.LockPromptRow) promptFields {
 	}
 }
 
+// fieldsOfLockIncludingDeleted 映射彻底删除前锁定的行（含回收站条目）。
+func fieldsOfLockIncludingDeleted(r repo.LockPromptIncludingDeletedRow) promptFields {
+	return promptFields{
+		ID: r.ID, Title: r.Title, Body: r.Body, Description: r.Description,
+		CategoryID: r.CategoryID, AbilityID: r.AbilityID, DifficultyID: r.DifficultyID,
+		Visibility: r.Visibility, SensitiveLevel: r.SensitiveLevel, UploaderID: r.UploaderID,
+		OriginalUploaderID: r.OriginalUploaderID, CurrentVersionID: r.CurrentVersionID,
+		LatestVersionNo: r.LatestVersionNo, MajorModified: r.MajorModified,
+		CommentCount: r.CommentCount, FavoriteCount: r.FavoriteCount,
+		CreatedAt: r.CreatedAt, UpdatedAt: r.UpdatedAt, IsHighRisk: r.IsHighRisk,
+	}
+}
+
 func fieldsOfOwnPrompt(r repo.ListOwnPromptsRow) promptFields {
 	return promptFields{
 		ID: r.ID, Title: r.Title, Body: r.Body, Description: r.Description,
@@ -256,8 +269,12 @@ func replaceTags(ctx context.Context, q *repo.Queries, promptID int64, tagIDs []
 }
 
 // checkPrivateQuota 在事务内判定私有提示词额度（C-21）。
-// 调用方已持有同一事务，且在写入前完成判定，不存在事务外计数后插入的窗口。
+// 先按用户取咨询锁再计数：并发创建各自读到未满后都插入会突破上限，
+// 锁使「计数 → 判定 → 插入」串行化（与收藏夹、题库配额同一纪律）。
 func (s *Service) checkPrivateQuota(ctx context.Context, q *repo.Queries, viewer domain.Viewer, role domain.Role) error {
+	if err := q.LockPromptOwner(ctx, viewer.UserID); err != nil {
+		return fmt.Errorf("锁定私有提示词额度: %w", err)
+	}
 	limit, err := s.privateQuota(ctx, role)
 	if err != nil {
 		return err

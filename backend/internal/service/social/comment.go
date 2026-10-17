@@ -86,6 +86,10 @@ func (s *Service) CreateComment(ctx context.Context, v domain.Viewer, promptID i
 		if err != nil {
 			return wrap("写入评论", promptID, err)
 		}
+		// 评论数与写入同事务维护，详情页与后台热门排序直接读取该列。
+		if err := q.IncrementPromptCommentCount(ctx, promptID); err != nil {
+			return wrap("更新评论计数", promptID, err)
+		}
 
 		if parent != nil && parent.UserID != v.UserID {
 			if err := s.notify(ctx, q, notification{
@@ -237,6 +241,10 @@ func (s *Service) DeleteComment(ctx context.Context, v domain.Viewer, commentID 
 
 		if _, err := q.SoftDeleteComment(ctx, commentID); err != nil {
 			return wrap("删除评论", commentID, err)
+		}
+		// 条件删除已保证每次调用只命中未删除的行，计数随之同事务递减。
+		if err := q.DecrementPromptCommentCount(ctx, row.PromptID); err != nil {
+			return wrap("更新评论计数", row.PromptID, err)
 		}
 		return s.record(ctx, q, oplogEntry{
 			Action:     oplog.ActionCommentDelete,

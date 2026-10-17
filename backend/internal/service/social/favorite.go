@@ -279,6 +279,10 @@ func (s *Service) AddItem(ctx context.Context, v domain.Viewer, favoriteID, prom
 			}
 			return wrap("写入收藏夹条目", favoriteID, err)
 		}
+		// 提示词收藏数与条目写入同事务维护，详情页与后台热门排序直接读取。
+		if err := q.IncrementPromptFavoriteCount(ctx, promptID); err != nil {
+			return wrap("更新提示词收藏数", promptID, err)
+		}
 
 		// 条件 UPDATE 未命中说明计数已达上限，返回错误让整个事务回滚，
 		// 上面插入的条目随之撤销。
@@ -321,6 +325,9 @@ func (s *Service) RemoveItem(ctx context.Context, v domain.Viewer, favoriteID, p
 		}
 		if err := q.DecrementFavoriteItemCount(ctx, favorite.Entity.ID); err != nil {
 			return wrap("更新收藏夹条目数", favoriteID, err)
+		}
+		if err := q.DecrementPromptFavoriteCount(ctx, promptID); err != nil {
+			return wrap("更新提示词收藏数", promptID, err)
 		}
 		return nil
 	})

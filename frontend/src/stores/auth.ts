@@ -12,7 +12,6 @@ export type AuthStatus = 'unknown' | 'guest' | 'authenticated'
 export const useAuthStore = defineStore('auth', () => {
   const status = ref<AuthStatus>('unknown')
   const user = ref<User | null>(null)
-  const redirectTarget = ref<string | null>(null)
 
   const isAuthenticated = computed(() => status.value === 'authenticated')
   const isVerified = computed(() => user.value?.status === 'normal')
@@ -25,13 +24,11 @@ export const useAuthStore = defineStore('auth', () => {
   function markAuthenticated(next: User): void {
     status.value = 'authenticated'
     user.value = next
-    redirectTarget.value = null
   }
 
   function reset(): void {
     status.value = 'unknown'
     user.value = null
-    redirectTarget.value = null
   }
 
   /**
@@ -40,7 +37,7 @@ export const useAuthStore = defineStore('auth', () => {
    * silent 请求是登录态探测，它收到的 401 只说明「此刻没有会话」。
    * 若用户已经通过登录或邮箱验证确立了状态，一次迟到的探测响应不应把它
    * 打回游客态，因此这里只在状态尚未解析时置为游客。
-   * 非 silent 的 401 表示真正的操作被拒，一律落到游客态并记住来源路径。
+   * 非 silent 的 401 表示真正的操作被拒，一律落到游客态。
    */
   function handleUnauthorized(event: UnauthorizedEvent): void {
     if (event.silent) {
@@ -49,9 +46,7 @@ export const useAuthStore = defineStore('auth', () => {
       }
       return
     }
-    status.value = 'guest'
-    user.value = null
-    redirectTarget.value = event.path
+    markGuest()
   }
 
   /**
@@ -108,7 +103,6 @@ export const useAuthStore = defineStore('auth', () => {
       await authApi.logout()
     } finally {
       markGuest()
-      redirectTarget.value = null
     }
   }
 
@@ -140,10 +134,6 @@ export const useAuthStore = defineStore('auth', () => {
     )
   }
 
-  async function clearRedirectTarget(): Promise<void> {
-    redirectTarget.value = null
-  }
-
   function hasRole(...roles: UserRole[]): boolean {
     const role = user.value?.role
     return role !== undefined && roles.includes(role)
@@ -163,7 +153,6 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     status,
     user,
-    redirectTarget,
     isAuthenticated,
     isVerified,
     markGuest,
@@ -178,7 +167,6 @@ export const useAuthStore = defineStore('auth', () => {
     verifyEmail,
     updateProfile,
     changePassword,
-    clearRedirectTarget,
     hasRole,
     connect,
   }

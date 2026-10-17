@@ -500,3 +500,20 @@ func clientSessionCookie(t *testing.T, c *apiClient) string {
 	t.Fatal("测试客户端未持有会话 Cookie")
 	return ""
 }
+
+// TestPaginationClampsHugePage 验证超大页码被夹紧，不会溢出成负 OFFSET 报 500。
+func TestPaginationClampsHugePage(t *testing.T) {
+	env := newTestEnv(t)
+	client := env.newClient(t)
+	client.prime()
+
+	resp := client.get(api.APIPrefix + "/prompts?page=2147483647&page_size=100")
+	expectStatus(t, resp, http.StatusOK)
+
+	body := decodeBody[struct {
+		Page int32 `json:"page"`
+	}](t, resp)
+	if body.Page != 100000 {
+		t.Fatalf("回显页码 = %d，期望夹紧到上限 100000", body.Page)
+	}
+}

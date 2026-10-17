@@ -221,6 +221,42 @@ func TestVerifyEmailRejectsWrongCode(t *testing.T) {
 	expectCode(t, err, apperr.CodeInvalidCode)
 }
 
+// TestVerificationCodeInvalidatedAfterRepeatedFailures 覆盖防穷举：
+// 同一验证码连续输错达到上限后作废，此后输入正确验证码也无效，必须重新申请。
+func TestVerificationCodeInvalidatedAfterRepeatedFailures(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if _, err := h.register(t, "lockout@example.com", testPassword); err != nil {
+		t.Fatalf("注册失败: %v", err)
+	}
+	code := h.mail.LastCode(t)
+	wrong := "000000"
+	if code == wrong {
+		wrong = "000001"
+	}
+
+	// 失败上限与实现中的 maxVerificationFailures 一致。
+	const attempts = 5
+	for i := 0; i < attempts; i++ {
+		if _, err := h.service.VerifyEmail(ctx, "lockout@example.com", wrong); err == nil {
+			t.Fatalf("第 %d 次错误验证码竟验证通过", i+1)
+		}
+	}
+
+	// 失败达到上限后验证码已作废：正确验证码也无法通过。
+	_, err := h.service.VerifyEmail(ctx, "lockout@example.com", code)
+	expectCode(t, err, apperr.CodeInvalidCode)
+
+	// 重新申请验证码后恢复正常。
+	if err := h.service.ResendVerification(ctx, "lockout@example.com"); err != nil {
+		t.Fatalf("重新申请验证码失败: %v", err)
+	}
+	fresh := h.mail.LastCode(t)
+	if _, err := h.service.VerifyEmail(ctx, "lockout@example.com", fresh); err != nil {
+		t.Fatalf("新验证码验证失败: %v", err)
+	}
+}
+
 func TestVerifyEmailOnVerifiedAccountReportsAlreadyVerified(t *testing.T) {
 	h := newHarness(t)
 	h.registerAndVerify(t, "already@example.com", testPassword)

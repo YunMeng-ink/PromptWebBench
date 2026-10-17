@@ -1,6 +1,6 @@
 // 提示词与字典的接口封装。类型与后端 OpenAPI 契约一一对应。
 
-import { API_PREFIX, api, type RequestOptions } from './client'
+import { api, type RequestOptions } from './client'
 
 export interface Category {
   id: number
@@ -206,24 +206,12 @@ export const promptApi = {
   },
 
   /** importMarkdown 上传 .md 文件，返回解析出的标题、正文与描述。 */
-  async importMarkdown(file: File): Promise<ImportedMarkdown> {
+  importMarkdown(file: File): Promise<ImportedMarkdown> {
     const form = new FormData()
     form.append('file', file)
-
-    const response = await fetch(`${API_PREFIX}/prompts/import-markdown`, {
-      method: 'POST',
-      body: form,
-      credentials: 'include',
-      headers: { Accept: 'application/json' },
-    })
-    if (!response.ok) {
-      // 复用统一的错误形状：这里只处理非 2xx，读失败交由调用方处理。
-      const payload = (await response.json().catch(() => null)) as {
-        error: { code: string; message: string; details?: string[] }
-      } | null
-      throw new Error(payload?.error?.message ?? '导入失败')
-    }
-    return (await response.json()) as ImportedMarkdown
+    // 走统一封装：FormData 请求自动携带 CSRF 双提交头，错误经 ApiError
+    // 保留稳定错误码与 401 语义（浏览器自动设置 multipart 边界）。
+    return api.post<ImportedMarkdown>('/prompts/import-markdown', form)
   },
 }
 

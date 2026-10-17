@@ -14,6 +14,9 @@
 
 set -euo pipefail
 
+# 备份包含全部用户数据（邮箱、口令哈希、提示词），落盘文件只允许本人读取。
+umask 077
+
 DB_HOST="${DB_HOST:-127.0.0.1}"
 DB_PORT="${DB_PORT:-5432}"
 DB_NAME="${DB_NAME:-prompt_benchmark}"

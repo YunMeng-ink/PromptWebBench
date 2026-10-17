@@ -106,3 +106,18 @@ func TestOAuthStateRejectsForeignKey(t *testing.T) {
 		t.Fatal("其他密钥签发的 state 应校验失败")
 	}
 }
+
+func TestOAuthStateNonceOfExtractsNonce(t *testing.T) {
+	signer := NewOAuthStateSigner("secret-key", 10*time.Minute)
+
+	got, err := signer.NonceOf(signer.Sign("nonce-abc"))
+	if err != nil || got != "nonce-abc" {
+		t.Fatalf("NonceOf = %q, %v，期望取出 nonce-abc", got, err)
+	}
+	if _, err := signer.NonceOf("tampered.123.abc"); err == nil {
+		t.Fatal("篡改签名的 state 应被拒绝")
+	}
+	if _, err := signer.NonceOf(""); err == nil {
+		t.Fatal("空 state 应被拒绝")
+	}
+}

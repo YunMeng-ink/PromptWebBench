@@ -23,7 +23,6 @@ async function submit(): Promise<void> {
   try {
     await auth.login(email.value, password.value)
     const target = typeof route.query.redirect === 'string' ? route.query.redirect : '/'
-    await auth.clearRedirectTarget()
     await router.push(target)
   } catch (error) {
     errorText.value = messageOf(error)

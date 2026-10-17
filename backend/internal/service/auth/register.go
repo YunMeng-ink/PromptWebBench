@@ -75,7 +75,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (domain.User, 
 
 	if err := s.mail.SendVerificationCode(ctx, email, code, domain.PurposeRegister); err != nil {
 		s.logger.Error("注册验证码邮件发送失败",
-			slog.String("email", email),
+			slog.String("email", maskEmail(email)),
 			slog.String("error", err.Error()),
 		)
 		return domain.User{}, apperr.New(apperr.CodeMailSendFailed, "")

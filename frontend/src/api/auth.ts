@@ -19,6 +19,8 @@ export interface APITokenStatus {
   present: boolean
   prefix?: string
   created_at?: string
+  expires_at?: string
+  expired?: boolean
 }
 
 export interface APIToken {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"sync"
 	"testing"
 
 	"github.com/jackc/pgx/v5"
@@ -429,6 +430,57 @@ func TestPrivatePromptQuotaBlocksBeyondLimit(t *testing.T) {
 	assertAppErrCode(t, err, apperr.CodeQuotaExceeded)
 }
 
+// TestPrivatePromptQuotaUnderConcurrentCreates 覆盖 C-21 的并发场景：
+// 同一用户并发创建私有提示词时，额度判定在锁内串行，不会超卖。
+func TestPrivatePromptQuotaUnderConcurrentCreates(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	user := f.normalUser(t)
+	normal := f.categoryID(t, "reasoning")
+
+	if _, err := f.pool.Exec(ctx,
+		`UPDATE config SET value = '3'::jsonb WHERE key = 'private_prompt_quota_user'`); err != nil {
+		t.Fatalf("调整额度配置失败: %v", err)
+	}
+	if err := f.config.Refresh(ctx); err != nil {
+		t.Fatalf("刷新配置缓存失败: %v", err)
+	}
+
+	const workers = 8
+	results := make([]error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			in := baseInput(normal, domain.VisibilityPrivate)
+			in.Title = fmt.Sprintf("并发私有提示词 %d", i)
+			_, results[i] = f.svc.Create(ctx, user, in)
+		}(i)
+	}
+	wg.Wait()
+
+	success := 0
+	for _, err := range results {
+		if err == nil {
+			success++
+			continue
+		}
+		assertAppErrCode(t, err, apperr.CodeQuotaExceeded)
+	}
+	if success != 3 {
+		t.Fatalf("并发创建成功 %d 条，期望恰为额度 3 条", success)
+	}
+	var count int64
+	if err := f.pool.QueryRow(ctx,
+		`SELECT count(*) FROM prompts WHERE uploader_id = $1 AND visibility = 'private'`, user.ID).Scan(&count); err != nil {
+		t.Fatalf("统计私有提示词失败: %v", err)
+	}
+	if count != 3 {
+		t.Fatalf("库内私有提示词 %d 条，期望 3 条（未超卖）", count)
+	}
+}
+
 func TestPublicPromptsDoNotConsumePrivateQuota(t *testing.T) {
 	// 需求 §8.2：公开提示词不占用用户私有提示词额度。
 	f := newFixture(t)
@@ -497,6 +549,46 @@ func assertNoRows(t *testing.T, err error) {
 	}
 	if !isNoRows(err) {
 		t.Fatalf("期望无结果，实际错误为 %v", err)
+	}
+}
+
+// TestPurgeAdjustsFavoriteItemCounts 覆盖收藏夹计数校正：提示词彻底删除时
+// 随级联清除的收藏条目不再残留 item_count，收藏夹容量不被虚高侵蚀。
+func TestPurgeAdjustsFavoriteItemCounts(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	user := f.normalUser(t)
+	promptID := pgtest.SeedPrompt(t, f.pool, user.ID, "被收藏的提示词")
+
+	var favoriteID int64
+	if err := f.pool.QueryRow(ctx, `
+		INSERT INTO favorites (user_id, name, description, visibility)
+		VALUES ($1, '计数收藏夹', '', 'private') RETURNING id`, user.ID).Scan(&favoriteID); err != nil {
+		t.Fatalf("插入收藏夹失败: %v", err)
+	}
+	if _, err := f.pool.Exec(ctx,
+		`INSERT INTO favorite_items (favorite_id, prompt_id) VALUES ($1, $2)`, favoriteID, promptID); err != nil {
+		t.Fatalf("插入收藏条目失败: %v", err)
+	}
+	if _, err := f.pool.Exec(ctx,
+		`UPDATE favorites SET item_count = 1 WHERE id = $1`, favoriteID); err != nil {
+		t.Fatalf("设置条目计数失败: %v", err)
+	}
+
+	if err := f.svc.Delete(ctx, user, promptID, "127.0.0.1"); err != nil {
+		t.Fatalf("软删除提示词失败: %v", err)
+	}
+	if err := f.svc.Purge(ctx, user, promptID, "127.0.0.1"); err != nil {
+		t.Fatalf("彻底删除提示词失败: %v", err)
+	}
+
+	var count int32
+	if err := f.pool.QueryRow(ctx,
+		`SELECT item_count FROM favorites WHERE id = $1`, favoriteID).Scan(&count); err != nil {
+		t.Fatalf("读取收藏夹计数失败: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("彻底删除后收藏夹计数 = %d，期望 0", count)
 	}
 }
 

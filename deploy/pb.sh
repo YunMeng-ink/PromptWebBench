@@ -17,6 +17,7 @@ BIN="$ROOT/dist/prompt-benchmark"
 PID_FILE="$ROOT/dist/pb.pid"
 LOG_FILE="$ROOT/dist/pb.log"
 ENV_RECORD="$ROOT/dist/pb.envfile"
+START_RECORD="$ROOT/dist/pb.start"
 
 # Windows（Git Bash）下 go build 会自动补充 .exe 后缀。
 case "$(uname -s)" in
@@ -32,14 +33,44 @@ info() {
 	printf '%s\n' "$*"
 }
 
+remove_records() {
+	rm -f "$PID_FILE" "$START_RECORD" "$ENV_RECORD"
+}
+
+# start_clock 读取进程启动时刻（jiffies）。Linux 下读 /proc 用于识别 PID 复用；
+# 其余平台（Windows Git Bash）无此信息，返回空串并跳过身份校验。
+start_clock() {
+	local pid=$1
+	case "$(uname -s)" in
+	Linux*)
+		awk '{print $22}' "/proc/$pid/stat" 2>/dev/null
+		;;
+	*)
+		printf '\n'
+		;;
+	esac
+}
+
+# is_running 核对 PID 文件的进程：存活，且（Linux 下）启动时刻与记录一致。
+# 时刻不一致说明 PID 已被系统回收并分配给其他进程，视为未运行并清理陈旧记录，
+# 避免 stop 误杀无关进程。
 is_running() {
 	[ -f "$PID_FILE" ] || return 1
-	local pid
+	local pid recorded
 	pid="$(cat "$PID_FILE")"
 	case "$pid" in
 	'' | *[!0-9]*) return 1 ;;
 	esac
-	kill -0 "$pid" 2>/dev/null
+	kill -0 "$pid" 2>/dev/null || return 1
+	if [ -s "$START_RECORD" ]; then
+		recorded="$(cat "$START_RECORD")"
+		local current
+		current="$(start_clock "$pid")"
+		if [ -n "$recorded" ] && [ -n "$current" ] && [ "$current" != "$recorded" ]; then
+			remove_records
+			return 1
+		fi
+	fi
 }
 
 # env_of 求启动用的环境文件：位置参数优先于 PB_ENV_FILE，再退到默认值。
@@ -53,14 +84,27 @@ env_of() {
 	fi
 }
 
-# port_of 从环境文件读取 PORT；文件是 KEY=VALUE 行，由 shell 直接求值。
+# port_of 从环境文件读取 PORT。只提取该键的取值，不执行整个文件，
+# 避免口令行里的特殊字符在 shell 求值中产生副作用。
 port_of() {
-	(
-		set -a
-		# shellcheck disable=SC1090
-		. "$1"
-		printf '%s\n' "${PORT:-8080}"
-	)
+	local port
+	port="$(grep -E '^PORT=' "$1" | tail -n 1 | cut -d= -f2- | tr -d ' \r"'"'"'')"
+	printf '%s\n' "${port:-8080}"
+}
+
+# terminate 先发 SIGTERM 等待退出，超时后强制终止。
+terminate() {
+	local pid=$1
+	kill "$pid" 2>/dev/null || true
+	local _
+	for _ in $(seq 1 20); do
+		if ! kill -0 "$pid" 2>/dev/null; then
+			return 0
+		fi
+		sleep 0.5
+	done
+	kill -9 "$pid" 2>/dev/null || true
+	info "进程未在 10 秒内退出，已强制终止"
 }
 
 cmd_build() {
@@ -99,6 +143,7 @@ cmd_start() {
 
 	nohup "$BIN" -env-file "$env_file" >>"$LOG_FILE" 2>&1 &
 	printf '%s\n' "$!" >"$PID_FILE"
+	printf '%s\n' "$(start_clock "$!")" >"$START_RECORD"
 	printf '%s\n' "$env_file" >"$ENV_RECORD"
 	url="http://127.0.0.1:$(port_of "$env_file")/api/v1/health"
 	info "已启动（PID $!），等待健康检查 $url"
@@ -108,43 +153,37 @@ cmd_start() {
 		if ! is_running; then
 			printf '进程提前退出，最近日志：\n' >&2
 			tail -n 20 "$LOG_FILE" >&2 || true
-			rm -f "$PID_FILE"
+			remove_records
 			die "服务启动失败"
 		fi
-		if curl -fsS -o /dev/null "$url" 2>/dev/null; then
+		if curl -fsS --connect-timeout 2 --max-time 3 -o /dev/null "$url" 2>/dev/null; then
 			info "健康检查通过"
 			return 0
 		fi
 		sleep 0.5
 	done
 
+	# 假死（端口可达但健康检查不响应）时不留半启动状态：终止进程并清理记录。
 	printf '健康检查超时（30 秒），最近日志：\n' >&2
 	tail -n 20 "$LOG_FILE" >&2 || true
+	terminate "$(cat "$PID_FILE")"
+	remove_records
 	die "服务启动失败"
 }
 
 cmd_stop() {
 	if ! is_running; then
-		rm -f "$PID_FILE" "$ENV_RECORD"
+		remove_records
 		info "服务未在运行"
 		return 0
 	fi
 
-	local pid _
+	local pid
 	pid="$(cat "$PID_FILE")"
 	info "正在停止（PID $pid）……"
-	kill "$pid" 2>/dev/null || true
-	for _ in $(seq 1 20); do
-		is_running || break
-		sleep 0.5
-	done
-	if is_running; then
-		kill -9 "$pid" 2>/dev/null || true
-		info "进程未在 10 秒内退出，已强制终止"
-	else
-		info "已停止"
-	fi
-	rm -f "$PID_FILE" "$ENV_RECORD"
+	terminate "$pid"
+	info "已停止"
+	remove_records
 }
 
 cmd_restart() {
@@ -154,7 +193,7 @@ cmd_restart() {
 
 cmd_status() {
 	if ! is_running; then
-		rm -f "$PID_FILE" "$ENV_RECORD"
+		remove_records
 		info "状态：未运行"
 		info "二进制：$BIN"
 		return 1
@@ -171,7 +210,7 @@ cmd_status() {
 	info "二进制：$BIN"
 	if [ -f "$env_file" ]; then
 		url="http://127.0.0.1:$(port_of "$env_file")/api/v1/health"
-		if curl -fsS -o /dev/null "$url" 2>/dev/null; then
+		if curl -fsS --connect-timeout 2 --max-time 3 -o /dev/null "$url" 2>/dev/null; then
 			info "健康检查：通过（$url）"
 		else
 			info "健康检查：未通过（$url）"

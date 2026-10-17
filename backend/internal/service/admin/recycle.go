@@ -3,7 +3,10 @@ package admin
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+
+	"github.com/jackc/pgx/v5"
 
 	"github.com/promptbench/backend/internal/apperr"
 	"github.com/promptbench/backend/internal/domain"
@@ -110,6 +113,22 @@ func (s *Service) PurgeExpiredPrompts(ctx context.Context, limit int32) (int, er
 func (s *Service) purgeExpiredPrompt(ctx context.Context, entry repo.RecycleBin) (bool, error) {
 	purged := false
 	err := repo.InTx(ctx, s.pool, func(q *repo.Queries) error {
+		// 先锁定提示词行：并发恢复提交后删除语句不命中，恢复方胜出。
+		row, err := q.LockPromptIncludingDeleted(ctx, entry.ObjectID)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				// 提示词行已被其他路径删除，回收站记录可以直接结清。
+				return q.MarkRecycleBinPurged(ctx, repo.MarkRecycleBinPurgedParams{
+					ObjectType: entry.ObjectType, ObjectID: entry.ObjectID,
+				})
+			}
+			return wrap("锁定到期提示词", entry.ObjectID, err)
+		}
+		if !row.DeletedAt.Valid {
+			// 已被并发恢复：恢复事务会在恢复时标记回收站记录，此处跳过。
+			return nil
+		}
+
 		references, err := q.CountLibraryQuestionsByPrompt(ctx, entry.ObjectID)
 		if err != nil {
 			return wrap("统计题库引用", entry.ObjectID, err)
@@ -120,8 +139,27 @@ func (s *Service) purgeExpiredPrompt(ctx context.Context, entry repo.RecycleBin)
 				"prompt_id", entry.ObjectID, "references", references)
 			return nil
 		}
-		if err := q.HardDeletePrompt(ctx, entry.ObjectID); err != nil {
+
+		// 彻底删除会级联清除 favorite_items：先统计再删除，随后校正各收藏夹计数。
+		favoriteCounts, err := q.ListFavoriteItemCountsByPrompt(ctx, entry.ObjectID)
+		if err != nil {
+			return wrap("统计收藏夹条目", entry.ObjectID, err)
+		}
+		deleted, err := q.HardDeletePrompt(ctx, entry.ObjectID)
+		if err != nil {
 			return wrap("清理到期提示词", entry.ObjectID, err)
+		}
+		if deleted == 0 {
+			// 行锁持有期间恢复无法提交，此处仅在并发清理时出现。
+			return nil
+		}
+		for _, fc := range favoriteCounts {
+			if err := q.AdjustFavoriteItemCount(ctx, repo.AdjustFavoriteItemCountParams{
+				ID:    fc.FavoriteID,
+				Delta: fc.ItemCount,
+			}); err != nil {
+				return wrap("校正收藏夹条目计数", fc.FavoriteID, err)
+			}
 		}
 		if err := q.MarkRecycleBinPurged(ctx, repo.MarkRecycleBinPurgedParams{
 			ObjectType: entry.ObjectType, ObjectID: entry.ObjectID,

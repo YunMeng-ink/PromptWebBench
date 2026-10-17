@@ -137,11 +137,15 @@ func EchoRequestLogger(logger *slog.Logger) echo.MiddlewareFunc {
 // EchoSecure 设置安全响应头。
 func EchoSecure() echo.MiddlewareFunc {
 	return middleware.SecureWithConfig(middleware.SecureConfig{
-		XSSProtection:         "1; mode=block",
-		ContentTypeNosniff:    "nosniff",
-		XFrameOptions:         "SAMEORIGIN",
-		ReferrerPolicy:        "strict-origin-when-cross-origin",
-		ContentSecurityPolicy: "",
+		XSSProtection:      "1; mode=block",
+		ContentTypeNosniff: "nosniff",
+		XFrameOptions:      "SAMEORIGIN",
+		ReferrerPolicy:     "strict-origin-when-cross-origin",
+		// 前端无内联脚本；Element Plus 依赖内联样式属性，style-src 保留 unsafe-inline。
+		// 头像可能来自外部（GitHub 等），img-src 放行 https 来源。
+		ContentSecurityPolicy: "default-src 'self'; img-src 'self' https: data:; " +
+			"style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'; " +
+			"object-src 'none'; base-uri 'self'; frame-ancestors 'self'",
 	})
 }
 
@@ -160,12 +164,13 @@ func EchoCORS(allowOrigins []string) echo.MiddlewareFunc {
 // EchoCSRF 装载 CSRF 双提交 Cookie 校验，Bearer 通道豁免。
 func EchoCSRF(cookieSecure bool) echo.MiddlewareFunc {
 	return middleware.CSRFWithConfig(middleware.CSRFConfig{
-		Skipper:      isBearerRequest,
-		CookieName:   CSRFCookieName,
-		TokenLookup:  "header:" + CSRFHeaderName,
-		CookiePath:   "/",
-		CookieSecure: cookieSecure,
-		ErrorHandler: CSRFErrorHandler,
+		Skipper:        isBearerRequest,
+		CookieName:     CSRFCookieName,
+		TokenLookup:    "header:" + CSRFHeaderName,
+		CookiePath:     "/",
+		CookieSecure:   cookieSecure,
+		CookieSameSite: http.SameSiteLaxMode,
+		ErrorHandler:   CSRFErrorHandler,
 	})
 }
 

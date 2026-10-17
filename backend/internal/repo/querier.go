@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	AdjustFavoriteItemCount(ctx context.Context, arg AdjustFavoriteItemCountParams) error
 	AdminCountAnnouncements(ctx context.Context, state string) (int64, error)
 	AdminCountInviteCodeUsages(ctx context.Context, inviteCodeID int64) (int64, error)
 	AdminCountInviteCodes(ctx context.Context, arg AdminCountInviteCodesParams) (int64, error)
@@ -173,16 +174,14 @@ type Querier interface {
 	CreateEmailVerification(ctx context.Context, arg CreateEmailVerificationParams) (EmailVerification, error)
 	CreateInviteCodeUsage(ctx context.Context, arg CreateInviteCodeUsageParams) error
 	CreateOAuthAccount(ctx context.Context, arg CreateOAuthAccountParams) (OauthAccount, error)
-	// ratings 与 rating_change_logs 的读写。
-	//
-	// 每日限额一律在事务内统计，窗口边界由应用层按 UTC 自然日计算后作为参数传入（C-03、
-	// 开发方案 §3.4）：SQL 中不出现 date_trunc 与任何依赖会话时区的表达式。
 	CreateRating(ctx context.Context, arg CreateRatingParams) (Rating, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DecrementCommentLikeCount(ctx context.Context, id int64) (int32, error)
 	DecrementFavoriteItemCount(ctx context.Context, id int64) error
 	// 只有彻底删除引用题才减少配额计数：软删除的题目仍在回收站中，仍占容量（C-22）。
 	DecrementLibraryQuestionCount(ctx context.Context, id int64) error
+	DecrementPromptCommentCount(ctx context.Context, id int64) error
+	DecrementPromptFavoriteCount(ctx context.Context, id int64) error
 	// 取消点赞用 :execrows 返回影响行数：0 行说明本来就没点过赞，
 	// 此时不能再递减计数，否则计数会与实际点赞记录脱节。
 	DeleteCommentLike(ctx context.Context, arg DeleteCommentLikeParams) (int64, error)
@@ -270,9 +269,13 @@ type Querier interface {
 	// 把「不存在」与「已封禁」分成两种错误，前端才能给出可读提示。
 	GetUserForLibraryInvite(ctx context.Context, username string) (GetUserForLibraryInviteRow, error)
 	HandleReport(ctx context.Context, arg HandleReportParams) (Report, error)
-	HardDeleteLibrary(ctx context.Context, id int64) error
-	HardDeleteLibraryQuestion(ctx context.Context, id int64) error
-	HardDeletePrompt(ctx context.Context, id int64) error
+	// 彻底删除回收站中的题库。deleted_at 条件使并发恢复提交后本语句不命中。
+	HardDeleteLibrary(ctx context.Context, id int64) (int64, error)
+	// 彻底删除回收站中的题目。deleted_at 条件使并发恢复提交后本语句不命中。
+	HardDeleteLibraryQuestion(ctx context.Context, id int64) (int64, error)
+	// 彻底删除回收站中的提示词。deleted_at 条件使并发恢复提交后本语句不命中：
+	// 清理事务回滚或跳过，恢复方胜出，杜绝「清理竞态删除在线提示词」。
+	HardDeletePrompt(ctx context.Context, id int64) (int64, error)
 	// 区分度回升时把已存在的待确认过时标签转已忽略并记录审计日志（C-15）。
 	// 条件里带 state = 'pending'：已确认的标签由管理员显式处理，系统不代为改动。
 	IgnorePendingTags(ctx context.Context, arg IgnorePendingTagsParams) ([]RecommendTag, error)
@@ -283,6 +286,10 @@ type Querier interface {
 	// 引用题插入后同步题库的配额计数。条件 WHERE 让并发添加不会越过容量上限：
 	// 即便两个请求同时读到未满，也只有一个能命中 increment。
 	IncrementLibraryQuestionCount(ctx context.Context, arg IncrementLibraryQuestionCountParams) (int32, error)
+	// 评论数与收藏数的冗余计数：详情页与后台热门排序直接读取，
+	// 与对应的评论写入、收藏条目写入同事务维护，保证两者一致。
+	IncrementPromptCommentCount(ctx context.Context, id int64) error
+	IncrementPromptFavoriteCount(ctx context.Context, id int64) error
 	// ---------- 公告 ----------
 	InsertAnnouncement(ctx context.Context, arg InsertAnnouncementParams) (Announcement, error)
 	// 评论、点赞与举报的读写。
@@ -318,7 +325,6 @@ type Querier interface {
 	InsertNotification(ctx context.Context, arg InsertNotificationParams) (Notification, error)
 	// 操作日志与提示词转移日志。操作日志只增不改不删（C-43）。
 	InsertOperationLog(ctx context.Context, arg InsertOperationLogParams) (OperationLog, error)
-	// prompts 与 prompt_versions 的读取与写入。
 	InsertPrompt(ctx context.Context, arg InsertPromptParams) (Prompt, error)
 	InsertPromptVersion(ctx context.Context, arg InsertPromptVersionParams) (PromptVersion, error)
 	InsertRatingChangeLog(ctx context.Context, arg InsertRatingChangeLogParams) (int64, error)
@@ -348,7 +354,11 @@ type Querier interface {
 	ListConfirmedRecommendTags(ctx context.Context, promptID int64) ([]RecommendTag, error)
 	ListDifficulties(ctx context.Context) ([]Difficulty, error)
 	// 回收站自动清理：到期且未恢复的记录（需求 §11.3）。
+	// 被题库引用的提示词会长期占住 expires_at 最前的批位、拖住后续条目，
+	// 这里直接把它们排除出批次：引用解除后自然回到候选集。清理事务内仍复查引用计数（C-21）。
 	ListExpiredRecycleBinEntries(ctx context.Context, limitCount int32) ([]RecycleBin, error)
+	// 提示词彻底删除前：统计各收藏夹内将随外键级联删除的条目数，用于校正 item_count。
+	ListFavoriteItemCountsByPrompt(ctx context.Context, promptID int64) ([]ListFavoriteItemCountsByPromptRow, error)
 	// 收藏夹条目列表。可见性复查在应用层完成：条目里的提示词可能已被改为私有或
 	// 高风险，此时不能再展示（开发方案 §6.5 验收标准）。
 	// 这里取出判定所需的全部列，由 repo.FilterVisibleItems 逐条过 domain.Viewer。
@@ -365,8 +375,9 @@ type Querier interface {
 	ListLibraryQuestionRevisions(ctx context.Context, questionID int64) ([]ListLibraryQuestionRevisionsRow, error)
 	ListLibraryQuestionTags(ctx context.Context, questionID int64) ([]string, error)
 	ListLibraryQuestionTagsByQuestions(ctx context.Context, questionIds []int64) ([]ListLibraryQuestionTagsByQuestionsRow, error)
-	// 题目的来源提示词字段：引用题的正文取自来源提示词当前版本，
-	// source_* 全为空表示来源提示词已被删除，此时引用题无正文可读。
+	// 题目的来源提示词字段：引用题的正文取自来源提示词当前版本。
+	// 来源提示词软删除后仍联出可见性要素与删除标记：派生题继续按来源可见性复查（C-20），
+	// 引用题按删除标记显示「来源不可用」。彻底删除被引用检查阻止，此 JOIN 不会因来源缺失而放行。
 	// 题库内全部题目（可按需带上回收站中的题目）。回收站列表与正常列表共用这一条语句，
 	// 使两者的可见性判定与字段解析只有一份实现。
 	// include_deleted 为真时回收站中的题目一并返回，调用方按 deleted_at 区分。
@@ -379,6 +390,8 @@ type Querier interface {
 	ListModelIdentities(ctx context.Context) ([]ListModelIdentitiesRow, error)
 	ListModelSnapshots(ctx context.Context, arg ListModelSnapshotsParams) ([]ModelSnapshot, error)
 	ListModels(ctx context.Context) ([]Model, error)
+	// 我的评分列表带出提示词的可见性要素，服务层按 domain.Viewer 复查（C-20）：
+	// 已删除的提示词不进列表，改为受限的提示词不再带出标题。
 	ListMyRatings(ctx context.Context, arg ListMyRatingsParams) ([]ListMyRatingsRow, error)
 	// 当前用户的评分：详情页展示「我已评过的模型」。
 	ListMyRatingsForPrompt(ctx context.Context, arg ListMyRatingsForPromptParams) ([]Rating, error)
@@ -433,6 +446,8 @@ type Querier interface {
 	// 锁键 = 命名空间 << 32 + 对象标识。命名空间：1 收藏夹、2 统计重算、3 题库。
 	// 高位命名空间使不同域的同号对象不再互相阻塞。
 	LockFavoriteOwner(ctx context.Context, ownerID int64) error
+	// 锁定回收站中的题库行：彻底删除前阻止并发的恢复（C-21）。
+	LockLibraryIncludingDeleted(ctx context.Context, id int64) (Library, error)
 	// 私有题库、成员、题目、题目标签、题目修订与题库回收站的读写。
 	//
 	// 容量判定一律在事务内完成（C-21）：锁定 → 计数 → 判定 → 写入。
@@ -442,11 +457,26 @@ type Querier interface {
 	// 高位置命名空间使不同域的同号对象不再互相阻塞。
 	LockLibraryOwner(ctx context.Context, ownerID int64) error
 	LockPrompt(ctx context.Context, id int64) (LockPromptRow, error)
+	// 锁定回收站中的提示词行：彻底删除前阻止并发的恢复与引用写入，
+	// 使「引用计数 → 删除」两步与「读提示词 → 插引用」互斥（C-21）。
+	// 列与 GetPromptIncludingDeleted 一致，服务层复用同一转换函数。
+	LockPromptIncludingDeleted(ctx context.Context, id int64) (LockPromptIncludingDeletedRow, error)
+	// prompts 与 prompt_versions 的读取与写入。
+	// 锁键 = 命名空间 << 32 + 对象标识。命名空间：1 收藏夹、2 统计重算、3 题库、
+	// 4 私有提示词额度。高位置命名空间使不同域的同号对象不再互相阻塞。
+	LockPromptOwner(ctx context.Context, ownerID int64) error
 	// 快照重算的事务入口：锁定该提示词的评分写入，使快照与它反映的评分集合一致。
 	// 评分提交路径在写评分前同样先取本锁，两侧因此互斥。
 	// 锁键 = 命名空间 << 32 + 对象标识。命名空间：1 收藏夹、2 统计重算、3 题库。
 	LockPromptStatsRecompute(ctx context.Context, promptID int64) error
 	LockRating(ctx context.Context, id int64) (Rating, error)
+	// ratings 与 rating_change_logs 的读写。
+	//
+	// 每日限额一律在事务内统计，窗口边界由应用层按 UTC 自然日计算后作为参数传入（C-03、
+	// 开发方案 §3.4）：SQL 中不出现 date_trunc 与任何依赖会话时区的表达式。
+	// 锁键 = 命名空间 << 32 + 对象标识。命名空间：5 评分每日限额。
+	// 同一用户的限额计数与写入必须先取得该锁，否则并发事务各自读到未超限的计数。
+	LockRatingUser(ctx context.Context, userID int64) error
 	LockUser(ctx context.Context, id int64) (User, error)
 	MarkAllNotificationsRead(ctx context.Context, userID int64) error
 	// 彻底删除题库时，库内题目在回收站中的记录一并结清，
@@ -459,6 +489,9 @@ type Querier interface {
 	MaxLibraryQuestionSortOrder(ctx context.Context, libraryID int64) (int32, error)
 	// 重大修改：过时标签转待复核，训练饱和标签转待复核（C-12）。
 	MoveTagsToReview(ctx context.Context, arg MoveTagsToReviewParams) error
+	// 记录一次验证码校验失败并返回失败计数：达到上限的验证码由调用方作废。
+	// 同一（邮箱、用途）只有一个生效验证码（新码申请时旧码作废），子查询 LIMIT 1 只是兜底。
+	RecordVerificationFailure(ctx context.Context, arg RecordVerificationFailureParams) (RecordVerificationFailureRow, error)
 	// 按给定顺序重排题目：orders 与 ids 按位置对应，只影响本库内未删除的题目。
 	// 用 WITH ORDINALITY 把两个数组按下标配对，避免逐条 UPDATE 在一个事务里往返多次。
 	ReorderLibraryQuestions(ctx context.Context, arg ReorderLibraryQuestionsParams) error

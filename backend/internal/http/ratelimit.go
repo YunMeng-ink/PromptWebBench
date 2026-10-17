@@ -189,6 +189,17 @@ func (l *Limiter) identity(ctx huma.Context, rule Rule) string {
 	return fmt.Sprintf("%s:ip:%s", rule.Name, ip)
 }
 
+// AllowIP 按来源地址应用某条规则，供 Echo 原生路由（OAuth 回调）复用；
+// 返回是否放行与重试等待时长，超限由调用方负责写出 429。
+func (l *Limiter) AllowIP(ruleName, remoteAddr, forwarded string) (bool, time.Duration) {
+	rule, ok := l.lookupRule(ruleName)
+	if !ok {
+		panic(fmt.Errorf("未登记的限流规则 %q", ruleName))
+	}
+	ip := ClientIP(remoteAddr, forwarded, l.trusted)
+	return l.allow(fmt.Sprintf("%s:ip:%s", rule.Name, ip), rule)
+}
+
 // Middleware 返回绑定到某条规则的 Huma 中间件。超限时直接写出 429 并终止链路。
 func (l *Limiter) Middleware(api huma.API, ruleName string) func(huma.Context, func(huma.Context)) {
 	rule, ok := l.lookupRule(ruleName)

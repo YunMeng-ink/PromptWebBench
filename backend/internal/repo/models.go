@@ -38,6 +38,7 @@ type ApiToken struct {
 	RevokedAt   pgtype.Timestamptz
 	LastUsedAt  pgtype.Timestamptz
 	CreatedAt   pgtype.Timestamptz
+	ExpiresAt   pgtype.Timestamptz
 }
 
 type Category struct {
@@ -93,14 +94,15 @@ type Difficulty struct {
 }
 
 type EmailVerification struct {
-	ID         int64
-	UserID     pgtype.Int8
-	Email      string
-	Code       string
-	Purpose    string
-	ExpiresAt  pgtype.Timestamptz
-	ConsumedAt pgtype.Timestamptz
-	CreatedAt  pgtype.Timestamptz
+	ID             int64
+	UserID         pgtype.Int8
+	Email          string
+	Code           string
+	Purpose        string
+	ExpiresAt      pgtype.Timestamptz
+	ConsumedAt     pgtype.Timestamptz
+	CreatedAt      pgtype.Timestamptz
+	FailedAttempts int32
 }
 
 type Favorite struct {

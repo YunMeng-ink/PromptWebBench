@@ -712,3 +712,26 @@ ALTER TABLE operation_logs ADD CONSTRAINT operation_logs_action_check CHECK (act
     'favorite_delete', 'discrimination_recovery',
     'sensitive_content_access', 'account_delete'));
 
+-- 006_verification_attempts.sql
+-- 邮箱验证码的失败次数计数：同一验证码错误次数达到上限即作废，必须重新申请，
+-- 堵住 6 位数字验证码在有效期内被分布式穷举的通道（防暴力猜测，配合按地址限流）。
+
+ALTER TABLE email_verifications ADD COLUMN failed_attempts INTEGER NOT NULL DEFAULT 0;
+
+-- 007_report_pending_unique.sql
+-- 同一用户对同一对象只允许一条待处理举报：唯一索引兜底并发下的重复刷单
+-- （服务层先查后插，并发时两笔都会插入）。
+
+CREATE UNIQUE INDEX reports_pending_uniq
+    ON reports (reporter_id, object_type, object_id)
+    WHERE status = 'pending';
+
+-- 008_api_token_expiry.sql
+-- API Token 增加有效期：签发 90 天后失效（需求 §16.3 的泄露暴露面收敛），
+-- 既有令牌按同一期限回填，避免历史令牌永久有效。
+
+ALTER TABLE api_tokens ADD COLUMN expires_at TIMESTAMPTZ;
+UPDATE api_tokens SET expires_at = now() + interval '90 days' WHERE expires_at IS NULL;
+ALTER TABLE api_tokens ALTER COLUMN expires_at SET NOT NULL;
+ALTER TABLE api_tokens ALTER COLUMN expires_at SET DEFAULT now() + interval '90 days';
+

@@ -153,5 +153,6 @@ export function downloadText(filename: string, content: string): void {
   document.body.append(anchor)
   anchor.click()
   anchor.remove()
-  URL.revokeObjectURL(url)
+  // 延迟撤销：Firefox 在下载尚未启动时撤销会中止保存动作。
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
 }

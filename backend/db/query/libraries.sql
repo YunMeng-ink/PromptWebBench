@@ -71,8 +71,13 @@ SET deleted_at = NULL, updated_at = now()
 WHERE id = $1
 RETURNING *;
 
--- name: HardDeleteLibrary :exec
-DELETE FROM libraries WHERE id = $1;
+-- 彻底删除回收站中的题库。deleted_at 条件使并发恢复提交后本语句不命中。
+-- name: HardDeleteLibrary :execrows
+DELETE FROM libraries WHERE id = $1 AND deleted_at IS NOT NULL;
+
+-- 锁定回收站中的题库行：彻底删除前阻止并发的恢复（C-21）。
+-- name: LockLibraryIncludingDeleted :one
+SELECT * FROM libraries WHERE id = $1 FOR UPDATE;
 
 -- 用户参与的全部题库，含所有者与协作者两种身份，带出本人在库中的角色。
 -- name: ListLibrariesForUser :many
@@ -139,8 +144,9 @@ UPDATE libraries
 SET question_count = GREATEST(question_count - 1, 0), updated_at = now()
 WHERE id = $1 AND deleted_at IS NULL;
 
--- 题目的来源提示词字段：引用题的正文取自来源提示词当前版本，
--- source_* 全为空表示来源提示词已被删除，此时引用题无正文可读。
+-- 题目的来源提示词字段：引用题的正文取自来源提示词当前版本。
+-- 来源提示词软删除后仍联出可见性要素与删除标记：派生题继续按来源可见性复查（C-20），
+-- 引用题按删除标记显示「来源不可用」。彻底删除被引用检查阻止，此 JOIN 不会因来源缺失而放行。
 -- 题库内全部题目（可按需带上回收站中的题目）。回收站列表与正常列表共用这一条语句，
 -- 使两者的可见性判定与字段解析只有一份实现。
 -- include_deleted 为真时回收站中的题目一并返回，调用方按 deleted_at 区分。
@@ -158,11 +164,12 @@ SELECT
     p.uploader_id       AS source_uploader_id,
     p.latest_version_no AS source_version_no,
     p.major_modified    AS source_major_modified,
+    p.deleted_at        AS source_deleted_at,
     COALESCE(pc.is_high_risk, false) AS source_is_high_risk,
     COALESCE(pc.name_zh, dc.name_zh, '') AS category_name_zh,
     COALESCE(pc.name_en, dc.name_en, '') AS category_name_en
 FROM library_questions q
-LEFT JOIN prompts p ON p.id = q.source_prompt_id AND p.deleted_at IS NULL
+LEFT JOIN prompts p ON p.id = q.source_prompt_id
 LEFT JOIN categories pc ON pc.id = p.category_id
 LEFT JOIN categories dc ON dc.id = q.category_id
 WHERE q.library_id = sqlc.arg(library_id)
@@ -181,8 +188,9 @@ SET deleted_at = NULL, updated_at = now()
 WHERE id = $1
 RETURNING *;
 
--- name: HardDeleteLibraryQuestion :exec
-DELETE FROM library_questions WHERE id = $1;
+-- 彻底删除回收站中的题目。deleted_at 条件使并发恢复提交后本语句不命中。
+-- name: HardDeleteLibraryQuestion :execrows
+DELETE FROM library_questions WHERE id = $1 AND deleted_at IS NOT NULL;
 
 -- 按给定顺序重排题目：orders 与 ids 按位置对应，只影响本库内未删除的题目。
 -- 用 WITH ORDINALITY 把两个数组按下标配对，避免逐条 UPDATE 在一个事务里往返多次。
@@ -311,8 +319,16 @@ WHERE library_id = sqlc.arg(library_id)::bigint AND object_type = 'library_quest
   AND restored_at IS NULL AND purged_at IS NULL;
 
 -- 回收站自动清理：到期且未恢复的记录（需求 §11.3）。
+-- 被题库引用的提示词会长期占住 expires_at 最前的批位、拖住后续条目，
+-- 这里直接把它们排除出批次：引用解除后自然回到候选集。清理事务内仍复查引用计数（C-21）。
 -- name: ListExpiredRecycleBinEntries :many
-SELECT * FROM recycle_bin
-WHERE restored_at IS NULL AND purged_at IS NULL AND expires_at <= now()
-ORDER BY expires_at
+SELECT rb.* FROM recycle_bin rb
+WHERE rb.restored_at IS NULL AND rb.purged_at IS NULL AND rb.expires_at <= now()
+  AND (
+    rb.object_type <> 'prompt'
+    OR NOT EXISTS (
+        SELECT 1 FROM library_questions lq WHERE lq.source_prompt_id = rb.object_id
+    )
+  )
+ORDER BY rb.expires_at
 LIMIT sqlc.arg(limit_count);

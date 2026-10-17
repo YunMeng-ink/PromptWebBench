@@ -1,5 +1,10 @@
 -- prompts 与 prompt_versions 的读取与写入。
 
+-- 锁键 = 命名空间 << 32 + 对象标识。命名空间：1 收藏夹、2 统计重算、3 题库、
+-- 4 私有提示词额度。高位置命名空间使不同域的同号对象不再互相阻塞。
+-- name: LockPromptOwner :exec
+SELECT pg_advisory_xact_lock((4::bigint << 32) + sqlc.arg(owner_id)::bigint);
+
 -- name: InsertPrompt :one
 INSERT INTO prompts (
     title, body, description, category_id, ability_id, difficulty_id,
@@ -71,8 +76,20 @@ SELECT count(*)::bigint
 FROM library_questions
 WHERE source_prompt_id = $1::bigint;
 
--- name: HardDeletePrompt :exec
-DELETE FROM prompts WHERE id = $1;
+-- 彻底删除回收站中的提示词。deleted_at 条件使并发恢复提交后本语句不命中：
+-- 清理事务回滚或跳过，恢复方胜出，杜绝「清理竞态删除在线提示词」。
+-- name: HardDeletePrompt :execrows
+DELETE FROM prompts WHERE id = $1 AND deleted_at IS NOT NULL;
+
+-- 锁定回收站中的提示词行：彻底删除前阻止并发的恢复与引用写入，
+-- 使「引用计数 → 删除」两步与「读提示词 → 插引用」互斥（C-21）。
+-- 列与 GetPromptIncludingDeleted 一致，服务层复用同一转换函数。
+-- name: LockPromptIncludingDeleted :one
+SELECT p.*, c.is_high_risk, c.name_zh AS category_name_zh, c.name_en AS category_name_en
+FROM prompts p
+JOIN categories c ON c.id = p.category_id
+WHERE p.id = $1
+FOR UPDATE OF p;
 
 -- name: LockPrompt :one
 SELECT p.*, c.is_high_risk
@@ -152,6 +169,20 @@ FROM prompts
 WHERE uploader_id = $1
   AND visibility = 'private'
   AND deleted_at IS NULL;
+
+-- 评论数与收藏数的冗余计数：详情页与后台热门排序直接读取，
+-- 与对应的评论写入、收藏条目写入同事务维护，保证两者一致。
+-- name: IncrementPromptCommentCount :exec
+UPDATE prompts SET comment_count = comment_count + 1 WHERE id = $1;
+
+-- name: DecrementPromptCommentCount :exec
+UPDATE prompts SET comment_count = GREATEST(comment_count - 1, 0) WHERE id = $1;
+
+-- name: IncrementPromptFavoriteCount :exec
+UPDATE prompts SET favorite_count = favorite_count + 1 WHERE id = $1;
+
+-- name: DecrementPromptFavoriteCount :exec
+UPDATE prompts SET favorite_count = GREATEST(favorite_count - 1, 0) WHERE id = $1;
 
 -- name: ListOwnPrompts :many
 SELECT p.*, c.is_high_risk

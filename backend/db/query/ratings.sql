@@ -3,6 +3,11 @@
 -- 每日限额一律在事务内统计，窗口边界由应用层按 UTC 自然日计算后作为参数传入（C-03、
 -- 开发方案 §3.4）：SQL 中不出现 date_trunc 与任何依赖会话时区的表达式。
 
+-- 锁键 = 命名空间 << 32 + 对象标识。命名空间：5 评分每日限额。
+-- 同一用户的限额计数与写入必须先取得该锁，否则并发事务各自读到未超限的计数。
+-- name: LockRatingUser :exec
+SELECT pg_advisory_xact_lock((5::bigint << 32) + sqlc.arg(user_id)::bigint);
+
 -- name: CreateRating :one
 INSERT INTO ratings (user_id, prompt_id, prompt_version_id, model_id, score)
 VALUES ($1, $2, $3, $4, $5)
@@ -75,18 +80,23 @@ SELECT * FROM ratings
 WHERE user_id = $1 AND prompt_id = $2 AND deleted_at IS NULL
 ORDER BY model_id;
 
+-- 我的评分列表带出提示词的可见性要素，服务层按 domain.Viewer 复查（C-20）：
+-- 已删除的提示词不进列表，改为受限的提示词不再带出标题。
 -- name: ListMyRatings :many
-SELECT r.*, p.title AS prompt_title
+SELECT r.*, p.title AS prompt_title, p.visibility AS prompt_visibility,
+       p.uploader_id AS prompt_uploader_id, c.is_high_risk AS prompt_is_high_risk
 FROM ratings r
 JOIN prompts p ON p.id = r.prompt_id
-WHERE r.user_id = $1 AND r.deleted_at IS NULL
+JOIN categories c ON c.id = p.category_id
+WHERE r.user_id = $1 AND r.deleted_at IS NULL AND p.deleted_at IS NULL
 ORDER BY r.created_at DESC, r.id DESC
 LIMIT $2 OFFSET $3;
 
 -- name: CountMyRatings :one
 SELECT count(*)::bigint
-FROM ratings
-WHERE user_id = $1 AND deleted_at IS NULL;
+FROM ratings r
+JOIN prompts p ON p.id = r.prompt_id
+WHERE r.user_id = $1 AND r.deleted_at IS NULL AND p.deleted_at IS NULL;
 
 -- name: CountPromptRatings :one
 SELECT count(*)::bigint

@@ -93,21 +93,29 @@ func (f *fakeGitHub) client() *oauth.Client {
 	return client
 }
 
-// startLogin 走一次授权跳转，返回其中的 state。
+// startLogin 走一次授权跳转，返回其中的 state 与一次性随机数。
 func (f *fakeGitHub) startLogin(t *testing.T, h *harness) string {
 	t.Helper()
 
-	authURL, err := h.service.GitHubAuthorizeURL(context.Background())
+	authURL, nonce, err := h.service.GitHubAuthorizeURL(context.Background())
 	if err != nil {
 		t.Fatalf("生成授权地址失败: %v", err)
 	}
 	parsed, err := url.Parse(authURL)
 	if err != nil {
-		t.Fatalf("授权地址无法解析: %v", err)
+		t.Fatalf("授权地址无法解析: %s", authURL)
 	}
 	state := parsed.Query().Get("state")
 	if state == "" {
 		t.Fatalf("授权地址缺少 state: %s", authURL)
+	}
+	// state 中的随机数与返回值一致，接口层据此与浏览器 Cookie 比对。
+	got, err := h.service.OAuthStateNonce(state)
+	if err != nil {
+		t.Fatalf("提取 state 随机数失败: %v", err)
+	}
+	if got != nonce || nonce == "" {
+		t.Fatalf("state 随机数 = %q，期望与返回的 nonce %q 一致", got, nonce)
 	}
 	return state
 }
@@ -305,7 +313,7 @@ func TestGitHubLoginMapsUpstreamFailure(t *testing.T) {
 func TestGitHubEndpointsRequireConfiguration(t *testing.T) {
 	h := newHarness(t)
 
-	_, err := h.service.GitHubAuthorizeURL(context.Background())
+	_, _, err := h.service.GitHubAuthorizeURL(context.Background())
 	expectCode(t, err, apperr.CodeOAuthNotConfigured)
 
 	_, err = h.service.CompleteGitHubLogin(context.Background(), "code", "state")
@@ -316,9 +324,12 @@ func TestGitHubAuthorizeURLContainsRequiredParameters(t *testing.T) {
 	fake := newFakeGitHub(t)
 	h := newHarnessWith(t, options{gitHub: fake.client()})
 
-	authURL, err := h.service.GitHubAuthorizeURL(context.Background())
+	authURL, nonce, err := h.service.GitHubAuthorizeURL(context.Background())
 	if err != nil {
 		t.Fatalf("生成授权地址失败: %v", err)
+	}
+	if nonce == "" {
+		t.Fatal("授权地址应返回非空一次性随机数")
 	}
 	for _, fragment := range []string{"client_id=client-id", "state=", "scope=", "redirect_uri="} {
 		if !strings.Contains(authURL, fragment) {

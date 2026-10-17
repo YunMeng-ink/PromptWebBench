@@ -43,24 +43,37 @@ func (s *Service) MaxEdits(ctx context.Context) (int32, error) {
 	return int32(limit), nil
 }
 
-// ListMine 返回当前用户的评分列表。
-func (s *Service) ListMine(ctx context.Context, userID int64, page, pageSize int32) ([]Mine, int64, error) {
+// ListMine 返回当前用户的评分列表。带出提示词可见性要素并逐条经
+// domain.Viewer 复查（C-20）：已删除或已改为受限的提示词不再带出标题。
+func (s *Service) ListMine(ctx context.Context, viewer domain.Viewer, page, pageSize int32) ([]Mine, int64, error) {
 	q := repo.New(s.pool)
 	rows, err := q.ListMyRatings(ctx, repo.ListMyRatingsParams{
-		UserID: userID,
+		UserID: viewer.UserID,
 		Limit:  pageSize,
 		Offset: (page - 1) * pageSize,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("查询我的评分: %w", err)
 	}
-	total, err := q.CountMyRatings(ctx, userID)
+	total, err := q.CountMyRatings(ctx, viewer.UserID)
 	if err != nil {
 		return nil, 0, fmt.Errorf("统计我的评分数量: %w", err)
 	}
 
 	items := make([]Mine, 0, len(rows))
 	for _, row := range rows {
+		level, ok := domain.ParseVisibility(row.PromptVisibility)
+		if !ok {
+			return nil, 0, fmt.Errorf("提示词 %d 的可见性取值非法: %q", row.PromptID, row.PromptVisibility)
+		}
+		access := domain.Access{
+			Level:      level,
+			HighRisk:   row.PromptIsHighRisk,
+			UploaderID: row.PromptUploaderID,
+		}
+		if !viewer.CanView(access) {
+			continue
+		}
 		item := Mine{
 			ID:          row.ID,
 			PromptID:    row.PromptID,

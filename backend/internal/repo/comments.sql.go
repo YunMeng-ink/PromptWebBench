@@ -214,6 +214,7 @@ const insertReport = `-- name: InsertReport :one
 
 INSERT INTO reports (reporter_id, object_type, object_id, reason, detail)
 VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (reporter_id, object_type, object_id) WHERE status = 'pending' DO NOTHING
 RETURNING id, reporter_id, object_type, object_id, reason, detail, status, handler_id, handle_note, handled_at, created_at, updated_at
 `
 

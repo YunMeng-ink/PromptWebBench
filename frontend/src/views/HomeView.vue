@@ -116,14 +116,14 @@ function onPageChange(next: number): void {
   void loadList()
 }
 
-/** 复制正文到剪贴板。剪贴板接口在非安全上下文不可用，此时保留提示由用户手工复制。 */
+/** 复制正文到剪贴板。剪贴板接口在非安全上下文不可用，此时提示用户手工复制。 */
 async function copyBody(item: PromptListItem): Promise<void> {
   const detail = await promptApi.detail(item.id)
   try {
     await navigator.clipboard.writeText(detail.version.body)
     notice.value = t('home.copied')
   } catch {
-    notice.value = detail.version.body
+    notice.value = t('home.copyFailed')
   }
 }
 
