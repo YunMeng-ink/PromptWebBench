@@ -1,0 +1,44 @@
+name: Release
+# 打 tag（v*）时构建 Linux amd64 单二进制并发布到 GitHub Release。
+# 产物由 deploy/pb.sh build 产出：前端产物经 embedweb 标签内嵌进后端，
+# 运行时只需要 PostgreSQL，不需要 Node。
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: write
+jobs:
+  build:
+    name: 构建 Linux 单二进制
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: 安装前端依赖
+        run: pnpm install --frozen-lockfile
+        working-directory: frontend
+      - name: 打包（前端构建 + 内嵌 + 编译）
+        run: deploy/pb.sh build
+      - name: 上传制品
+        uses: actions/upload-artifact@v4
+        with:
+          name: prompt-benchmark-linux-amd64
+          path: dist/prompt-benchmark
+      - name: 发布 GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${{ github.ref_name }}" dist/prompt-benchmark \
+            --title "${{ github.ref_name }}" \
+            --notes "由 deploy/pb.sh build 产出的 Linux amd64 单二进制（内嵌前端产物）。部署方式见 docs/部署手册.md。"

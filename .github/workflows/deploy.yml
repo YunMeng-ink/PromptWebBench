@@ -1,0 +1,42 @@
+name: Deploy
+# 手动触发的自托管部署：SSH 登录服务器，拉取指定提交后打包并重启服务。
+# 部署目标与密钥通过仓库 Secrets 提供（见 docs/部署手册.md §十二）：
+#   DEPLOY_HOST      服务器地址（IP 或域名）
+#   DEPLOY_USER      用于登录的账户（需 sudo 权限执行 systemctl）
+#   DEPLOY_SSH_KEY   该账户的私钥（建议专用部署密钥，仅授权本仓库）
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 要部署的提交或标签（默认 main）
+        required: false
+        default: main
+jobs:
+  deploy:
+    name: 部署到服务器
+    runs-on: ubuntu-latest
+    steps:
+      - name: 安装 SSH 密钥
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+      - name: 拉取、打包并重启
+        run: |
+          ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "bash -s -- ${{ github.event.inputs.ref }}" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/prompt-benchmark
+          git fetch --all --tags
+          # 分支与标签两种目标分开处理：分支拉取最新，标签（分离 HEAD）直接检出。
+          if git rev-parse -q --verify "refs/remotes/origin/$1" >/dev/null; then
+            git checkout "$1"
+            git pull --ff-only
+          else
+            git checkout "$1"
+          fi
+          deploy/pb.sh build
+          sudo systemctl restart prompt-benchmark
+          deploy/pb.sh status
+          REMOTE
