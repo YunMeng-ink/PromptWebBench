@@ -50,7 +50,7 @@ async function submit(): Promise<void> {
 
 <template>
   <section class="pb-auth">
-    <div class="pb-auth__card">
+    <div class="pb-auth__card pb-auth__card--standard">
       <span class="pb-auth__eyebrow" aria-hidden="true">Password Reset</span>
       <h1 class="pb-auth__title">{{ t('auth.resetTitle') }}</h1>
       <p class="pb-auth__hint">{{ t('auth.resetHint') }}</p>
@@ -100,6 +100,14 @@ async function submit(): Promise<void> {
           </el-button>
         </div>
       </el-form>
+
+      <div class="pb-auth__aside">
+        <span class="pb-auth__aside-title">{{ t('auth.resetAsideTitle') }}</span>
+        <ul class="pb-auth__aside-list">
+          <li>{{ t('auth.resetAside1') }}</li>
+          <li>{{ t('auth.resetAside2') }}</li>
+        </ul>
+      </div>
 
       <div class="pb-auth__links">
         <RouterLink to="/login">{{ t('auth.toLogin') }}</RouterLink>

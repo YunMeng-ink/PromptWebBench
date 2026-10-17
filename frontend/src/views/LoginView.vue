@@ -34,7 +34,7 @@ async function submit(): Promise<void> {
 
 <template>
   <section class="pb-auth">
-    <div class="pb-auth__card">
+    <div class="pb-auth__card pb-auth__card--standard">
       <span class="pb-auth__eyebrow" aria-hidden="true">Account Access</span>
       <h1 class="pb-auth__title">{{ t('auth.loginTitle') }}</h1>
       <p class="pb-auth__hint">{{ t('auth.loginHint') }}</p>
@@ -64,6 +64,15 @@ async function submit(): Promise<void> {
           {{ t('auth.submitLogin') }}
         </el-button>
       </el-form>
+
+      <div class="pb-auth__aside">
+        <span class="pb-auth__aside-title">{{ t('auth.loginAsideTitle') }}</span>
+        <ul class="pb-auth__aside-list">
+          <li>{{ t('auth.loginAside1') }}</li>
+          <li>{{ t('auth.loginAside2') }}</li>
+          <li>{{ t('auth.loginAside3') }}</li>
+        </ul>
+      </div>
 
       <div class="pb-auth__links">
         <RouterLink to="/reset-password">{{ t('auth.forgotPassword') }}</RouterLink>

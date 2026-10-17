@@ -78,7 +78,10 @@ test('普通修改生成次版本并保留历史版本', async ({ page }) => {
   await page.getByTestId('detail-edit').click()
   await expect(page).toHaveURL(new RegExp(`/prompts/${promptID}/edit$`))
 
-  await page.getByTestId('prompt-title').fill(`${title}-已修改`)
+  // 编辑表单在详情返回前就会渲染，先等原标题回填再输入，避免异步回填覆盖输入。
+  const titleInput = page.getByTestId('prompt-title')
+  await expect(titleInput).toHaveValue(title)
+  await titleInput.fill(`${title}-已修改`)
   await page.getByTestId('prompt-change-note').fill('调整措辞')
   await page.getByTestId('prompt-submit').click()
 

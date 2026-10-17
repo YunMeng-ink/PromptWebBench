@@ -26,6 +26,32 @@
   --pb-accent-soft: #f6e9ed;
   --pb-accent-ring: rgba(163, 42, 76, 0.24);
 
+  /* 考察目的轴：靛蓝，与莓红强调色形成明确的语义区分 */
+  --pb-purpose: #3d5a80;
+  --pb-purpose-strong: #2e4664;
+  --pb-purpose-soft: #e9eef5;
+  --pb-purpose-ring: rgba(61, 90, 128, 0.2);
+
+  /* 考察维度分组：认知、执行、可靠。三组色只用于能力标签与索引装饰。 */
+  --pb-group-cognitive: #4b5b9a;
+  --pb-group-cognitive-strong: #3c4a80;
+  --pb-group-cognitive-soft: #eceef8;
+  --pb-group-execution: #2f6b60;
+  --pb-group-execution-strong: #245449;
+  --pb-group-execution-soft: #e7f1ee;
+  --pb-group-reliability: #8a5c16;
+  --pb-group-reliability-strong: #704a10;
+  --pb-group-reliability-soft: #f6efe0;
+
+  /* 纸面氛围：极浅的色晕与点阵，只负责层次，不承载语义 */
+  --pb-wash-accent: rgba(163, 42, 76, 0.075);
+  --pb-wash-purpose: rgba(61, 90, 128, 0.075);
+  --pb-wash-warm: rgba(154, 106, 31, 0.045);
+  --pb-dot: rgba(26, 24, 21, 0.055);
+  --pb-header-bg: rgba(247, 246, 243, 0.82);
+  --pb-glass: rgba(255, 255, 255, 0.72);
+  --pb-overlay: rgba(26, 24, 21, 0.36);
+
   /* 语义色，压低饱和度以贴合暖纸底 */
   --pb-success: #2f6b4f;
   --pb-warning: #9a6a1f;
@@ -53,12 +79,15 @@
   --pb-radius-sm: 6px;
   --pb-radius-md: 10px;
   --pb-radius-lg: 16px;
+  --pb-radius-xl: 22px;
   --pb-radius-pill: 999px;
 
   /* 阴影：暖色、极轻，避免厚重投影 */
   --pb-shadow-sm: 0 1px 2px rgba(26, 24, 21, 0.05);
   --pb-shadow-md: 0 10px 30px -18px rgba(26, 24, 21, 0.28);
   --pb-shadow-lg: 0 28px 60px -32px rgba(26, 24, 21, 0.34);
+  --pb-shadow-hover: 0 24px 52px -30px rgba(26, 24, 21, 0.38);
+  --pb-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.52);
 
   /* 布局 */
   --pb-header-height: 68px;
@@ -67,7 +96,11 @@
 
   /* 动效 */
   --pb-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --pb-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --pb-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --pb-duration-fast: 140ms;
   --pb-duration: 200ms;
+  --pb-duration-slow: 480ms;
 
   /* 兼容旧视图仍在引用的命名，统一映射到新令牌。 */
   --pb-color-bg: var(--pb-paper);
@@ -155,6 +188,29 @@ html.dark {
   --pb-accent-soft: #2a1a20;
   --pb-accent-ring: rgba(224, 106, 136, 0.32);
 
+  --pb-purpose: #9db8dc;
+  --pb-purpose-strong: #bcd0ea;
+  --pb-purpose-soft: #182231;
+  --pb-purpose-ring: rgba(157, 184, 220, 0.28);
+
+  --pb-group-cognitive: #b3bff0;
+  --pb-group-cognitive-strong: #c9d2f7;
+  --pb-group-cognitive-soft: #1a1d2b;
+  --pb-group-execution: #8bc9bd;
+  --pb-group-execution-strong: #a6d9cf;
+  --pb-group-execution-soft: #14211f;
+  --pb-group-reliability: #dfb26a;
+  --pb-group-reliability-strong: #ecc88e;
+  --pb-group-reliability-soft: #241c12;
+
+  --pb-wash-accent: rgba(224, 106, 136, 0.08);
+  --pb-wash-purpose: rgba(157, 184, 220, 0.065);
+  --pb-wash-warm: rgba(217, 169, 79, 0.04);
+  --pb-dot: rgba(243, 241, 236, 0.06);
+  --pb-header-bg: rgba(12, 12, 13, 0.78);
+  --pb-glass: rgba(21, 21, 22, 0.7);
+  --pb-overlay: rgba(0, 0, 0, 0.55);
+
   --pb-success: #6fbf97;
   --pb-warning: #d9a94f;
   --pb-danger: #e5726b;
@@ -162,6 +218,8 @@ html.dark {
   --pb-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
   --pb-shadow-md: 0 12px 32px -20px rgba(0, 0, 0, 0.8);
   --pb-shadow-lg: 0 30px 64px -32px rgba(0, 0, 0, 0.9);
+  --pb-shadow-hover: 0 28px 60px -32px rgba(0, 0, 0, 0.95);
+  --pb-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
   /* Element Plus 主题映射（深色）：主色反转为浅墨，按钮文字随之压深。 */
   --el-color-primary: #f3f1ec;

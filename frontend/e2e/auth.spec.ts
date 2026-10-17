@@ -82,6 +82,34 @@ test('游客访问个人中心会被引导到登录页', async ({ page }) => {
   await expect(page.getByTestId('login-submit')).toBeVisible()
 })
 
+test('登录、注册、验证邮箱与重置口令卡片保持同一高度', async ({ page }) => {
+  await page.goto('/login')
+
+  for (const locale of ['zh', 'en']) {
+    await page.evaluate((value) => localStorage.setItem('pb.locale', value), locale)
+
+    for (const viewport of [
+      { width: 1280, height: 900 },
+      { width: 375, height: 667 },
+    ]) {
+      await page.setViewportSize(viewport)
+      const heights: number[] = []
+      for (const path of ['/login', '/register', '/reset-password', '/verify-email']) {
+        await page.goto(path)
+        const card = page.locator('.pb-auth__card')
+        await expect(card).toBeVisible()
+        heights.push(
+          await card.evaluate((element) => Math.round(element.getBoundingClientRect().height)),
+        )
+      }
+      expect(
+        new Set(heights).size,
+        `${locale} / ${viewport.width}px 下卡片高度不一致：${heights.join('、')}`,
+      ).toBe(1)
+    }
+  }
+})
+
 test('注册与邮箱验证完成后直接处于登录态', async ({ page }) => {
   const email = uniqueEmail('signup')
 

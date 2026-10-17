@@ -51,6 +51,11 @@ html.dark {
 
 body {
   background-color: var(--pb-paper);
+  background-image:
+    radial-gradient(ellipse 62% 46% at 92% -8%, var(--pb-wash-accent), transparent 68%),
+    radial-gradient(ellipse 54% 42% at -6% 1%, var(--pb-wash-purpose), transparent 66%),
+    radial-gradient(ellipse 80% 50% at 50% 108%, var(--pb-wash-warm), transparent 72%);
+  background-attachment: fixed;
   color: var(--pb-ink);
   font-family: var(--pb-font-body);
   font-size: 15px;
@@ -59,6 +64,18 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+}
+
+/* 极细点阵作为纸面肌理。固定在视口上，滚动时纹样保持静止，避免闪烁。 */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  background-image: radial-gradient(var(--pb-dot) 0.5px, transparent 0.5px);
+  background-size: 22px 22px;
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 ::selection {
@@ -88,7 +105,10 @@ h4 {
 }
 
 h1 {
-  font-size: 30px;
+  font-family: var(--pb-font-display);
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -0.012em;
 }
 
 h2 {
@@ -120,6 +140,8 @@ pre {
 /* ---------- 骨架布局 ---------- */
 
 .pb-shell {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   min-height: 100%;
@@ -176,6 +198,9 @@ pre {
 }
 
 .pb-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
   color: var(--pb-accent);
   font-size: 11px;
   font-weight: 600;
@@ -183,12 +208,22 @@ pre {
   text-transform: uppercase;
 }
 
+.pb-eyebrow::before {
+  content: "";
+  width: 18px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.5;
+}
+
 .pb-page__title {
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: 0.012em;
-  line-height: 1.2;
+  font-family: var(--pb-font-display);
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -0.012em;
+  line-height: 1.16;
   margin: 0;
+  text-wrap: balance;
 }
 
 .pb-page__lead {
@@ -210,6 +245,105 @@ pre {
   font-family: var(--pb-font-display);
   font-weight: 400;
   letter-spacing: 0;
+}
+
+.pb-numeric {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+.pb-rule {
+  height: 1px;
+  border: 0;
+  margin: 0;
+  background: linear-gradient(90deg, var(--pb-line), transparent 82%);
+}
+
+.pb-axis-mark {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--pb-ink-faint);
+}
+
+.pb-axis-mark--purpose {
+  background: var(--pb-purpose);
+}
+
+.pb-axis-mark--capability {
+  background: linear-gradient(
+    135deg,
+    var(--pb-group-cognitive),
+    var(--pb-group-execution) 55%,
+    var(--pb-group-reliability)
+  );
+}
+
+.pb-axis-mark--cognitive {
+  background: var(--pb-group-cognitive);
+}
+
+.pb-axis-mark--execution {
+  background: var(--pb-group-execution);
+}
+
+.pb-axis-mark--reliability {
+  background: var(--pb-group-reliability);
+}
+
+/* 进入视口时使用的一次性上浮动画。只改变透明度与位移，不触发布局。 */
+@keyframes pb-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pb-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pb-sweep {
+  from {
+    transform: translateX(-110%);
+  }
+  to {
+    transform: translateX(110%);
+  }
+}
+
+@keyframes pb-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* 骨架屏的扫光只用于加载状态，不用于装饰元素。 */
+@keyframes pb-shimmer {
+  from {
+    background-position: 160% 0;
+  }
+  to {
+    background-position: -60% 0;
+  }
+}
+
+.pb-rise {
+  animation: pb-rise 520ms var(--pb-ease-out) both;
 }
 
 .pb-muted {
@@ -237,14 +371,14 @@ pre {
   background: var(--pb-surface);
   border: 1px solid var(--pb-line);
   border-radius: var(--pb-radius-lg);
-  box-shadow: var(--pb-shadow-sm);
+  box-shadow: var(--pb-shadow-sm), var(--pb-shadow-inset);
 }
 
 .pb-panel {
   background: var(--pb-surface);
   border: 1px solid var(--pb-line);
   border-radius: var(--pb-radius-lg);
-  box-shadow: var(--pb-shadow-sm);
+  box-shadow: var(--pb-shadow-sm), var(--pb-shadow-inset);
   padding: var(--pb-space-lg);
 }
 
@@ -336,30 +470,142 @@ pre {
 /* ---------- 认证页 ---------- */
 
 .pb-auth {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: var(--pb-space-2xl) 0 var(--pb-space-3xl);
 }
 
+/* 认证页的背景光晕与细环：给居中的表单卡片一个可感知的空间，不引入图片资源。 */
+.pb-auth::before {
+  content: "";
+  position: absolute;
+  top: 4%;
+  left: 50%;
+  width: min(640px, 88vw);
+  height: min(640px, 88vw);
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, var(--pb-wash-accent) 0%, transparent 62%),
+    repeating-radial-gradient(
+      circle,
+      transparent 0 118px,
+      color-mix(in srgb, var(--pb-line) 55%, transparent) 118px 119px
+    );
+  opacity: 0.85;
+  pointer-events: none;
+}
+
 .pb-auth__card {
+  position: relative;
   width: 100%;
   max-width: 460px;
   padding: var(--pb-space-xl);
   background: var(--pb-surface);
   border: 1px solid var(--pb-line);
-  border-radius: 20px;
-  box-shadow: var(--pb-shadow-md);
+  border-radius: var(--pb-radius-xl);
+  box-shadow: var(--pb-shadow-md), var(--pb-shadow-inset);
+}
+
+/*
+ * 登录、注册与重置口令共用同一卡片高度。
+ * 三张卡片之间可以直接跳转，高度一致后底部区域与页脚不再随页面切换跳动。
+ * 700 / 736 取注册页在中英文下的自然高度上界；内容较少的页面通过
+ * margin-top:auto 把链接与第三方入口压到卡片底部。
+ */
+.pb-auth__card--standard {
+  display: flex;
+  flex-direction: column;
+  min-height: 700px;
+}
+
+@media (max-width: 640px) {
+  .pb-auth__card--standard {
+    min-height: 736px;
+  }
+}
+
+/* 账户能力与验证码说明：为较短的认证卡片提供有意义的内容，避免大面积留白。 */
+.pb-auth__aside {
+  margin-top: var(--pb-space-md);
+  padding: var(--pb-space-md);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-md);
+  background: color-mix(in srgb, var(--pb-surface-muted) 58%, transparent);
+}
+
+.pb-auth__aside-title {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--pb-ink-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.pb-auth__aside-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pb-auth__aside-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--pb-ink-soft);
+  font-size: 12.5px;
+  line-height: 1.65;
+}
+
+.pb-auth__aside-list li::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  margin-top: 7px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--pb-accent);
+  opacity: 0.55;
+}
+
+/* 卡片顶部的渐变细线是认证页唯一的装饰性色带。 */
+.pb-auth__card::before {
+  content: "";
+  position: absolute;
+  top: -1px;
+  left: var(--pb-space-xl);
+  right: var(--pb-space-xl);
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--pb-accent), var(--pb-purpose), transparent);
+  opacity: 0.8;
 }
 
 .pb-auth__eyebrow {
-  display: block;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: var(--pb-space-sm);
   color: var(--pb-accent);
   font-size: 10.5px;
   font-weight: 600;
   letter-spacing: 0.2em;
   text-transform: uppercase;
+}
+
+.pb-auth__eyebrow::before {
+  content: "";
+  width: 14px;
+  height: 1px;
+  background: currentColor;
+  opacity: 0.55;
 }
 
 .pb-auth__title {
@@ -412,6 +658,11 @@ pre {
   font-size: 13.5px;
 }
 
+.pb-auth__card--standard .pb-auth__links {
+  margin-top: auto;
+  padding-top: var(--pb-space-md);
+}
+
 .pb-auth__links a,
 .pb-auth__oauth {
   color: var(--pb-accent);
@@ -452,9 +703,10 @@ pre {
 }
 
 .pb-admin__content .pb-admin-module .pb-admin-module__title {
-  font-size: 21px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-family: var(--pb-font-display);
+  font-size: 25px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
   margin: 0;
 }
 
@@ -642,6 +894,10 @@ pre {
     transform var(--pb-duration) var(--pb-ease);
 }
 
+.el-button:not(.is-text, .is-link, .is-disabled):hover {
+  transform: translateY(-1px);
+}
+
 .el-button:not(.is-text, .is-link, .is-disabled):active {
   transform: translateY(1px);
 }
@@ -653,7 +909,12 @@ pre {
   --el-button-hover-border-color: #2e2a24;
   --el-button-active-bg-color: #000000;
   --el-button-active-border-color: #000000;
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 62%);
   box-shadow: 0 1px 2px rgba(26, 24, 21, 0.18);
+}
+
+.el-button--primary:not(.is-disabled):hover {
+  box-shadow: 0 8px 20px -12px rgba(26, 24, 21, 0.55);
 }
 
 .el-button--primary.is-plain {
@@ -829,6 +1090,10 @@ html.dark .el-pagination .el-pager li.is-active {
   padding: var(--pb-space-lg);
 }
 
+.el-overlay {
+  backdrop-filter: blur(3px);
+}
+
 .el-dialog__header {
   margin-right: 0;
   padding-bottom: var(--pb-space-md);
@@ -940,8 +1205,8 @@ html.dark .el-loading-mask {
 
 .pb-page-enter-active {
   transition:
-    opacity 220ms var(--pb-ease),
-    transform 220ms var(--pb-ease);
+    opacity 220ms var(--pb-ease-out),
+    transform 220ms var(--pb-ease-out);
 }
 
 .pb-page-enter-from {

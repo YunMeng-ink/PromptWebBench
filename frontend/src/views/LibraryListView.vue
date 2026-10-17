@@ -227,12 +227,23 @@ onMounted(async () => {
 }
 
 .pb-libraries__head {
+  position: relative;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--pb-space-lg);
   padding-bottom: var(--pb-space-md);
   border-bottom: 1px solid var(--pb-line);
+}
+
+.pb-libraries__head::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 140px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--pb-accent), var(--pb-purpose), transparent);
 }
 
 .pb-libraries__heading {
@@ -242,9 +253,9 @@ onMounted(async () => {
 }
 
 .pb-libraries__title {
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -0.012em;
   margin: 0;
 }
 

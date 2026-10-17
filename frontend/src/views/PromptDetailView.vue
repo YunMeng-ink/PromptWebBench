@@ -64,6 +64,24 @@ function localized(zh: string, en: string): string {
   return locale.value === 'en' ? en : zh
 }
 
+/** groupClass 把考察维度的分组映射为详情页的强调色类名。 */
+const groupClass = computed(() => {
+  const group = detail.value?.capability.group_key ?? 'cognitive'
+  return `pb-prompt-detail--${group}`
+})
+
+/** meterStyle 把 1～5 分的取值映射为量表条宽度。 */
+function meterStyle(value: number): Record<string, string> {
+  const clamped = Math.min(5, Math.max(0, value))
+  return { '--pb-meter': `${(clamped / 5) * 100}%` }
+}
+
+/** discriminationMeter 在数据充足时给出区分度量表条样式。 */
+function discriminationMeter(window: PromptStats['history']): Record<string, string> | null {
+  const value = discriminationOf(window)
+  return value === null ? null : meterStyle(value)
+}
+
 const canEdit = computed(
   () =>
     detail.value !== null &&
@@ -344,14 +362,33 @@ watch(promptID, () => {
 </script>
 
 <template>
-  <section class="pb-prompt-detail">
+  <section class="pb-prompt-detail" :class="groupClass">
     <p v-if="loading" class="pb-prompt-detail__hint">{{ t('home.loadFailed') }}</p>
 
     <template v-else-if="detail">
       <div class="pb-prompt-detail__head">
-        <h1 class="pb-prompt-detail__title" data-testid="detail-title">
-          {{ detail.version.title }}
-        </h1>
+        <span class="pb-prompt-detail__halo" aria-hidden="true" />
+        <div class="pb-prompt-detail__headline">
+          <div class="pb-prompt-detail__chips">
+            <span class="pb-prompt-detail__chip pb-prompt-detail__chip--purpose">
+              <span class="pb-axis-mark pb-axis-mark--purpose" aria-hidden="true" />
+              {{ t('dimension.purpose') }} ·
+              {{ localized(detail.purpose.name_zh, detail.purpose.name_en) }}
+            </span>
+            <span class="pb-prompt-detail__chip pb-prompt-detail__chip--capability">
+              <span class="pb-axis-mark" aria-hidden="true" />
+              {{ t('dimension.capability') }} ·
+              {{ localized(detail.capability.name_zh, detail.capability.name_en) }}
+            </span>
+            <span v-if="detail.difficulty" class="pb-prompt-detail__chip">
+              {{ t('dimension.difficulty') }} ·
+              {{ localized(detail.difficulty.name_zh, detail.difficulty.name_en) }}
+            </span>
+          </div>
+          <h1 class="pb-prompt-detail__title" data-testid="detail-title">
+            {{ detail.version.title }}
+          </h1>
+        </div>
         <div class="pb-prompt-detail__actions">
           <el-button size="small" data-testid="detail-copy" @click="copyBody">
             {{ t('home.copyBody') }}
@@ -444,7 +481,13 @@ watch(promptID, () => {
         {{ detail.version.description }}
       </p>
 
-      <pre class="pb-prompt-detail__body" data-testid="detail-body">{{ detail.version.body }}</pre>
+      <div class="pb-prompt-detail__manuscript">
+        <div class="pb-prompt-detail__manuscript-head">
+          <span>Prompt · {{ detail.prompt.version_no }}</span>
+          <span>{{ detail.prompt.updated_at }}</span>
+        </div>
+        <pre class="pb-prompt-detail__body" data-testid="detail-body">{{ detail.version.body }}</pre>
+      </div>
 
       <section class="pb-ratings">
         <h2 class="pb-ratings__title">{{ t('prompt.ratingSection') }}</h2>
@@ -530,7 +573,15 @@ watch(promptID, () => {
 
       <section class="pb-stats" data-testid="stats-section">
         <h2 class="pb-stats__title">{{ t('prompt.statsSection') }}</h2>
-        <p class="pb-stats__hint">{{ t('prompt.statsHint') }}</p>
+        <p class="pb-stats__hint">
+          {{ t('prompt.statsHint') }}
+          <RouterLink class="pb-stats__method-link" to="/methodology" data-testid="stats-methodology">
+            {{ t('prompt.methodologyLink') }}
+          </RouterLink>
+        </p>
+        <p v-if="stats" class="pb-stats__computed" data-testid="stats-computed-at">
+          {{ t('prompt.statsComputedAt') }} · {{ stats.computed_at }}
+        </p>
 
         <p v-if="statsFailure" class="pb-prompt-detail__error" data-testid="stats-error">
           {{ t('prompt.statsUnavailable') }}
@@ -551,29 +602,43 @@ watch(promptID, () => {
 
           <h3 class="pb-stats__subtitle">{{ t('prompt.discriminationSection') }}</h3>
           <dl class="pb-stats__discrimination">
-            <div>
+            <div class="pb-stats__tile">
               <dt>{{ t('prompt.historyDiscrimination') }}</dt>
               <dd data-testid="stats-history-discrimination">
                 {{ discriminationText(stats.history) }}
               </dd>
+              <span
+                v-if="discriminationMeter(stats.history)"
+                class="pb-meter pb-meter--discrimination"
+                aria-hidden="true"
+              >
+                <span class="pb-meter__fill" :style="discriminationMeter(stats.history) ?? {}" />
+              </span>
             </div>
-            <div>
+            <div class="pb-stats__tile">
               <dt>{{ t('prompt.recentDiscrimination') }}</dt>
               <dd data-testid="stats-recent-discrimination">
                 {{ discriminationText(stats.recent) }}
               </dd>
+              <span
+                v-if="discriminationMeter(stats.recent)"
+                class="pb-meter pb-meter--discrimination"
+                aria-hidden="true"
+              >
+                <span class="pb-meter__fill" :style="discriminationMeter(stats.recent) ?? {}" />
+              </span>
             </div>
-            <div>
+            <div class="pb-stats__tile">
               <dt>{{ t('prompt.discriminationConfidence') }}</dt>
               <dd data-testid="stats-discrimination-confidence">
                 {{ confidenceText(stats.recent.confidence) }}
               </dd>
             </div>
-            <div>
+            <div class="pb-stats__tile">
               <dt>{{ t('prompt.validModelCount') }}</dt>
               <dd data-testid="stats-valid-models">{{ stats.recent.valid_model_count }}</dd>
             </div>
-            <div>
+            <div class="pb-stats__tile">
               <dt>{{ t('prompt.totalRatingCount') }}</dt>
               <dd data-testid="stats-total-ratings">{{ stats.recent.total_rating_count }}</dd>
             </div>
@@ -702,49 +767,151 @@ watch(promptID, () => {
 
 <style scoped>
 .pb-prompt-detail {
+  --pb-detail-group: var(--pb-group-cognitive);
+  --pb-detail-group-strong: var(--pb-group-cognitive-strong);
+  --pb-detail-group-soft: var(--pb-group-cognitive-soft);
   display: flex;
   flex-direction: column;
   gap: var(--pb-space-lg);
   padding: var(--pb-space-xl) 0 var(--pb-space-2xl);
 }
 
+.pb-prompt-detail--execution {
+  --pb-detail-group: var(--pb-group-execution);
+  --pb-detail-group-strong: var(--pb-group-execution-strong);
+  --pb-detail-group-soft: var(--pb-group-execution-soft);
+}
+
+.pb-prompt-detail--reliability {
+  --pb-detail-group: var(--pb-group-reliability);
+  --pb-detail-group-strong: var(--pb-group-reliability-strong);
+  --pb-detail-group-soft: var(--pb-group-reliability-soft);
+}
+
 .pb-prompt-detail__head {
+  position: relative;
+  overflow: hidden;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: var(--pb-space-lg);
-  padding-bottom: var(--pb-space-lg);
-  border-bottom: 1px solid var(--pb-line);
+  padding: var(--pb-space-xl);
+  background:
+    radial-gradient(ellipse 70% 120% at 100% 0%, var(--pb-detail-group-soft), transparent 64%),
+    var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-xl);
+  box-shadow:
+    var(--pb-shadow-sm),
+    var(--pb-shadow-inset);
+}
+
+.pb-prompt-detail__halo {
+  position: absolute;
+  right: -120px;
+  top: -150px;
+  width: 340px;
+  height: 340px;
+  border-radius: 50%;
+  border: 1px solid var(--pb-detail-group);
+  opacity: 0.16;
+  pointer-events: none;
+}
+
+.pb-prompt-detail__halo::before,
+.pb-prompt-detail__halo::after {
+  content: "";
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid var(--pb-detail-group);
+}
+
+.pb-prompt-detail__halo::before {
+  inset: 42px;
+  opacity: 0.7;
+}
+
+.pb-prompt-detail__halo::after {
+  inset: 88px;
+  opacity: 0.45;
+}
+
+.pb-prompt-detail__headline {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-sm);
+  min-width: 0;
+}
+
+.pb-prompt-detail__chips {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pb-space-xs);
+}
+
+.pb-prompt-detail__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 9px;
+  border-radius: var(--pb-radius-pill);
+  background: var(--pb-surface-muted);
+  color: var(--pb-ink-soft);
+  font-size: 11.5px;
+  line-height: 1.7;
+  white-space: nowrap;
+}
+
+.pb-prompt-detail__chip--purpose {
+  border: 1px solid var(--pb-purpose-ring);
+  background: var(--pb-purpose-soft);
+  color: var(--pb-purpose-strong);
+}
+
+.pb-prompt-detail__chip--capability {
+  background: var(--pb-detail-group-soft);
+  color: var(--pb-detail-group-strong);
+}
+
+.pb-prompt-detail__chip--capability .pb-axis-mark {
+  background: var(--pb-detail-group);
 }
 
 .pb-prompt-detail__title {
-  font-size: 32px;
-  font-weight: 600;
-  letter-spacing: 0.008em;
-  line-height: 1.22;
   margin: 0;
+  font-family: var(--pb-font-display);
+  font-size: clamp(30px, 4.2vw, 42px);
+  font-weight: 500;
+  letter-spacing: -0.018em;
+  line-height: 1.15;
   text-wrap: balance;
 }
 
 .pb-prompt-detail__actions {
+  position: relative;
   display: flex;
   gap: var(--pb-space-xs);
   flex-wrap: wrap;
   justify-content: flex-end;
+  max-width: 420px;
 }
 
 /*
  * 窄屏下标题与操作区分行，操作按钮折行排布：
  * 横排的按钮组在 375px 下放不下，折行是唯一不隐藏任何入口的排布方式。
  */
-@media (max-width: 640px) {
+@media (max-width: 760px) {
   .pb-prompt-detail__head {
     flex-direction: column;
+    padding: var(--pb-space-lg);
   }
 
   .pb-prompt-detail__actions {
     justify-content: flex-start;
     width: 100%;
+    max-width: none;
   }
 }
 
@@ -761,7 +928,7 @@ watch(promptID, () => {
 .pb-prompt-detail__meta {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: var(--pb-space-lg);
+  gap: var(--pb-space-md) var(--pb-space-xl);
   margin: 0;
   padding: var(--pb-space-lg) var(--pb-space-xl);
   background: var(--pb-surface);
@@ -771,59 +938,104 @@ watch(promptID, () => {
 
 .pb-prompt-detail__meta dt {
   color: var(--pb-ink-faint);
-  font-size: 11.5px;
-  letter-spacing: 0.08em;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
 }
 
 .pb-prompt-detail__meta dd {
-  margin: 4px 0 0;
+  margin: 5px 0 0;
   color: var(--pb-ink);
   font-size: 14px;
+  font-variant-numeric: tabular-nums;
 }
 
 .pb-prompt-detail__description {
   max-width: 72ch;
   margin: 0;
+  padding-left: var(--pb-space-md);
+  border-left: 2px solid var(--pb-detail-group);
   color: var(--pb-ink-soft);
   font-size: 15px;
-  line-height: 1.75;
+  line-height: 1.8;
+}
+
+.pb-prompt-detail__manuscript {
+  overflow: hidden;
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-lg);
+  box-shadow:
+    var(--pb-shadow-sm),
+    var(--pb-shadow-inset);
+}
+
+.pb-prompt-detail__manuscript-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pb-space-md);
+  padding: 9px var(--pb-space-xl);
+  border-bottom: 1px solid var(--pb-line);
+  background: var(--pb-surface-muted);
+  color: var(--pb-ink-faint);
+  font-family: var(--pb-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
 .pb-prompt-detail__body {
   margin: 0;
   padding: var(--pb-space-xl);
-  background: var(--pb-surface);
-  border: 1px solid var(--pb-line);
-  border-left: 3px solid var(--pb-accent);
-  border-radius: var(--pb-radius-lg);
+  border-left: 3px solid var(--pb-detail-group);
   color: var(--pb-ink);
   font-family: var(--pb-font-mono);
   font-size: 13.5px;
-  line-height: 1.85;
+  line-height: 1.9;
   overflow-x: auto;
   white-space: pre-wrap;
   word-break: break-word;
+  background:
+    linear-gradient(180deg, var(--pb-surface) 0%, color-mix(in srgb, var(--pb-surface) 88%, var(--pb-surface-muted)) 100%);
 }
 
 .pb-ratings,
 .pb-stats,
 .pb-versions {
   margin: 0;
-  padding: var(--pb-space-lg) var(--pb-space-xl) var(--pb-space-xl);
+  padding: var(--pb-space-xl);
   background: var(--pb-surface);
   border: 1px solid var(--pb-line);
   border-radius: var(--pb-radius-lg);
-  box-shadow: var(--pb-shadow-sm);
+  box-shadow:
+    var(--pb-shadow-sm),
+    var(--pb-shadow-inset);
 }
 
 .pb-ratings__title,
 .pb-versions__title,
 .pb-stats__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   margin: 0 0 var(--pb-space-xs);
-  font-size: 18px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-family: var(--pb-font-display);
+  font-size: 23px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+.pb-ratings__title::before,
+.pb-versions__title::before,
+.pb-stats__title::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: var(--pb-detail-group);
+  transform: rotate(45deg);
 }
 
 .pb-ratings__hint,
@@ -833,21 +1045,48 @@ watch(promptID, () => {
   font-size: 13px;
 }
 
+.pb-stats__method-link {
+  margin-left: 6px;
+  color: var(--pb-accent);
+  border-bottom: 1px solid var(--pb-accent-ring);
+  transition: border-color var(--pb-duration) var(--pb-ease);
+}
+
+.pb-stats__method-link:hover {
+  border-color: var(--pb-accent);
+}
+
+.pb-stats__computed {
+  margin: calc(-1 * var(--pb-space-xs)) 0 var(--pb-space-md);
+  color: var(--pb-ink-faint);
+  font-family: var(--pb-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+
 .pb-ratings__list,
 .pb-versions__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-sm);
   list-style: none;
   margin: 0;
   padding: 0;
 }
 
 .pb-ratings__item {
-  padding: var(--pb-space-md) 0;
-  border-top: 1px solid var(--pb-line);
+  padding: var(--pb-space-md);
+  background: color-mix(in srgb, var(--pb-surface-muted) 45%, transparent);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-md);
+  transition:
+    border-color var(--pb-duration) var(--pb-ease),
+    background-color var(--pb-duration) var(--pb-ease);
 }
 
-.pb-ratings__item:first-child {
-  padding-top: 0;
-  border-top: 0;
+.pb-ratings__item:hover {
+  border-color: var(--pb-line-strong);
+  background: var(--pb-surface-muted);
 }
 
 .pb-ratings__row {
@@ -860,7 +1099,9 @@ watch(promptID, () => {
 .pb-ratings__model {
   min-width: 180px;
   color: var(--pb-ink);
-  font-weight: 600;
+  font-family: var(--pb-font-display);
+  font-size: 17px;
+  font-weight: 500;
 }
 
 .pb-ratings__count,
@@ -888,40 +1129,90 @@ watch(promptID, () => {
   display: flex;
   align-items: baseline;
   gap: var(--pb-space-md);
-  padding: var(--pb-space-sm) 0;
-  border-top: 1px solid var(--pb-line);
+  padding: var(--pb-space-sm) var(--pb-space-md);
+  background: color-mix(in srgb, var(--pb-surface-muted) 40%, transparent);
+  border-left: 2px solid var(--pb-line);
+  border-radius: 0 var(--pb-radius-sm) var(--pb-radius-sm) 0;
 }
 
 .pb-versions__item:first-child {
-  border-top: 0;
+  border-left-color: var(--pb-detail-group);
 }
 
 .pb-stats__subtitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin: var(--pb-space-lg) 0 var(--pb-space-sm);
-  font-size: 14px;
+  color: var(--pb-ink-soft);
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.pb-stats__subtitle::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--pb-line);
 }
 
 .pb-stats__discrimination {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: var(--pb-space-md);
+  gap: var(--pb-space-sm);
   margin: 0;
 }
 
-.pb-stats__discrimination dt {
+.pb-stats__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: var(--pb-space-md);
+  background: color-mix(in srgb, var(--pb-surface-muted) 62%, transparent);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-md);
+}
+
+.pb-stats__tile dt {
   color: var(--pb-ink-faint);
-  font-size: 11.5px;
-  letter-spacing: 0.08em;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
 }
 
-.pb-stats__discrimination dd {
-  margin: 4px 0 0;
+.pb-stats__tile dd {
+  margin: 0;
+  color: var(--pb-ink);
   font-family: var(--pb-font-display);
-  font-size: 20px;
+  font-size: 23px;
+  line-height: 1.15;
   font-variant-numeric: tabular-nums;
+}
+
+.pb-meter {
+  display: block;
+  width: 100%;
+  height: 3px;
+  margin-top: 2px;
+  border-radius: 2px;
+  background: var(--pb-line);
+  overflow: hidden;
+}
+
+.pb-meter__fill {
+  display: block;
+  width: var(--pb-meter, 0%);
+  height: 100%;
+  border-radius: inherit;
+  transform-origin: left center;
+  animation: pb-grow 620ms var(--pb-ease-out) both;
+}
+
+.pb-meter--discrimination .pb-meter__fill {
+  background: linear-gradient(90deg, var(--pb-purpose), var(--pb-detail-group));
 }
 
 .pb-stats__tags {
@@ -957,31 +1248,40 @@ watch(promptID, () => {
 
 .pb-stats__table-wrap {
   overflow-x: auto;
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-md);
 }
 
 .pb-stats__table {
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  font-variant-numeric: tabular-nums;
 }
 
 .pb-stats__table th,
 .pb-stats__table td {
-  padding: 10px 12px;
+  padding: 11px 12px;
   border-bottom: 1px solid var(--pb-line);
   text-align: left;
+  white-space: nowrap;
 }
 
 .pb-stats__table th {
+  background: var(--pb-surface-muted);
   color: var(--pb-ink-faint);
-  font-size: 11.5px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
+.pb-stats__table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
 .pb-stats__table tbody tr:hover {
-  background: var(--pb-surface-muted);
+  background: color-mix(in srgb, var(--pb-surface-muted) 55%, transparent);
 }
 
 .pb-prompt-detail__favorites {
@@ -1025,5 +1325,40 @@ watch(promptID, () => {
 
 .pb-prompt-detail__hint {
   color: var(--pb-ink-soft);
+}
+
+@media (max-width: 640px) {
+  .pb-prompt-detail {
+    padding-top: var(--pb-space-md);
+  }
+
+  .pb-prompt-detail__meta,
+  .pb-ratings,
+  .pb-stats,
+  .pb-versions {
+    padding: var(--pb-space-lg);
+  }
+
+  .pb-prompt-detail__manuscript-head {
+    flex-wrap: wrap;
+    padding: 9px var(--pb-space-lg);
+  }
+
+  .pb-prompt-detail__body {
+    padding: var(--pb-space-lg);
+    font-size: 13px;
+  }
+
+  .pb-ratings__model {
+    min-width: 0;
+  }
+
+  .pb-versions__item {
+    flex-wrap: wrap;
+  }
+
+  .pb-versions__date {
+    margin-left: 0;
+  }
 }
 </style>

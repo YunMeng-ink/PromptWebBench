@@ -40,7 +40,7 @@ async function submit(): Promise<void> {
 
 <template>
   <section class="pb-auth">
-    <div class="pb-auth__card">
+    <div class="pb-auth__card pb-auth__card--standard">
       <span class="pb-auth__eyebrow" aria-hidden="true">Create Account</span>
       <h1 class="pb-auth__title">{{ t('auth.registerTitle') }}</h1>
       <p class="pb-auth__hint">{{ t('auth.registerHint') }}</p>

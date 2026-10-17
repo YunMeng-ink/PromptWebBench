@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { type AppLocale, SUPPORTED_LOCALES } from '@/i18n'
@@ -12,6 +12,19 @@ const router = useRouter()
 const preferences = usePreferencesStore()
 const auth = useAuthStore()
 const notifications = useNotificationStore()
+
+/** progress 是文档滚动进度，顶栏底部用一条细线表达当前位置。 */
+const progress = ref(0)
+
+function updateProgress(): void {
+  const root = document.documentElement
+  const scrollable = root.scrollHeight - window.innerHeight
+  progress.value = scrollable > 0 ? Math.min(1, Math.max(0, window.scrollY / scrollable)) : 0
+}
+
+function onScroll(): void {
+  updateProgress()
+}
 
 /**
  * 未读数在登录态确定后拉取。
@@ -31,7 +44,14 @@ async function refreshUnread(): Promise<void> {
 }
 
 watch(() => auth.status, refreshUnread)
-onMounted(refreshUnread)
+onMounted(() => {
+  void refreshUnread()
+  updateProgress()
+  window.addEventListener('scroll', onScroll, { passive: true })
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('scroll', onScroll)
+})
 
 const localeOptions = computed(() =>
   SUPPORTED_LOCALES.map((value) => ({
@@ -54,6 +74,7 @@ async function onLogout(): Promise<void> {
   <header class="pb-header">
     <div class="pb-container pb-header__inner">
       <RouterLink class="pb-brand" to="/">
+        <span class="pb-brand__mark" aria-hidden="true">P</span>
         <span class="pb-brand__title">Prompt Benchmark</span>
         <span class="pb-brand__tagline">{{ t('app.tagline') }}</span>
       </RouterLink>
@@ -183,6 +204,11 @@ async function onLogout(): Promise<void> {
         </div>
       </nav>
     </div>
+    <span
+      class="pb-header__progress"
+      :style="{ transform: `scaleX(${progress})` }"
+      aria-hidden="true"
+    />
   </header>
 </template>
 
@@ -191,8 +217,42 @@ async function onLogout(): Promise<void> {
   position: sticky;
   top: 0;
   z-index: 30;
-  background: var(--pb-paper);
+  background: var(--pb-header-bg);
   border-bottom: 1px solid var(--pb-line);
+  backdrop-filter: blur(18px) saturate(1.35);
+  -webkit-backdrop-filter: blur(18px) saturate(1.35);
+}
+
+/* 顶栏底部的渐变细线与滚动进度线共用一条位置，保持视觉整洁。 */
+.pb-header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    var(--pb-accent) 22%,
+    var(--pb-purpose) 62%,
+    transparent
+  );
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.pb-header__progress {
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 100%;
+  height: 1.5px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, var(--pb-accent), var(--pb-purpose));
+  opacity: 0.72;
+  pointer-events: none;
+  will-change: transform;
 }
 
 .pb-header__inner {
@@ -205,10 +265,36 @@ async function onLogout(): Promise<void> {
 
 .pb-brand {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--pb-space-sm);
   min-width: 0;
   color: var(--pb-ink);
+}
+
+.pb-brand__mark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  background-color: var(--pb-ink);
+  background-image: linear-gradient(135deg, var(--pb-ink) 0%, #3a332b 100%);
+  color: var(--pb-paper);
+  font-family: var(--pb-font-display);
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1;
+  box-shadow:
+    0 5px 14px -8px rgba(26, 24, 21, 0.7),
+    var(--pb-shadow-inset);
+}
+
+html.dark .pb-brand__mark {
+  background-color: #f3f1ec;
+  background-image: linear-gradient(135deg, #f3f1ec, #cfc8bc);
+  color: #141415;
 }
 
 .pb-brand__title {

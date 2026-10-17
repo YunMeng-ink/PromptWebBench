@@ -386,6 +386,7 @@ onMounted(async () => {
 }
 
 .pb-prompt-form__head {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--pb-space-xs);
@@ -393,10 +394,20 @@ onMounted(async () => {
   border-bottom: 1px solid var(--pb-line);
 }
 
+.pb-prompt-form__head::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 140px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--pb-accent), var(--pb-purpose), transparent);
+}
+
 .pb-prompt-form__title {
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -0.012em;
   margin: 0;
 }
 
@@ -405,7 +416,9 @@ onMounted(async () => {
   background: var(--pb-surface);
   border: 1px solid var(--pb-line);
   border-radius: var(--pb-radius-lg);
-  box-shadow: var(--pb-shadow-sm);
+  box-shadow:
+    var(--pb-shadow-sm),
+    var(--pb-shadow-inset);
 }
 
 .pb-prompt-form__row {

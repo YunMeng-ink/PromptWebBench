@@ -48,7 +48,7 @@ async function resend(): Promise<void> {
 
 <template>
   <section class="pb-auth">
-    <div class="pb-auth__card">
+    <div class="pb-auth__card pb-auth__card--standard">
       <span class="pb-auth__eyebrow" aria-hidden="true">Email Verification</span>
       <h1 class="pb-auth__title">{{ t('auth.verifyTitle') }}</h1>
       <p class="pb-auth__hint">{{ t('auth.verifyHint', { email }) }}</p>
@@ -85,6 +85,19 @@ async function resend(): Promise<void> {
           </el-button>
         </div>
       </el-form>
+
+      <div class="pb-auth__aside">
+        <span class="pb-auth__aside-title">{{ t('auth.loginAsideTitle') }}</span>
+        <ul class="pb-auth__aside-list">
+          <li>{{ t('auth.loginAside1') }}</li>
+          <li>{{ t('auth.loginAside2') }}</li>
+          <li>{{ t('auth.loginAside3') }}</li>
+        </ul>
+      </div>
+
+      <div class="pb-auth__links">
+        <RouterLink to="/">{{ t('notFound.backHome') }}</RouterLink>
+      </div>
     </div>
   </section>
 </template>

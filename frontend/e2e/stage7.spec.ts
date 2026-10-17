@@ -24,6 +24,7 @@ const GUEST_ROUTES = [
   '/login',
   '/register',
   '/reset-password',
+  '/methodology',
   '/privacy',
   '/terms',
   '/no-such-page',
@@ -182,6 +183,16 @@ test.describe('隐私政策与用户条款', () => {
 
     await expect(page.getByTestId('legal-page')).toContainText('Terms of service')
     await expect(page.getByTestId('legal-page')).toContainText('Conduct')
+  })
+
+  test('页脚入口可查看公开的计算方法', async ({ page }) => {
+    await page.goto('/')
+    await page.getByTestId('footer-methodology').click()
+
+    await expect(page).toHaveURL(/\/methodology$/)
+    await expect(page.getByTestId('methodology-page')).toContainText('计算方法')
+    await expect(page.getByTestId('methodology-page')).toContainText('贝叶斯校准平均分')
+    await expect(page.getByTestId('methodology-page')).toContainText('discrimination = clamp')
   })
 })
 

@@ -389,6 +389,7 @@ async function deleteAccount(): Promise<void> {
 }
 
 .pb-me__header {
+  position: relative;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
@@ -398,6 +399,16 @@ async function deleteAccount(): Promise<void> {
   border-bottom: 1px solid var(--pb-line);
 }
 
+.pb-me__header::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 140px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--pb-accent), var(--pb-purpose), transparent);
+}
+
 .pb-me__heading {
   display: flex;
   flex-direction: column;
@@ -405,9 +416,9 @@ async function deleteAccount(): Promise<void> {
 }
 
 .pb-me__title {
-  font-size: 30px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
+  font-size: 34px;
+  font-weight: 500;
+  letter-spacing: -0.012em;
   margin: 0;
 }
 

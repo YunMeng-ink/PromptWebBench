@@ -57,6 +57,7 @@ const activePath = computed(() => `/admin/${String(route.name ?? '').replace('ad
 
     <div v-else class="pb-admin__layout">
       <nav class="pb-admin__nav" data-testid="admin-nav">
+        <span class="pb-admin__nav-label" aria-hidden="true">Modules</span>
         <RouterLink
           v-for="item in NAV_ITEMS"
           :key="item.name"
@@ -89,12 +90,23 @@ const activePath = computed(() => `/admin/${String(route.name ?? '').replace('ad
 }
 
 .pb-admin__head {
+  position: relative;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   gap: var(--pb-space-lg);
   padding-bottom: var(--pb-space-md);
   border-bottom: 1px solid var(--pb-line);
+}
+
+.pb-admin__head::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  width: 140px;
+  height: 2px;
+  background: linear-gradient(90deg, var(--pb-accent), var(--pb-purpose), transparent);
 }
 
 .pb-admin__heading {
@@ -104,18 +116,29 @@ const activePath = computed(() => `/admin/${String(route.name ?? '').replace('ad
 }
 
 .pb-admin__title {
-  font-size: 28px;
-  font-weight: 600;
-  letter-spacing: 0.012em;
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: -0.012em;
   margin: 0;
 }
 
 .pb-admin__operator {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   padding: 3px 11px;
   border: 1px solid var(--pb-line);
   border-radius: var(--pb-radius-pill);
   color: var(--pb-ink-faint);
   font-size: 12px;
+}
+
+.pb-admin__operator::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--pb-accent);
 }
 
 .pb-admin__denied {
@@ -140,28 +163,67 @@ const activePath = computed(() => `/admin/${String(route.name ?? '').replace('ad
   background: var(--pb-surface);
   border: 1px solid var(--pb-line);
   border-radius: var(--pb-radius-lg);
-  box-shadow: var(--pb-shadow-sm);
+  box-shadow:
+    var(--pb-shadow-sm),
+    var(--pb-shadow-inset);
+}
+
+.pb-admin__nav-label {
+  padding: 4px 12px 8px;
+  color: var(--pb-ink-faint);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
 
 .pb-admin__nav-link {
-  padding: 8px 12px;
+  position: relative;
+  padding: 8px 12px 8px 14px;
   border-radius: var(--pb-radius-sm);
   color: var(--pb-ink-soft);
   font-size: 13.5px;
   transition:
     background-color var(--pb-duration) var(--pb-ease),
-    color var(--pb-duration) var(--pb-ease);
+    color var(--pb-duration) var(--pb-ease),
+    transform var(--pb-duration) var(--pb-ease);
+}
+
+.pb-admin__nav-link::before {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--pb-line-strong);
+  transform: translateY(-50%);
+  transition: background-color var(--pb-duration) var(--pb-ease);
 }
 
 .pb-admin__nav-link:hover {
   background: var(--pb-surface-muted);
   color: var(--pb-ink);
+  transform: translateX(2px);
+}
+
+.pb-admin__nav-link:hover::before {
+  background: var(--pb-ink-faint);
 }
 
 .pb-admin__nav-link--active {
   background: var(--pb-accent-soft);
   color: var(--pb-accent-strong);
   font-weight: 600;
+}
+
+.pb-admin__nav-link--active::before {
+  height: 14px;
+  width: 2px;
+  left: 6px;
+  border-radius: 2px;
+  background: var(--pb-accent);
 }
 
 .pb-admin__content {
@@ -184,6 +246,14 @@ const activePath = computed(() => `/admin/${String(route.name ?? '').replace('ad
   .pb-admin__nav-link {
     padding: 6px 10px;
     font-size: 13px;
+  }
+
+  .pb-admin__nav-label {
+    display: none;
+  }
+
+  .pb-admin__nav-link::before {
+    display: none;
   }
 }
 </style>

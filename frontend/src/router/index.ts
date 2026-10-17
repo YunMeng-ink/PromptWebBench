@@ -14,6 +14,7 @@ import LibraryDetailView from '@/views/LibraryDetailView.vue'
 import LibraryListView from '@/views/LibraryListView.vue'
 import LibraryQuestionView from '@/views/LibraryQuestionView.vue'
 import LoginView from '@/views/LoginView.vue'
+import MethodologyView from '@/views/MethodologyView.vue'
 import MeView from '@/views/MeView.vue'
 import NotFoundView from '@/views/NotFoundView.vue'
 import NotificationsView from '@/views/NotificationsView.vue'
@@ -42,6 +43,12 @@ const routes: RouteRecordRaw[] = [
     name: 'terms',
     component: LegalView,
     props: { mode: 'terms' },
+  },
+  {
+    // 计算方法对游客公开：评分与区分度的口径需要可复核。
+    path: '/methodology',
+    name: 'methodology',
+    component: MethodologyView,
   },
   {
     path: '/upload',
