@@ -510,20 +510,20 @@ pre {
 }
 
 /*
- * 登录、注册与重置口令共用同一卡片高度。
- * 三张卡片之间可以直接跳转，高度一致后底部区域与页脚不再随页面切换跳动。
- * 700 / 736 取注册页在中英文下的自然高度上界；内容较少的页面通过
- * margin-top:auto 把链接与第三方入口压到卡片底部。
+ * 登录、注册、验证邮箱与重置口令共用同一卡片高度。
+ * 四张卡片之间可以直接跳转，高度一致后底部区域与页脚不再随页面切换跳动。
+ * 704 / 760 取注册页在中英文与主流浏览器下的自然高度上界并留出字体度量余量；
+ * 内容较少的页面通过 margin-top:auto 把链接与第三方入口压到卡片底部。
  */
 .pb-auth__card--standard {
   display: flex;
   flex-direction: column;
-  min-height: 700px;
+  min-height: 704px;
 }
 
 @media (max-width: 640px) {
   .pb-auth__card--standard {
-    min-height: 736px;
+    min-height: 760px;
   }
 }
 
