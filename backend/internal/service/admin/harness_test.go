@@ -123,6 +123,7 @@ func newFullHarness(t *testing.T) *fullHarness {
 	pool := pgtest.MigratedDatabase(t)
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	cfgStore := config.NewStore(pool, config.DefaultCacheTTL)
+	t.Cleanup(cfgStore.Close)
 	if err := cfgStore.Refresh(context.Background()); err != nil {
 		t.Fatalf("刷新配置缓存失败: %v", err)
 	}

@@ -40,7 +40,7 @@ backend-generate:
 frontend-gate: frontend-lint frontend-typecheck frontend-test frontend-build frontend-e2e
 
 frontend-lint:
-	cd frontend && biome check src e2e
+	cd frontend && pnpm exec biome check src e2e
 
 frontend-typecheck:
 	cd frontend && pnpm typecheck

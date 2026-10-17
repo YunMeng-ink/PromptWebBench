@@ -16,6 +16,9 @@ import (
 const DefaultCacheTTL = 30 * time.Second
 
 // Store 是 config 表的带缓存读取入口。缓存整表快照，按 TTL 惰性刷新。
+//
+// 使用独立的连接池：配置读取可能在业务事务内被调用，若与业务共用连接池，
+// 「事务持有一条连接、再申请第二条」会在并发下互相等待造成死锁。
 type Store struct {
 	pool *pgxpool.Pool
 	ttl  time.Duration
@@ -25,9 +28,26 @@ type Store struct {
 	loadedAt time.Time
 }
 
-func NewStore(pool *pgxpool.Pool, ttl time.Duration) *Store {
-	return &Store{pool: pool, ttl: ttl}
+func NewStore(parent *pgxpool.Pool, ttl time.Duration) *Store {
+	// 独立小池只服务 config 表的读取与写入，容量取 2：缓存命中时不触发查询，
+	// 触发时也只需要并发起有限次连接，不与业务事务争用同一批连接。
+	// parent.Config() 返回父池配置的深拷贝（保留了 ParseConfig 标记与当前库名），
+	// 这里只改连接数相关取值。
+	cfg := parent.Config()
+	cfg.MaxConns = 2
+	cfg.MinConns = 0
+	cfg.MinIdleConns = 0
+	cfg.MaxConnLifetime = 30 * time.Minute
+	cfg.MaxConnIdleTime = 5 * time.Minute
+	own, err := pgxpool.NewWithConfig(context.Background(), cfg)
+	if err != nil {
+		panic(fmt.Sprintf("构造配置连接池失败: %v", err))
+	}
+	return &Store{pool: own, ttl: ttl}
 }
+
+// Close 释放独立连接池。
+func (s *Store) Close() { s.pool.Close() }
 
 // Get 返回键的 JSON 原始值。键不存在或类型不符一律报错，由调用方决定如何呈现。
 func (s *Store) Get(ctx context.Context, key string) ([]byte, error) {

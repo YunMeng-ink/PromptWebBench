@@ -86,6 +86,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	modelsDevServer := newFakeModelsDev(t)
 
 	cfgStore := config.NewStore(pool, config.DefaultCacheTTL)
+	t.Cleanup(cfgStore.Close)
 	if err := cfgStore.Refresh(t.Context()); err != nil {
 		t.Fatalf("刷新配置缓存失败: %v", err)
 	}

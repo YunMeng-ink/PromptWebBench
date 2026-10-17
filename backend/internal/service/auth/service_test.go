@@ -63,6 +63,7 @@ func newHarnessWith(t *testing.T, opts options) *harness {
 	}
 
 	cfgStore := config.NewStore(pool, config.DefaultCacheTTL)
+	t.Cleanup(cfgStore.Close)
 	if err := cfgStore.Refresh(context.Background()); err != nil {
 		t.Fatalf("刷新配置缓存失败: %v", err)
 	}

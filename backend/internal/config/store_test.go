@@ -14,6 +14,7 @@ func newStore(t *testing.T) *config.Store {
 	t.Helper()
 	pool := pgtest.MigratedDatabase(t)
 	store := config.NewStore(pool, config.DefaultCacheTTL)
+	t.Cleanup(store.Close)
 	if err := store.Refresh(context.Background()); err != nil {
 		t.Fatalf("刷新配置缓存失败: %v", err)
 	}
@@ -84,6 +85,7 @@ func TestCacheExpiresAfterTTL(t *testing.T) {
 	pool := pgtest.MigratedDatabase(t)
 	const ttl = time.Second
 	store := config.NewStore(pool, ttl)
+	t.Cleanup(store.Close)
 	ctx := context.Background()
 
 	if err := store.Refresh(ctx); err != nil {
@@ -106,6 +108,7 @@ func TestCacheExpiresAfterTTL(t *testing.T) {
 func TestSecretValuesAreNotExposedAsPlainValues(t *testing.T) {
 	pool := pgtest.MigratedDatabase(t)
 	store := config.NewStore(pool, config.DefaultCacheTTL)
+	t.Cleanup(store.Close)
 	ctx := context.Background()
 
 	if _, err := pool.Exec(ctx,

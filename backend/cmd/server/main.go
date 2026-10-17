@@ -78,6 +78,7 @@ func run(envFile string) error {
 	}
 
 	cfgStore := config.NewStore(pool, config.DefaultCacheTTL)
+	defer cfgStore.Close()
 	if err := cfgStore.Refresh(ctx); err != nil {
 		return err
 	}

@@ -29,6 +29,7 @@ func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	pool := pgtest.MigratedDatabase(t)
 	cfgStore := config.NewStore(pool, config.DefaultCacheTTL)
+	t.Cleanup(cfgStore.Close)
 	if err := cfgStore.Refresh(context.Background()); err != nil {
 		t.Fatalf("加载配置失败: %v", err)
 	}
