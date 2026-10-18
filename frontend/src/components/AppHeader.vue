@@ -350,6 +350,13 @@ html.dark .pb-brand__mark {
   display: flex;
   align-items: center;
   gap: var(--pb-space-md);
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.pb-header__links::-webkit-scrollbar {
+  display: none;
 }
 
 .pb-header__sep {
@@ -511,7 +518,7 @@ html.dark .pb-brand__mark {
   vertical-align: 1px;
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 1360px) {
   .pb-brand__tagline {
     display: none;
   }
