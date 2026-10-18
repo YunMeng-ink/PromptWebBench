@@ -121,11 +121,15 @@ cmd_build() {
 
 	info "编译后端（embedweb）……"
 	mkdir -p "$ROOT/dist"
+	# 版本号取 PB_VERSION，未设置时退回当前提交的短哈希，使 --version 与发布标签对得上。
+	version="${PB_VERSION:-$(git -C "$ROOT" describe --tags --always --dirty 2>/dev/null || printf 'dev')}"
 	(
 		cd "$ROOT/backend"
-		go build -tags embedweb -trimpath -o "$BIN" ./cmd/server
+		go build -tags embedweb -trimpath \
+			-ldflags "-X github.com/promptbench/backend/internal/buildinfo.Version=${version}" \
+			-o "$BIN" ./cmd/server
 	)
-	info "产物：$BIN"
+	info "产物：$BIN（版本 ${version}）"
 }
 
 cmd_start() {

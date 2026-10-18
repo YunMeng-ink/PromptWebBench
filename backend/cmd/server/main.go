@@ -16,6 +16,7 @@ import (
 	"github.com/joho/godotenv"
 	"github.com/labstack/echo/v5"
 
+	"github.com/promptbench/backend/internal/buildinfo"
 	"github.com/promptbench/backend/internal/config"
 	api "github.com/promptbench/backend/internal/http"
 	"github.com/promptbench/backend/internal/mail"
@@ -37,7 +38,13 @@ import (
 
 func main() {
 	envFile := flag.String("env-file", "", "可选：从文件加载环境变量（KEY=VALUE，仅补齐未设置的变量）")
+	showVersion := flag.Bool("version", false, "打印版本号后退出")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(buildinfo.Version)
+		return
+	}
 
 	if err := run(*envFile); err != nil {
 		fmt.Fprintf(os.Stderr, "启动失败: %v\n", err)

@@ -46,6 +46,8 @@
 | `frontend/e2e` | Playwright 用例 |
 | `deploy/pb.sh` | 一键打包与进程控制（build/start/stop/restart/status/logs） |
 | `deploy/backup.sh` | 每日逻辑备份（保留 7 天） |
+| `deploy/update.sh` | 从 GitHub Release 校验并安装新版本，失败自动回滚 |
+| `deploy/prompt-benchmark-update.{service,timer}` | 每日自动检查新版本的 systemd 单元 |
 | `docs/` | 架构、追溯、部署、测试与验收文档 |
 
 ## 运行前提
@@ -127,6 +129,18 @@ BACKUP_DIR=/var/backups/prompt-benchmark deploy/backup.sh
 ```
 
 每日逻辑备份、保留 7 天（G-01），部署方式见 `docs/部署手册.md`。
+
+## 升级
+
+服务器不需要 Go 与 Node：`deploy/update.sh` 从 GitHub Release 下载单二进制，校验 sha256 后原子替换并重启，健康检查失败时自动回滚。
+
+```sh
+sudo deploy/update.sh                      # 最新正式版
+sudo TAG=v0.2.0 FORCE=1 deploy/update.sh   # 重装或回退
+sudo deploy/update.sh --check              # 只检查
+```
+
+自动检查由 `deploy/prompt-benchmark-update.timer` 驱动，配置方式见 `docs/部署手册.md` 第十三节。
 
 ## 门禁
 

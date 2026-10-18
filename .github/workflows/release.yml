@@ -29,16 +29,28 @@ jobs:
         run: pnpm install --frozen-lockfile
         working-directory: frontend
       - name: 打包（前端构建 + 内嵌 + 编译）
+        env:
+          # 版本号注入二进制，服务端 --version 与发布标签一致。
+          PB_VERSION: ${{ github.ref_name }}
         run: deploy/pb.sh build
+      - name: 生成校验和
+        run: |
+          cd dist
+          sha256sum prompt-benchmark > prompt-benchmark.sha256
+          cat prompt-benchmark.sha256
       - name: 上传制品
         uses: actions/upload-artifact@v4
         with:
           name: prompt-benchmark-linux-amd64
-          path: dist/prompt-benchmark
+          path: |
+            dist/prompt-benchmark
+            dist/prompt-benchmark.sha256
       - name: 发布 GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "${{ github.ref_name }}" dist/prompt-benchmark \
+          gh release create "${{ github.ref_name }}" \
+            dist/prompt-benchmark dist/prompt-benchmark.sha256 \
             --title "${{ github.ref_name }}" \
-            --notes "由 deploy/pb.sh build 产出的 Linux amd64 单二进制（内嵌前端产物）。部署方式见 docs/部署手册.md。"
+            --notes "由 deploy/pb.sh build 产出的 Linux amd64 单二进制（内嵌前端产物）。服务端用 deploy/update.sh 校验并安装，说明见 docs/部署手册.md 第十三节。" \
+            --generate-notes

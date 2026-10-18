@@ -1,16 +1,17 @@
 name: Deploy
-# 手动触发的自托管部署：SSH 登录服务器，拉取指定提交后打包并重启服务。
-# 部署目标与密钥通过仓库 Secrets 提供（见 docs/部署手册.md §十二）：
+# 手动触发的自托管部署：在服务器上执行 deploy/update.sh，
+# 从 GitHub Release 下载指定标签的二进制，校验和通过后原子替换并重启。
+# 部署目标与密钥通过仓库 Secrets 提供（见 docs/部署手册.md 第十三节）：
 #   DEPLOY_HOST      服务器地址（IP 或域名）
 #   DEPLOY_USER      用于登录的账户（需 sudo 权限执行 systemctl）
 #   DEPLOY_SSH_KEY   该账户的私钥（建议专用部署密钥，仅授权本仓库）
 on:
   workflow_dispatch:
     inputs:
-      ref:
-        description: 要部署的提交或标签（默认 main）
+      tag:
+        description: 要部署的发布标签（留空表示最新正式版）
         required: false
-        default: main
+        default: ''
 jobs:
   deploy:
     name: 部署到服务器
@@ -22,21 +23,19 @@ jobs:
           echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
-      - name: 拉取、打包并重启
+      - name: 下载并安装发布版本
+        env:
+          DEPLOY_TAG: ${{ github.event.inputs.tag }}
         run: |
+          # 标签通过环境变量传给远端，避免其内容进入命令行。
+          # 服务器上的仓库只用来取最新的 update.sh；二进制来自 Release，不依赖服务器上的 Go 与 Node。
           ssh "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "bash -s -- ${{ github.event.inputs.ref }}" <<'REMOTE'
+            "TAG='${DEPLOY_TAG}' bash -s" <<'REMOTE'
           set -euo pipefail
           cd /opt/prompt-benchmark
           git fetch --all --tags
-          # 分支与标签两种目标分开处理：分支拉取最新，标签（分离 HEAD）直接检出。
-          if git rev-parse -q --verify "refs/remotes/origin/$1" >/dev/null; then
-            git checkout "$1"
-            git pull --ff-only
-          else
-            git checkout "$1"
-          fi
-          deploy/pb.sh build
-          sudo systemctl restart prompt-benchmark
-          deploy/pb.sh status
+          # 之前可能检出过某个标签，这里统一回到 main 再取最新脚本。
+          git checkout main 2>/dev/null || git checkout -B main origin/main
+          git pull --ff-only
+          sudo -E env "TAG=${TAG}" deploy/update.sh
           REMOTE

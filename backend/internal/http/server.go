@@ -19,6 +19,7 @@ import (
 	"github.com/labstack/echo/v5"
 
 	"github.com/promptbench/backend/internal/apperr"
+	"github.com/promptbench/backend/internal/buildinfo"
 	"github.com/promptbench/backend/internal/config"
 	"github.com/promptbench/backend/internal/domain"
 	"github.com/promptbench/backend/internal/metrics"
@@ -186,7 +187,7 @@ func libraryQuestionLimit(deps Deps) int32 {
 // 由于 NewError 已被 InstallErrorModel 覆盖为返回 *APIError，规范中的错误模型
 // 自动等于 {error:{code,message}}，与实现同源。
 func humaConfig() huma.Config {
-	cfg := huma.DefaultConfig("Prompt Benchmark API", "0.1.0")
+	cfg := huma.DefaultConfig("Prompt Benchmark API", buildinfo.Version)
 	cfg.OpenAPI.Info.Description = "提示词能力边界评测平台接口。全部错误响应为 {error:{code,message}}。"
 	cfg.OpenAPIPath = APIPrefix + "/openapi"
 	cfg.DocsPath = APIPrefix + "/docs"

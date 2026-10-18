@@ -1,0 +1,14 @@
+[Unit]
+Description=Prompt Benchmark 自动更新检查
+Documentation=file:/opt/prompt-benchmark/docs/部署手册.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+# 以 root 执行：更新需要写入安装目录、重启 systemd 单元并记录版本状态。
+# 下载内容在安装前会校验发布资产附带的 sha256，且只接受本仓库的 Release 地址。
+EnvironmentFile=-/etc/prompt-benchmark/update.env
+ExecStart=/opt/prompt-benchmark/deploy/update.sh
+# 失败时保留退出码与日志，便于 journalctl 排查。
+TimeoutStartSec=10min

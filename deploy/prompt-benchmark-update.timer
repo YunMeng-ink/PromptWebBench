@@ -1,0 +1,11 @@
+[Unit]
+Description=每日检查 Prompt Benchmark 新版本
+
+[Timer]
+# 每天 04:30 检查一次；Persistent 让关机期间错过的执行在开机后补上。
+OnCalendar=*-*-* 04:30:00
+Persistent=true
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target
