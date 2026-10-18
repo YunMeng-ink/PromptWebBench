@@ -74,6 +74,22 @@ export const useDictionaryStore = defineStore('dictionary', () => {
     return inFlight
   }
 
+  /**
+   * refreshTags 只重新拉取主题标签。
+   *
+   * 标签可以在后台随时增删，而字典缓存在整个会话内有效；
+   * 进入提示词表单时刷新标签，管理员刚创建的标签才能立即出现在下拉菜单中。
+   */
+  async function refreshTags(): Promise<void> {
+    try {
+      const result = await dictionaryApi.tags()
+      data.value = { ...data.value, tags: result.items }
+      error.value = ''
+    } catch {
+      error.value = 'dictionary_load_failed'
+    }
+  }
+
   function purposeById(id: number | undefined): Purpose | undefined {
     return data.value.purposes.find((item) => item.id === id)
   }
@@ -90,5 +106,15 @@ export const useDictionaryStore = defineStore('dictionary', () => {
     return index
   })
 
-  return { data, loaded, loading, error, load, purposeById, capabilityById, modelById }
+  return {
+    data,
+    loaded,
+    loading,
+    error,
+    load,
+    refreshTags,
+    purposeById,
+    capabilityById,
+    modelById,
+  }
 })

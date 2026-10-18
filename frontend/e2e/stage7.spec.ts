@@ -47,6 +47,7 @@ const ADMIN_ROUTES = [
   '/admin/announcements',
   '/admin/recycle',
   '/admin/settings',
+  '/admin/showcase',
 ]
 
 /**
@@ -123,15 +124,15 @@ async function registerAccount(
 }
 
 test.describe('顶栏自适应', () => {
-  for (const width of [420, 865, 1280]) {
-    test(`${width}px 宽度下顶栏元素不重叠`, async ({ page }) => {
+  for (const width of [375, 420, 865, 1024, 1280, 1440]) {
+    test(`${width}px 宽度下顶栏元素不覆盖`, async ({ page }) => {
       await page.setViewportSize({ width, height: 900 })
       await loginAs(page, ADMIN_EMAIL, ADMIN_PASSWORD)
 
       const boxes = await page.evaluate(() => {
         const rect = (selector: string) => {
           const element = document.querySelector(selector)
-          if (element === null) {
+          if (element === null || getComputedStyle(element).display === 'none') {
             return null
           }
           const box = element.getBoundingClientRect()
@@ -141,30 +142,74 @@ test.describe('顶栏自适应', () => {
           brand: rect('.pb-brand'),
           links: rect('.pb-header__links'),
           utils: rect('.pb-header__utils'),
+          bell: rect('[data-testid="header-notifications"]'),
+          menu: rect('[data-testid="header-menu"]'),
+          user: rect('[data-testid="header-user"]'),
           scrollWidth: document.documentElement.scrollWidth,
           viewport: document.documentElement.clientWidth,
         }
       })
 
       expect(boxes.brand).not.toBeNull()
-      expect(boxes.links).not.toBeNull()
       expect(boxes.utils).not.toBeNull()
-      if (boxes.brand === null || boxes.links === null || boxes.utils === null) {
+      expect(boxes.bell, '通知铃铛必须始终可见').not.toBeNull()
+      expect(boxes.user).not.toBeNull()
+      if (
+        boxes.brand === null ||
+        boxes.utils === null ||
+        boxes.bell === null ||
+        boxes.user === null
+      ) {
         return
       }
       expect(boxes.scrollWidth, '顶栏不应撑出横向滚动').toBeLessThanOrEqual(boxes.viewport + 1)
 
+      // 品牌与右侧工具区不重叠，通知铃铛完整落在工具区内部。
+      expect(boxes.brand.right).toBeLessThanOrEqual(boxes.utils.left + 1)
+      const bellNeighbour = boxes.menu ?? boxes.user
+      expect(boxes.bell.right, '通知铃铛不应与相邻工具重叠').toBeLessThanOrEqual(
+        bellNeighbour.left + 1,
+      )
+
       if (width <= 900) {
-        // 窄屏：品牌与工具同排，导航换到下一行。
-        expect(boxes.brand.right).toBeLessThanOrEqual(boxes.utils.left + 1)
-        expect(boxes.links.top).toBeGreaterThanOrEqual(boxes.brand.bottom - 1)
+        // 窄屏：主导航收进菜单，品牌与工具同排。
+        expect(boxes.links, '窄屏不应渲染横向导航').toBeNull()
+        expect(boxes.menu, '窄屏应显示导航菜单按钮').not.toBeNull()
       } else {
-        // 宽屏：品牌、导航、工具依次排列，互不覆盖。
-        expect(boxes.brand.right).toBeLessThanOrEqual(boxes.links.left + 1)
-        expect(boxes.links.right).toBeLessThanOrEqual(boxes.utils.left + 1)
+        // 宽屏：主导航与工具区依次排列。
+        expect(boxes.links).not.toBeNull()
+        expect(boxes.menu, '宽屏不应显示菜单按钮').toBeNull()
+        if (boxes.links !== null) {
+          expect(boxes.brand.right).toBeLessThanOrEqual(boxes.links.left + 1)
+          expect(boxes.links.right).toBeLessThanOrEqual(boxes.utils.left + 1)
+        }
       }
     })
   }
+
+  test('宽屏次要入口收在更多菜单中', async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 })
+    await loginAs(page, ADMIN_EMAIL, ADMIN_PASSWORD)
+
+    await expect(page.getByTestId('header-admin')).toBeHidden()
+    await page.getByTestId('header-more').click()
+    await expect(page.getByTestId('header-admin')).toBeVisible()
+    await expect(page.getByTestId('header-admin')).toContainText('管理后台')
+  })
+
+  test('窄屏菜单收纳全部导航并可跳转', async ({ page }) => {
+    await page.setViewportSize({ width: 420, height: 900 })
+    await loginAs(page, ADMIN_EMAIL, ADMIN_PASSWORD)
+
+    await page.getByTestId('header-menu').click()
+    const panel = page.getByTestId('header-menu-panel')
+    await expect(panel).toBeVisible()
+    await expect(panel.getByTestId('mobile-header-home')).toBeVisible()
+    await expect(panel.getByTestId('mobile-header-admin')).toBeVisible()
+
+    await panel.getByTestId('mobile-header-showcase').click()
+    await expect(page).toHaveURL(/\/showcase$/)
+  })
 })
 
 test.describe('375px 窄屏适配', () => {

@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { flushPromises } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
 import { createMemoryHistory } from 'vue-router'
 import AppHeader from '@/components/AppHeader.vue'
@@ -13,8 +14,20 @@ function setup() {
   return { wrapper, preferences: usePreferencesStore(), auth: useAuthStore() }
 }
 
+/** openMoreMenu 打开宽屏「更多」菜单并等待浮层渲染。 */
+async function openMoreMenu(wrapper: ReturnType<typeof setup>['wrapper']): Promise<void> {
+  await wrapper.find('[data-testid="header-more"]').trigger('click')
+  await flushPromises()
+}
+
 beforeEach(() => {
   resetLocale()
+})
+
+afterEach(() => {
+  for (const node of document.querySelectorAll('.el-popper')) {
+    node.remove()
+  }
 })
 
 describe('顶栏', () => {
@@ -73,16 +86,35 @@ describe('顶栏', () => {
     expect(wrapper.find('[data-testid="header-login"]').exists()).toBe(false)
   })
 
-  it('后台入口只对管理员出现', async () => {
+  it('普通用户的更多菜单中没有后台入口', async () => {
     const { wrapper, auth } = setup()
     auth.markAuthenticated({ ...(currentUserFixture() as object), role: 'user' } as never)
     await nextTick()
-    expect(wrapper.find('[data-testid="header-admin"]').exists()).toBe(false)
+    await openMoreMenu(wrapper)
 
+    expect(document.body.querySelector('[data-testid="header-admin"]')).toBeNull()
+    expect(document.body.querySelector('[data-testid="header-libraries"]')).not.toBeNull()
+  })
+
+  it('管理员的更多菜单包含后台入口', async () => {
+    const { wrapper, auth } = setup()
     auth.markAuthenticated({ ...(currentUserFixture() as object), role: 'admin' } as never)
     await nextTick()
-    const link = wrapper.find('[data-testid="header-admin"]')
-    expect(link.exists()).toBe(true)
-    expect(link.attributes('href')).toBe('/admin')
+    await openMoreMenu(wrapper)
+
+    const item = document.body.querySelector('[data-testid="header-admin"]')
+    expect(item).not.toBeNull()
+    expect(item?.textContent).toContain('管理后台')
+  })
+
+  it('通知入口以铃铛形式固定在工具区', async () => {
+    const { wrapper, auth } = setup()
+    auth.markAuthenticated(currentUserFixture() as never)
+    await nextTick()
+
+    const bell = wrapper.find('[data-testid="header-notifications"]')
+    expect(bell.exists()).toBe(true)
+    expect(bell.attributes('href')).toBe('/notifications')
+    expect(bell.attributes('aria-label')).toBe('通知中心')
   })
 })

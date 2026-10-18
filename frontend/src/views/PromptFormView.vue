@@ -183,6 +183,8 @@ async function submit(): Promise<void> {
 
 onMounted(async () => {
   await Promise.all([dictionary.load(), auth.connect()])
+  // 标签可能在后台刚创建，字典缓存里仍是旧值；进入表单时单独刷新一次。
+  await dictionary.refreshTags()
   if (promptID.value === null) {
     return
   }

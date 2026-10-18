@@ -3,7 +3,7 @@
 #
 # 用法：
 #   deploy/update.sh                更新到最新正式版；已是最新时不做任何事
-#   TAG=v0.3.0 deploy/update.sh     安装指定标签
+#   TAG=v0.3.1 deploy/update.sh     安装指定标签
 #   FORCE=1 deploy/update.sh        跳过版本比较，重新安装或回退到指定标签
 #   deploy/update.sh --check        只检查不安装；有新版本时退出码 10
 #

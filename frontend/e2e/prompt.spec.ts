@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test'
-import { createPrompt, loginShared, openAsShared, SHARED_BASE_URL } from './helpers'
+import { createPrompt, loginAdmin, loginShared, openAsShared, SHARED_BASE_URL } from './helpers'
 
 test('游客可浏览公开列表且看不到上传入口', async ({ page }) => {
   await page.goto('/')
@@ -143,9 +143,10 @@ test('重大修改进到主版本并展示提示文案', async ({ page }) => {
 
   await page.goto(`/prompts/${promptID}/edit`)
 
-  // 等编辑表单加载完再操作：表单在拉取详情后才渲染，此时 title 与 major 开关才存在。
+  // 表单在详情返回前就渲染了，此时输入框可见但仍是占位取值。
+  // 等原标题回填后再填写，避免异步回填把输入与重大修改标记一起覆盖。
   const titleInput = page.getByTestId('prompt-title')
-  await expect(titleInput).toBeVisible()
+  await expect(titleInput).toHaveValue(title)
   await titleInput.fill(`${title}-重大`)
 
   const major = page.locator('[data-testid="prompt-major"]')
@@ -203,4 +204,50 @@ test('私有提示词对游客展示未找到', async ({ browser }) => {
 
   await expect(guestPage.getByTestId('detail-error')).toBeVisible()
   await guestContext.close()
+})
+
+test('后台新建的标签立即出现在提示词表单', async ({ page }) => {
+  await loginAdmin(page)
+  // 先进入首页，让字典在会话内完成一次缓存。
+  await page.goto('/')
+  await expect(page.getByTestId('home-filters')).toBeVisible()
+
+  const suffix = Date.now()
+  const tag = {
+    slug: `e2e-fresh-tag-${suffix}`,
+    name_zh: `新标签${suffix}`,
+    name_en: `Fresh Tag ${suffix}`,
+  }
+  await page.evaluate(async (payload) => {
+    const csrf =
+      document.cookie
+        .split('; ')
+        .find((part) => part.startsWith('pb_csrf='))
+        ?.split('=')[1] ?? ''
+    const response = await fetch('/api/v1/admin/tags', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-CSRF-Token': decodeURIComponent(csrf),
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        ...payload,
+        description: '',
+        color: '#336699',
+        kind: 'theme',
+        priority: 0,
+        is_enabled: true,
+      }),
+    })
+    if (!response.ok) {
+      throw new Error(await response.text())
+    }
+  }, tag)
+
+  // 站内跳转不会重建 Pinia，表单必须主动刷新标签才能看到刚创建的数据。
+  await page.getByTestId('header-upload').click()
+  await expect(page.getByTestId('prompt-title')).toBeVisible()
+  await page.getByTestId('prompt-tags').locator('.el-select__wrapper').click()
+  await expect(page.getByRole('option', { name: tag.name_zh, exact: true })).toBeVisible()
 })

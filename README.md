@@ -136,7 +136,7 @@ BACKUP_DIR=/var/backups/prompt-benchmark deploy/backup.sh
 
 ```sh
 sudo deploy/update.sh                      # 最新正式版
-sudo TAG=v0.3.0 FORCE=1 deploy/update.sh   # 重装或回退
+sudo TAG=v0.3.1 FORCE=1 deploy/update.sh   # 重装或回退
 sudo deploy/update.sh --check              # 只检查
 ```
 

@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 import { visibilityOptions } from '@/api/prompt'
+import { useDictionaryStore } from '@/stores/dictionary'
 import { mountView, resetLocale, stubResponse } from '@/testing/mount'
 import HomeView from '@/views/HomeView.vue'
 import PromptFormView from '@/views/PromptFormView.vue'
@@ -74,6 +75,7 @@ const prompts: unknown[] = []
 function stubEndpoints({
   purposes = [],
   capabilities = capabilityFixtures,
+  tags = [],
 }: DictionaryStub = {}): void {
   vi.stubGlobal(
     'fetch',
@@ -90,7 +92,7 @@ function stubEndpoints({
         return stubResponse({ status: 200, body: { items: [] } })
       }
       if (path.endsWith('/tags')) {
-        return stubResponse({ status: 200, body: { items: [] } })
+        return stubResponse({ status: 200, body: { items: tags } })
       }
       if (path.endsWith('/models')) {
         return stubResponse({ status: 200, body: { items: [] } })
@@ -281,6 +283,40 @@ describe('PromptFormView 权限相关的选项', () => {
 
     expect(wrapper.find('input[data-testid="prompt-title"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="prompt-submit"]').exists()).toBe(true)
+  })
+
+  it('字典缓存为空时进入表单会重新拉取标签', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const dictionary = useDictionaryStore()
+    // 模拟会话早期加载过一次字典，当时还没有任何标签。
+    dictionary.loaded = true
+    dictionary.data = {
+      purposes: [],
+      capabilities: [],
+      difficulties: [],
+      tags: [],
+      models: [],
+    }
+
+    stubEndpoints({
+      purposes: purposeFixtures,
+      tags: [
+        {
+          id: 7,
+          slug: 'finance',
+          name_zh: '金融',
+          name_en: 'Finance',
+          color: '#123456',
+          kind: 'theme',
+        },
+      ],
+    })
+    const wrapper = mountView(PromptFormView, { router: memoryRouter(), pinia })
+    await flushPromises()
+
+    expect(dictionary.data.tags.map((tag) => tag.slug)).toEqual(['finance'])
+    expect(wrapper.find('input[data-testid="prompt-title"]').exists()).toBe(true)
   })
 })
 
