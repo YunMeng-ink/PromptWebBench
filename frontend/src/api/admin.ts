@@ -463,6 +463,31 @@ export interface AdminRecycleEntry {
   expires_at: string
 }
 
+/** AdminShowcaseImage 是展示区治理列表中的一张用户上传图片。 */
+export interface AdminShowcaseImage {
+  id: number
+  url: string
+  filename: string
+  prompt_id: number
+  prompt_title: string
+  model_id: number
+  model_name: string
+  uploader: string
+  created_at: string
+}
+
+/** AdminShowcaseOutput 是展示区治理列表中的一条模型输出文本。 */
+export interface AdminShowcaseOutput {
+  id: number
+  content: string
+  prompt_id: number
+  prompt_title: string
+  model_id: number
+  model_name: string
+  uploader: string
+  created_at: string
+}
+
 export interface AdminConfigValue {
   key: string
   kind: ConfigKind
@@ -1012,5 +1037,30 @@ export const adminApi = {
 
   sendTestEmail(to: string): Promise<void> {
     return api.post<void>('/admin/settings/smtp-test', { to })
+  },
+
+  // ---------- 模块 12：结果展示区治理 ----------
+
+  showcaseImages(params: { page?: number; page_size?: number }): Promise<Page<AdminShowcaseImage>> {
+    return api.get<Page<AdminShowcaseImage>>(
+      `/admin/showcase/images${query({ page: params.page, page_size: params.page_size })}`,
+    )
+  },
+
+  deleteShowcaseImage(id: number): Promise<void> {
+    return api.delete<void>(`/admin/showcase/images/${id}`)
+  },
+
+  showcaseOutputs(params: {
+    page?: number
+    page_size?: number
+  }): Promise<Page<AdminShowcaseOutput>> {
+    return api.get<Page<AdminShowcaseOutput>>(
+      `/admin/showcase/outputs${query({ page: params.page, page_size: params.page_size })}`,
+    )
+  },
+
+  deleteShowcaseOutput(id: number): Promise<void> {
+    return api.delete<void>(`/admin/showcase/outputs/${id}`)
   },
 }

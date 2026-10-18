@@ -39,6 +39,9 @@ deploy/pb.env
 dist/
 backend/internal/web/dist/
 
+# 本地部署与自动更新指南（只存在于本机，不进入版本库）
+部署与自动更新指南.md
+
 # 编辑器与系统
 .idea/
 .vscode/

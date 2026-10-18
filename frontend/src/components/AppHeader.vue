@@ -87,6 +87,9 @@ async function onLogout(): Promise<void> {
           <RouterLink class="pb-header__link" to="/leaderboard" data-testid="header-leaderboard">
             {{ t('nav.leaderboard') }}
           </RouterLink>
+          <RouterLink class="pb-header__link" to="/showcase" data-testid="header-showcase">
+            {{ t('nav.showcase') }}
+          </RouterLink>
           <RouterLink
             v-if="auth.status === 'authenticated'"
             class="pb-header__link"

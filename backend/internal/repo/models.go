@@ -438,6 +438,31 @@ type RatingChangeLog struct {
 	CreatedAt       pgtype.Timestamptz
 }
 
+type RatingImage struct {
+	ID        int64
+	RatingID  int64
+	UserID    int64
+	PromptID  int64
+	ModelID   int64
+	Url       string
+	Filename  string
+	DeletedAt pgtype.Timestamptz
+	DeletedBy pgtype.Int8
+	CreatedAt pgtype.Timestamptz
+}
+
+type RatingOutput struct {
+	ID        int64
+	RatingID  int64
+	UserID    int64
+	PromptID  int64
+	ModelID   int64
+	Content   string
+	DeletedAt pgtype.Timestamptz
+	DeletedBy pgtype.Int8
+	CreatedAt pgtype.Timestamptz
+}
+
 type RecommendTag struct {
 	ID          int64
 	PromptID    int64

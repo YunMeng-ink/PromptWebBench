@@ -30,6 +30,7 @@ import (
 	"github.com/promptbench/backend/internal/service/library"
 	"github.com/promptbench/backend/internal/service/prompt"
 	"github.com/promptbench/backend/internal/service/rating"
+	"github.com/promptbench/backend/internal/service/showcase"
 	"github.com/promptbench/backend/internal/service/social"
 	"github.com/promptbench/backend/internal/service/stats"
 	"github.com/promptbench/backend/internal/web"
@@ -47,14 +48,15 @@ type Deps struct {
 	Metrics *metrics.Metrics
 	Repo    *repo.Queries
 
-	Auth    *auth.Service
-	Admin   *admin.Service
-	Prompt  *prompt.Service
-	Rating  *rating.Service
-	Stats   *stats.Service
-	Social  *social.Service
-	Library *library.Service
-	Signer  *security.Signer
+	Auth     *auth.Service
+	Admin    *admin.Service
+	Prompt   *prompt.Service
+	Rating   *rating.Service
+	Stats    *stats.Service
+	Social   *social.Service
+	Library  *library.Service
+	Showcase *showcase.Service
+	Signer   *security.Signer
 }
 
 // RouteRecord 记录一个已登记路由及其限流规则，供启动日志与自检使用。
@@ -96,6 +98,9 @@ func New(deps Deps) (*Server, error) {
 	}
 	if deps.Library == nil {
 		return nil, fmt.Errorf("接口层依赖不完整：Library 不可为空")
+	}
+	if deps.Showcase == nil {
+		return nil, fmt.Errorf("接口层依赖不完整：Showcase 不可为空")
 	}
 	trusted, err := ParseTrustedProxies(deps.Env.TrustedProxies)
 	if err != nil {
@@ -164,6 +169,7 @@ func New(deps Deps) (*Server, error) {
 	s.registerSocialRoutes()
 	s.registerLibraryRoutes()
 	s.registerDictionaryRoutes()
+	s.registerShowcaseRoutes()
 	s.registerWebRoutes()
 	return s, nil
 }

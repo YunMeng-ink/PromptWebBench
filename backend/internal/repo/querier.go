@@ -135,6 +135,8 @@ type Querier interface {
 	// 注销前统计活跃管理员数量，用于阻止最后一个管理员注销自己：
 	// 注销后无人能进入后台，平台只有重启才会按 ADMIN_INIT_* 重建初始管理员。
 	CountActiveAdmins(ctx context.Context) (int64, error)
+	CountAdminRatingImages(ctx context.Context) (int64, error)
+	CountAdminRatingOutputs(ctx context.Context) (int64, error)
 	// 考察维度可能作为提示词的第二至第五个维度出现，引用计数以关联表为准，
 	// 并按提示词与版本去重，避免同一对象被计多次。
 	CountCapabilityReferences(ctx context.Context, capabilityID int64) (int32, error)
@@ -176,6 +178,7 @@ type Querier interface {
 	CountRecentEmailVerifications(ctx context.Context, arg CountRecentEmailVerificationsParams) (int64, error)
 	CountRecommendTagsByState(ctx context.Context, states []string) (int64, error)
 	CountReplies(ctx context.Context, parentID pgtype.Int8) (int64, error)
+	CountShowcaseEntries(ctx context.Context, modelID int64) (int64, error)
 	CountTagPrompts(ctx context.Context, tagID int64) (int64, error)
 	// 未读公告数：只统计发布时间晚于水位线的条目。
 	// 没有水位线的账户（从未读过公告）看到全部公告为未读。
@@ -275,6 +278,10 @@ type Querier interface {
 	GetPromptVersion(ctx context.Context, arg GetPromptVersionParams) (PromptVersion, error)
 	GetPurpose(ctx context.Context, id int64) (Purpose, error)
 	GetRating(ctx context.Context, arg GetRatingParams) (Rating, error)
+	// 单条图片的完整信息（权限判定与删除用）。
+	GetRatingImage(ctx context.Context, id int64) (RatingImage, error)
+	// 单条文本输出的完整信息（权限判定与删除用）。
+	GetRatingOutput(ctx context.Context, id int64) (RatingOutput, error)
 	GetRecommendTag(ctx context.Context, id int64) (RecommendTag, error)
 	GetSystemUser(ctx context.Context) (User, error)
 	GetTagsByIDs(ctx context.Context, ids []int64) ([]Tag, error)
@@ -347,6 +354,13 @@ type Querier interface {
 	InsertPromptVersion(ctx context.Context, arg InsertPromptVersionParams) (PromptVersion, error)
 	InsertPurpose(ctx context.Context, arg InsertPurposeParams) (Purpose, error)
 	InsertRatingChangeLog(ctx context.Context, arg InsertRatingChangeLogParams) (int64, error)
+	// rating_images、rating_outputs 与展示区的读写。
+	//
+	// 公开展示只包含「公开且非高风险」提示词下的素材：图片与模型输出跟着评分走，
+	// 私有、开发者可见或高风险提示词的素材不进公开展示区（C-18、C-19、C-20）。
+	// 管理员列表不在此限，另行提供。
+	InsertRatingImage(ctx context.Context, arg InsertRatingImageParams) (RatingImage, error)
+	InsertRatingOutput(ctx context.Context, arg InsertRatingOutputParams) (RatingOutput, error)
 	// recommend_tags 的读写。推荐标签生命周期由 C-12 ~ C-16 规定。
 	// 同一「提示词 × 模型 × 标签类型」同时只保留一条未终结的推荐标签，
 	// 唯一索引在该状态下约束，重算时冲突即视为标签已存在（C-13）。
@@ -361,6 +375,9 @@ type Querier interface {
 	InsertTransferLog(ctx context.Context, arg InsertTransferLogParams) error
 	IsFollowing(ctx context.Context, arg IsFollowingParams) (bool, error)
 	IsPromptFavorited(ctx context.Context, arg IsPromptFavoritedParams) (bool, error)
+	// 管理员图片列表：不过滤提示词可见性，按提交时间倒序分页。
+	ListAdminRatingImages(ctx context.Context, arg ListAdminRatingImagesParams) ([]ListAdminRatingImagesRow, error)
+	ListAdminRatingOutputs(ctx context.Context, arg ListAdminRatingOutputsParams) ([]ListAdminRatingOutputsRow, error)
 	ListCapabilities(ctx context.Context) ([]Capability, error)
 	// 顶层评论分页，附带作者昵称、当前用户是否点过赞、以及回复数。
 	// 回复数用相关子查询而不是聚合：聚合会与分页的 LIMIT 互相干扰。
@@ -461,11 +478,21 @@ type Querier interface {
 	ListPromptWindowScores(ctx context.Context, arg ListPromptWindowScoresParams) ([]ListPromptWindowScoresRow, error)
 	// 字典表查询：考察维度、考察目的、难度、标签、模型（开发方案 §5.5 字典组）。
 	ListPurposes(ctx context.Context) ([]Purpose, error)
+	// 用户在某条评分下的全部图片（数量校验用）。
+	ListRatingImagesByRating(ctx context.Context, ratingID int64) ([]RatingImage, error)
 	// 详情页在管理员身份下展示全部推荐标签，供后台处理（开发方案 §6.7）。
 	ListRecommendTagsByPrompt(ctx context.Context, promptID int64) ([]RecommendTag, error)
 	// 推荐标签批量处理与后台列表（开发方案 §6.7）。
 	ListRecommendTagsByState(ctx context.Context, arg ListRecommendTagsByStateParams) ([]RecommendTag, error)
 	ListReplies(ctx context.Context, arg ListRepliesParams) ([]ListRepliesRow, error)
+	// 展示区内某个模型的素材列表：图片与文本输出按提交时间混排。
+	// 两段查询的列类型必须一致（union 的列类型由各段同名位置决定），
+	// 不参与的分支用空串占位，避免 sqlc 把可空列映射为非指针类型。
+	ListShowcaseEntries(ctx context.Context, arg ListShowcaseEntriesParams) ([]ListShowcaseEntriesRow, error)
+	// 展示区按「提供厂商 × 模型」聚合素材：图片与文本输出各自按模型去重计数，
+	// 最近提交时间分开取，由服务层比较先后；GREATEST 的多态参数在 sqlc 中
+	// 只能推断为 interface{}，分开取时间列后每一列的类型都是确定的。
+	ListShowcaseGroups(ctx context.Context) ([]ListShowcaseGroupsRow, error)
 	ListTags(ctx context.Context) ([]Tag, error)
 	// 收藏夹、条目与关注的读写。
 	//
@@ -547,6 +574,10 @@ type Querier interface {
 	SoftDeleteNotification(ctx context.Context, arg SoftDeleteNotificationParams) (int64, error)
 	SoftDeletePrompt(ctx context.Context, id int64) (int64, error)
 	SoftDeleteRating(ctx context.Context, id int64) (int64, error)
+	// 删除指定图片（按 ID 精确删除），记下执行删除的管理员。
+	SoftDeleteRatingImage(ctx context.Context, arg SoftDeleteRatingImageParams) (int64, error)
+	// 删除指定文本输出（按 ID 精确删除），记下执行删除的管理员。
+	SoftDeleteRatingOutput(ctx context.Context, arg SoftDeleteRatingOutputParams) (int64, error)
 	// ---------- G-09：账号注销 ----------
 	// 软删账户并匿名化：昵称统一改为「已注销用户」（唯一索引带 deleted_at IS NULL
 	// 条件，注销后昵称不再参与唯一性），邮箱改为不可投递地址以释放原邮箱占用。

@@ -16,6 +16,7 @@ import (
 
 	"github.com/promptbench/backend/internal/config"
 	api "github.com/promptbench/backend/internal/http"
+	"github.com/promptbench/backend/internal/imgbed"
 	"github.com/promptbench/backend/internal/mail"
 	"github.com/promptbench/backend/internal/mail/mailtest"
 	"github.com/promptbench/backend/internal/metrics"
@@ -28,6 +29,7 @@ import (
 	"github.com/promptbench/backend/internal/service/library"
 	"github.com/promptbench/backend/internal/service/prompt"
 	"github.com/promptbench/backend/internal/service/rating"
+	"github.com/promptbench/backend/internal/service/showcase"
 	"github.com/promptbench/backend/internal/service/social"
 	"github.com/promptbench/backend/internal/service/stats"
 )
@@ -43,36 +45,40 @@ type testEnv struct {
 
 	// modelsDev 是 models.dev 的本地替身：后台导入用例通过它切换上游的响应与状态码。
 	modelsDev *fakeModelsDev
+	// imageBed 是图床的本地替身：展示区上传用例通过它验证外呼路径与失败分支。
+	imageBed *fakeImageBed
 
-	auth    *auth.Service
-	admin   *admin.Service
-	prompt  *prompt.Service
-	rating  *rating.Service
-	stats   *stats.Service
-	social  *social.Service
-	library *library.Service
-	repo    *repo.Queries
-	signer  *security.Signer
+	auth     *auth.Service
+	admin    *admin.Service
+	prompt   *prompt.Service
+	rating   *rating.Service
+	stats    *stats.Service
+	social   *social.Service
+	library  *library.Service
+	showcase *showcase.Service
+	repo     *repo.Queries
+	signer   *security.Signer
 }
 
 // Deps 返回构造接口层所需的依赖，供需要自定义配置的用例复用。
 func (e *testEnv) Deps(t *testing.T) api.Deps {
 	t.Helper()
 	return api.Deps{
-		Env:     e.Env,
-		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Pool:    e.pool,
-		Config:  e.config,
-		Metrics: metrics.New(),
-		Repo:    e.repo,
-		Auth:    e.auth,
-		Admin:   e.admin,
-		Prompt:  e.prompt,
-		Rating:  e.rating,
-		Stats:   e.stats,
-		Social:  e.social,
-		Library: e.library,
-		Signer:  e.signer,
+		Env:      e.Env,
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Pool:     e.pool,
+		Config:   e.config,
+		Metrics:  metrics.New(),
+		Repo:     e.repo,
+		Auth:     e.auth,
+		Admin:    e.admin,
+		Prompt:   e.prompt,
+		Rating:   e.rating,
+		Stats:    e.stats,
+		Social:   e.social,
+		Library:  e.library,
+		Showcase: e.showcase,
+		Signer:   e.signer,
 	}
 }
 
@@ -84,6 +90,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	pool := pgtest.MigratedDatabase(t)
 	mailServer := mailtest.New(t)
 	modelsDevServer := newFakeModelsDev(t)
+	imageBedServer := newFakeImageBed(t)
 
 	cfgStore := config.NewStore(pool, config.DefaultCacheTTL)
 	t.Cleanup(cfgStore.Close)
@@ -125,6 +132,11 @@ func newTestEnv(t *testing.T) *testEnv {
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Stats:  statsService,
 	})
+	showcaseService := showcase.New(showcase.Deps{
+		Pool:   pool,
+		Imgbed: imgbed.NewClient(imageBedServer.URL()),
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	})
 	adminService := admin.New(admin.Deps{
 		Pool:       pool,
 		Config:     cfgStore,
@@ -143,6 +155,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		config:    cfgStore,
 		mail:      mailServer,
 		modelsDev: modelsDevServer,
+		imageBed:  imageBedServer,
 		auth:      authService,
 		admin:     adminService,
 		prompt:    promptService,
@@ -150,25 +163,27 @@ func newTestEnv(t *testing.T) *testEnv {
 		stats:     statsService,
 		social:    socialService,
 		library:   libraryService,
+		showcase:  showcaseService,
 		repo:      repo.New(pool),
 		signer:    signer,
 	}
 
 	srv, err := api.New(api.Deps{
-		Env:     env.Env,
-		Logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
-		Pool:    pool,
-		Config:  cfgStore,
-		Metrics: metrics.New(),
-		Repo:    env.repo,
-		Auth:    authService,
-		Admin:   adminService,
-		Prompt:  promptService,
-		Rating:  ratingService,
-		Stats:   statsService,
-		Social:  socialService,
-		Library: libraryService,
-		Signer:  signer,
+		Env:      env.Env,
+		Logger:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Pool:     pool,
+		Config:   cfgStore,
+		Metrics:  metrics.New(),
+		Repo:     env.repo,
+		Auth:     authService,
+		Admin:    adminService,
+		Prompt:   promptService,
+		Rating:   ratingService,
+		Stats:    statsService,
+		Social:   socialService,
+		Library:  libraryService,
+		Showcase: showcaseService,
+		Signer:   signer,
 	})
 	if err != nil {
 		t.Fatalf("构造接口层失败: %v", err)

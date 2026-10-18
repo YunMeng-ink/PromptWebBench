@@ -19,6 +19,7 @@ import (
 	"github.com/promptbench/backend/internal/buildinfo"
 	"github.com/promptbench/backend/internal/config"
 	api "github.com/promptbench/backend/internal/http"
+	"github.com/promptbench/backend/internal/imgbed"
 	"github.com/promptbench/backend/internal/mail"
 	"github.com/promptbench/backend/internal/metrics"
 	"github.com/promptbench/backend/internal/modelsdev"
@@ -32,6 +33,7 @@ import (
 	"github.com/promptbench/backend/internal/service/library"
 	"github.com/promptbench/backend/internal/service/prompt"
 	"github.com/promptbench/backend/internal/service/rating"
+	"github.com/promptbench/backend/internal/service/showcase"
 	"github.com/promptbench/backend/internal/service/social"
 	"github.com/promptbench/backend/internal/service/stats"
 )
@@ -138,6 +140,11 @@ func run(envFile string) error {
 	ratingService := rating.New(rating.Deps{
 		Pool: pool, Config: cfgStore, Logger: logger, Stats: statsService,
 	})
+	// 展示区负责评分附图与模型输出的上传、公开聚合与管理员删除；
+	// 图片本体上传到外部图床，平台只保存外链。
+	showcaseService := showcase.New(showcase.Deps{
+		Pool: pool, Imgbed: imgbed.NewClient(env.ImageBedURL), Logger: logger,
+	})
 	// 管理后台复用提示词域与社交域的写入路径：强制标记重大修改、删除与恢复提示词、
 	// 删除被举报评论都在各自的域内实现一次，后台只做编排与留痕。
 	adminService := admin.New(admin.Deps{
@@ -153,20 +160,21 @@ func run(envFile string) error {
 	})
 
 	srv, err := api.New(api.Deps{
-		Env:     env,
-		Logger:  logger,
-		Pool:    pool,
-		Config:  cfgStore,
-		Metrics: metrics.New(),
-		Repo:    repo.New(pool),
-		Auth:    authService,
-		Admin:   adminService,
-		Prompt:  promptService,
-		Rating:  ratingService,
-		Stats:   statsService,
-		Social:  socialService,
-		Library: libraryService,
-		Signer:  signer,
+		Env:      env,
+		Logger:   logger,
+		Pool:     pool,
+		Config:   cfgStore,
+		Metrics:  metrics.New(),
+		Repo:     repo.New(pool),
+		Auth:     authService,
+		Admin:    adminService,
+		Prompt:   promptService,
+		Rating:   ratingService,
+		Stats:    statsService,
+		Social:   socialService,
+		Library:  libraryService,
+		Showcase: showcaseService,
+		Signer:   signer,
 	})
 	if err != nil {
 		return err

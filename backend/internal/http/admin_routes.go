@@ -7,7 +7,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 )
 
-// registerAdminRoutes 注册管理后台的全部端点（C-42 的 11 个模块）。
+// registerAdminRoutes 注册管理后台的全部端点（C-42 的 11 个模块，
+// 另加结果展示区治理模块）。
 //
 // 后台与业务 API 共用 /api/v1 前缀（C-39），鉴权级别由限流规则与
 // requireAdmin 判定共同表达：读走 admin_read，写走 admin_write，
@@ -26,6 +27,31 @@ func (s *Server) registerAdminRoutes() {
 	s.registerAdminAnnouncementRoutes()
 	s.registerAdminRecycleRoutes()
 	s.registerAdminSettingRoutes()
+	s.registerAdminShowcaseRoutes()
+}
+
+// registerAdminShowcaseRoutes 注册模型结果展示区的治理端点：
+// 违规图片与模型输出的列表与删除（软删除，操作日志留痕）。
+func (s *Server) registerAdminShowcaseRoutes() {
+	Register(s, "admin_read", huma.Operation{
+		Method: http.MethodGet, Path: APIPrefix + "/admin/showcase/images",
+		OperationID: "adminListShowcaseImages", Summary: "展示区图片列表", Tags: []string{"后台"},
+	}, s.handleAdminShowcaseImages)
+
+	Register(s, "admin_write", huma.Operation{
+		Method: http.MethodDelete, Path: APIPrefix + "/admin/showcase/images/{id}",
+		OperationID: "adminDeleteShowcaseImage", Summary: "删除违规图片", Tags: []string{"后台"},
+	}, s.handleAdminDeleteShowcaseImage)
+
+	Register(s, "admin_read", huma.Operation{
+		Method: http.MethodGet, Path: APIPrefix + "/admin/showcase/outputs",
+		OperationID: "adminListShowcaseOutputs", Summary: "展示区模型输出列表", Tags: []string{"后台"},
+	}, s.handleAdminShowcaseOutputs)
+
+	Register(s, "admin_write", huma.Operation{
+		Method: http.MethodDelete, Path: APIPrefix + "/admin/showcase/outputs/{id}",
+		OperationID: "adminDeleteShowcaseOutput", Summary: "删除违规模型输出", Tags: []string{"后台"},
+	}, s.handleAdminDeleteShowcaseOutput)
 }
 
 // registerAdminAccountRoutes 注册账户治理端点：封禁、解封、身份组授予与撤销，

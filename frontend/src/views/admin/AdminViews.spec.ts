@@ -701,12 +701,12 @@ describe('分类字典管理', () => {
 })
 
 describe('管理后台外框', () => {
-  it('管理员看到 12 个模块的导航', async () => {
+  it('管理员看到 13 个模块的导航', async () => {
     stubAdminEndpoints()
     const wrapper = await mountAdmin(AdminLayout)
 
     const links = wrapper.findAll('[data-testid="admin-nav"] a')
-    expect(links).toHaveLength(12)
+    expect(links).toHaveLength(13)
     expect(wrapper.find('[data-testid="admin-denied"]').exists()).toBe(false)
   })
 

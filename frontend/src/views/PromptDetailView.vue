@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { type PromptDetail, promptApi } from '@/api/prompt'
 import { type PromptModelRating, ratingApi } from '@/api/rating'
+import { MAX_IMAGE_BYTES, MAX_IMAGE_COUNT, MAX_OUTPUT_CHARS, showcaseApi } from '@/api/showcase'
 import { type Favorite, socialApi } from '@/api/social'
 import { type PromptStats, statsApi } from '@/api/stats'
 import CommentSection from '@/components/CommentSection.vue'
@@ -48,6 +49,24 @@ const pendingModel = ref<number | undefined>(undefined)
 
 /** 编辑已有评分时按钮文案与提交动作不同，由评分来源决定。 */
 const editingExisting = ref(false)
+
+/**
+ * pendingOutput 与 pendingImages 是评分弹窗中附带的模型结果：
+ * 模型输出文本与结果图片。两者都是可选的，随评分提交一并上传。
+ */
+const pendingOutput = ref('')
+const pendingImages = ref<File[]>([])
+const imageInput = ref<HTMLInputElement | null>(null)
+
+/** IMAGE_TYPES 与后端允许的图片类型一致。 */
+const IMAGE_TYPES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/gif',
+  'image/bmp',
+  'image/tiff',
+] as const
 
 const dialogVisible = computed({
   get: () => pendingModel.value !== undefined,
@@ -242,6 +261,8 @@ function startRating(item: PromptModelRating): void {
   ensureRatingModel(item.model_id)
   pendingModel.value = item.model_id
   pendingScore.value = item.my_score
+  pendingOutput.value = ''
+  pendingImages.value = []
   editingExisting.value = item.my_score !== undefined
   notice.value = ''
   failure.value = ''
@@ -250,19 +271,56 @@ function startRating(item: PromptModelRating): void {
 function cancelRating(): void {
   pendingModel.value = undefined
   pendingScore.value = undefined
+  pendingOutput.value = ''
+  pendingImages.value = []
   editingExisting.value = false
 }
 
+/** chooseImages 打开文件选择框。 */
+function chooseImages(): void {
+  imageInput.value?.click()
+}
+
+/** onImagePick 校验并收集待上传图片；非法文件当场拒绝并说明原因。 */
+function onImagePick(event: Event): void {
+  const input = event.target as HTMLInputElement
+  const picked = Array.from(input.files ?? [])
+  input.value = ''
+  failure.value = ''
+  for (const file of picked) {
+    if (!IMAGE_TYPES.includes(file.type as (typeof IMAGE_TYPES)[number])) {
+      failure.value = t('showcase.imageTypeInvalid', { name: file.name })
+      return
+    }
+    if (file.size > MAX_IMAGE_BYTES) {
+      failure.value = t('showcase.imageTooLarge', { name: file.name })
+      return
+    }
+    if (pendingImages.value.length >= MAX_IMAGE_COUNT) {
+      failure.value = t('showcase.imageCountExceeded', { count: MAX_IMAGE_COUNT })
+      return
+    }
+    pendingImages.value.push(file)
+  }
+}
+
+/** removePendingImage 从待上传列表移除一张图片。 */
+function removePendingImage(index: number): void {
+  pendingImages.value.splice(index, 1)
+}
+
 /**
- * confirmRating 按评分来源选择提交或修改。
- * 已存在评分时走修改路径，受单条修改次数上限约束；
- * 首次评分走提交路径，两者在后端是不同端点。
+ * confirmRating 按评分来源选择提交或修改，然后上传附带的模型输出与结果图片。
+ *
+ * 评分先落库：附图与输出都绑定在已有评分上。附加内容上传失败时评分保持有效，
+ * 错误信息明确说明哪一步失败，用户可以在弹窗中重试附加内容之外的整条流程。
  */
 async function confirmRating(): Promise<void> {
   if (pendingModel.value === undefined || pendingScore.value === undefined) {
     return
   }
-  const payload = { model_id: pendingModel.value, score: pendingScore.value }
+  const modelID = pendingModel.value
+  const payload = { model_id: modelID, score: pendingScore.value }
   try {
     if (editingExisting.value) {
       await ratingApi.update(promptID.value as number, payload)
@@ -271,12 +329,34 @@ async function confirmRating(): Promise<void> {
       await ratingApi.submit(promptID.value as number, payload)
       notice.value = t('prompt.ratingSubmitted')
     }
-    cancelRating()
-    await reloadRatings()
-    await reloadStats()
   } catch (error) {
     failure.value = messageOf(error)
+    return
   }
+
+  const output = pendingOutput.value.trim()
+  if (output !== '') {
+    try {
+      await showcaseApi.submitOutput(promptID.value as number, modelID, output)
+      notice.value = `${notice.value} ${t('showcase.outputSubmitted')}`
+    } catch (error) {
+      failure.value = t('showcase.outputFailed', { message: messageOf(error) })
+    }
+  }
+
+  for (const file of pendingImages.value) {
+    try {
+      await showcaseApi.uploadImage(promptID.value as number, modelID, file)
+      notice.value = `${notice.value} ${t('showcase.imageSubmitted')}`
+    } catch (error) {
+      failure.value = t('showcase.imageFailed', { message: messageOf(error) })
+      break
+    }
+  }
+
+  cancelRating()
+  await reloadRatings()
+  await reloadStats()
 }
 
 async function deleteRating(item: PromptModelRating): Promise<void> {
@@ -613,6 +693,17 @@ watch(promptID, () => {
         <h2 class="pb-ratings__title">{{ t('prompt.ratingSection') }}</h2>
         <p class="pb-ratings__hint">{{ t('prompt.ratingHint') }}</p>
 
+        <p class="pb-ratings__showcase-link">
+          <RouterLink
+            class="pb-ratings__showcase-anchor"
+            :to="{ name: 'showcase' }"
+            data-testid="showcase-entry-link"
+          >
+            {{ t('showcase.entryLink') }}
+          </RouterLink>
+          <span>{{ t('showcase.entryHint') }}</span>
+        </p>
+
         <div v-if="ratings.length > 0" class="pb-ratings__picker">
           <el-select
             :model-value="ratingModelIDs"
@@ -732,6 +823,13 @@ watch(promptID, () => {
                     : t('prompt.editsExhausted')
                 }}
               </span>
+              <RouterLink
+                class="pb-ratings__example-link"
+                :to="{ name: 'showcase', query: { model: String(item.model_id) } }"
+                :data-testid="`rating-showcase-${item.model_id}`"
+              >
+                {{ t('showcase.modelLink') }}
+              </RouterLink>
             </div>
           </li>
         </ul>
@@ -740,7 +838,7 @@ watch(promptID, () => {
           v-model="dialogVisible"
           data-testid="rating-dialog"
           :title="t('prompt.myRating')"
-          width="420px"
+          width="560px"
         >
           <el-radio-group v-model="pendingScore" data-testid="rating-score">
             <el-radio
@@ -752,6 +850,59 @@ watch(promptID, () => {
               {{ score }} · {{ t(`prompt.score${score}`) }}
             </el-radio>
           </el-radio-group>
+
+          <div class="pb-rating-extra">
+            <el-divider />
+            <h3 class="pb-rating-extra__title">{{ t('showcase.ratingExtraTitle') }}</h3>
+            <p class="pb-rating-extra__hint">{{ t('showcase.ratingExtraHint') }}</p>
+
+            <el-input
+              v-model="pendingOutput"
+              type="textarea"
+              :rows="4"
+              :maxlength="MAX_OUTPUT_CHARS"
+              show-word-limit
+              :placeholder="t('showcase.outputPlaceholder')"
+              data-testid="rating-output"
+            />
+
+            <div class="pb-rating-extra__images">
+              <input
+                ref="imageInput"
+                class="pb-rating-extra__file"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif,image/bmp,image/tiff"
+                multiple
+                data-testid="rating-image-input"
+                @change="onImagePick"
+              />
+              <el-button
+                size="small"
+                :disabled="pendingImages.length >= MAX_IMAGE_COUNT"
+                data-testid="rating-image-choose"
+                @click="chooseImages"
+              >
+                {{ t('showcase.chooseImages') }}
+              </el-button>
+              <span class="pb-rating-extra__limit">
+                {{ t('showcase.imageLimit', { count: MAX_IMAGE_COUNT }) }}
+              </span>
+            </div>
+
+            <ul v-if="pendingImages.length > 0" class="pb-rating-extra__list" data-testid="rating-image-list">
+              <li v-for="(file, index) in pendingImages" :key="`${file.name}-${index}`">
+                <span class="pb-rating-extra__name">{{ file.name }}</span>
+                <el-button
+                  size="small"
+                  text
+                  :data-testid="`rating-image-remove-${index}`"
+                  @click="removePendingImage(index)"
+                >
+                  {{ t('showcase.removeImage') }}
+                </el-button>
+              </li>
+            </ul>
+          </div>
 
           <template #footer>
             <el-button data-testid="rating-cancel" @click="cancelRating">
@@ -1297,6 +1448,120 @@ watch(promptID, () => {
   margin: 0 0 var(--pb-space-md);
   color: var(--pb-ink-faint);
   font-size: 13px;
+}
+
+.pb-ratings__showcase-link {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0 0 var(--pb-space-md);
+  padding: var(--pb-space-sm) var(--pb-space-md);
+  border: 1px solid var(--pb-line);
+  border-left: 2px solid var(--pb-accent);
+  border-radius: 0 var(--pb-radius-md) var(--pb-radius-md) 0;
+  background: color-mix(in srgb, var(--pb-accent-soft) 45%, transparent);
+  color: var(--pb-ink-soft);
+  font-size: 12.5px;
+}
+
+.pb-ratings__showcase-anchor {
+  color: var(--pb-accent-strong);
+  font-weight: 600;
+  border-bottom: 1px solid var(--pb-accent-ring);
+  transition: border-color var(--pb-duration) var(--pb-ease);
+}
+
+.pb-ratings__showcase-anchor:hover {
+  border-color: var(--pb-accent);
+}
+
+.pb-ratings__example-link {
+  margin-left: auto;
+  color: var(--pb-ink-faint);
+  font-size: 12px;
+  border-bottom: 1px solid transparent;
+  transition:
+    color var(--pb-duration) var(--pb-ease),
+    border-color var(--pb-duration) var(--pb-ease);
+}
+
+.pb-ratings__example-link:hover {
+  color: var(--pb-accent);
+  border-color: var(--pb-accent-ring);
+}
+
+.pb-rating-extra {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-sm);
+}
+
+.pb-rating-extra__title {
+  margin: 0;
+  color: var(--pb-ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.pb-rating-extra__hint {
+  margin: 0;
+  color: var(--pb-ink-faint);
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.pb-rating-extra__images {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pb-space-sm);
+}
+
+.pb-rating-extra__file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.pb-rating-extra__limit {
+  color: var(--pb-ink-faint);
+  font-size: 11.5px;
+}
+
+.pb-rating-extra__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pb-rating-extra__list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--pb-space-sm);
+  padding: 3px 10px;
+  border-radius: var(--pb-radius-sm);
+  background: var(--pb-surface-muted);
+}
+
+.pb-rating-extra__name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--pb-ink-soft);
+  font-family: var(--pb-font-mono);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pb-stats__method-link {

@@ -1,5 +1,5 @@
 // 管理后台的外框：左侧模块导航 + 右侧内容区。
-// 导航用普通路由链接而不是折叠菜单：11 个模块在窄屏下换行展示，
+// 导航用普通路由链接而不是折叠菜单：全部模块在窄屏下换行展示，
 // 不需要额外的展开状态，键盘也能直接到达每一项。
 
 <script setup lang="ts">
@@ -36,6 +36,7 @@ const NAV_ITEMS: AdminNavItem[] = [
   },
   { name: 'admin-recycle', path: '/admin/recycle', labelKey: 'admin.nav.recycle' },
   { name: 'admin-settings', path: '/admin/settings', labelKey: 'admin.nav.settings' },
+  { name: 'admin-showcase', path: '/admin/showcase', labelKey: 'admin.nav.showcase' },
 ]
 
 const activePath = computed(() => `/admin/${String(route.name ?? '').replace('admin-', '')}`)

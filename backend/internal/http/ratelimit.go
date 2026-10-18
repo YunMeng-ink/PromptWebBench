@@ -52,6 +52,10 @@ var defaultRules = map[string]Rule{
 	"favorite_write": {Name: "favorite_write", Limit: 60, Window: time.Minute, Scope: ScopeUser},
 	// 题库写入含导出与批量排序，按轻量写入的一半计数。
 	"library_write": {Name: "library_write", Limit: 30, Window: time.Minute, Scope: ScopeUser},
+	// 评分附图每次都会外呼图床，限额取普通写操作的三分之一；
+	// 模型输出文本是纯数据库写入，与评分共用同一数量级。
+	"image_write":  {Name: "image_write", Limit: 10, Window: time.Minute, Scope: ScopeUser},
+	"result_write": {Name: "result_write", Limit: 30, Window: time.Minute, Scope: ScopeUser},
 }
 
 // DefaultRules 返回规则表的副本，供调用方按部署环境调整个别限额。

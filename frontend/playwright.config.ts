@@ -58,6 +58,14 @@ export default defineConfig({
       timeout: 180_000,
     },
     {
+      // 图床替身：评分附图上传用例走它，避免端到端测试把图片送到外部图床。
+      command: 'go run ./cmd/imgbedsink -addr 127.0.0.1:2527',
+      cwd: backendDir,
+      port: 2527,
+      reuseExistingServer: false,
+      timeout: 180_000,
+    },
+    {
       command: 'go run ./cmd/server -env-file .env.e2e',
       cwd: backendDir,
       url: API_HEALTH,

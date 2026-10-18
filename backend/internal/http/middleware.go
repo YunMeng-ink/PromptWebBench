@@ -13,6 +13,7 @@ import (
 
 	"github.com/promptbench/backend/internal/apperr"
 	"github.com/promptbench/backend/internal/metrics"
+	"github.com/promptbench/backend/internal/service/showcase"
 )
 
 // BodyLimitBytes 是请求体上限（开发方案 §5.1）。
@@ -174,9 +175,30 @@ func EchoCSRF(cookieSecure bool) echo.MiddlewareFunc {
 	})
 }
 
-// EchoBodyLimit 限制请求体大小。
+// EchoBodyLimit 限制请求体大小。评分附图上传路由单独放宽到图片上限，
+// 其余端点仍按 BodyLimitBytes 截断。
 func EchoBodyLimit() echo.MiddlewareFunc {
-	return middleware.BodyLimit(BodyLimitBytes)
+	standard := middleware.BodyLimit(BodyLimitBytes)
+	imageUpload := middleware.BodyLimit(showcase.MaxImageBytes + (1 << 20))
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		standardNext := standard(next)
+		imageNext := imageUpload(next)
+		return func(c *echo.Context) error {
+			if isImageUploadRequest(c.Request()) {
+				return imageNext(c)
+			}
+			return standardNext(c)
+		}
+	}
+}
+
+// isImageUploadRequest 判定评分附图上传请求：POST 且路径为
+// /api/v1/prompts/{id}/rating-images/{model_id}。
+func isImageUploadRequest(r *http.Request) bool {
+	if r.Method != http.MethodPost {
+		return false
+	}
+	return strings.Contains(r.URL.Path, "/prompts/") && strings.Contains(r.URL.Path, "/rating-images/")
 }
 
 // EchoMetrics 记录请求计数与耗时。

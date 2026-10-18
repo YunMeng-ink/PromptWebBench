@@ -11,6 +11,7 @@ import HomeView from '@/views/HomeView.vue'
 // 首页是主要入口，保持在首屏包内；其余视图按路由拆分，
 // 使登录、后台与详情页的代码只在真正进入时下载。
 const LeaderboardView = () => import('@/views/LeaderboardView.vue')
+const ShowcaseView = () => import('@/views/ShowcaseView.vue')
 const LegalView = () => import('@/views/LegalView.vue')
 const MethodologyView = () => import('@/views/MethodologyView.vue')
 const PromptFormView = () => import('@/views/PromptFormView.vue')
@@ -40,6 +41,12 @@ const routes: RouteRecordRaw[] = [
     path: '/leaderboard',
     name: 'leaderboard',
     component: LeaderboardView,
+  },
+  {
+    // 模型结果展示区对游客公开：只展示公开且非高风险提示词下的素材。
+    path: '/showcase',
+    name: 'showcase',
+    component: ShowcaseView,
   },
   {
     // 隐私政策与用户条款（G-10）。两个页面共用同一视图，文案随界面语言切换。
@@ -210,6 +217,11 @@ const routes: RouteRecordRaw[] = [
         path: 'settings',
         name: 'admin-settings',
         component: () => import('@/views/admin/AdminSettingsView.vue'),
+      },
+      {
+        path: 'showcase',
+        name: 'admin-showcase',
+        component: () => import('@/views/admin/AdminShowcaseView.vue'),
       },
     ],
   },

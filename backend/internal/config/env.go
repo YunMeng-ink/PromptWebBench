@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/promptbench/backend/internal/imgbed"
 	"github.com/promptbench/backend/internal/modelsdev"
 )
 
@@ -38,6 +39,10 @@ type Env struct {
 	// ModelsDevURL 是模型目录地址。默认指向 models.dev 正式地址，
 	// 可替换为镜像或本地服务，便于端到端测试与离线部署。
 	ModelsDevURL string
+
+	// ImageBedURL 是图床上传接口地址。默认指向 img.scdn.io 的公开接口，
+	// 可替换为本地服务，便于端到端测试不产生对外流量。
+	ImageBedURL string
 
 	TrustedProxies []string
 	StaticDir      string
@@ -94,6 +99,7 @@ func Load() (Env, error) {
 		GitHubClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
 
 		ModelsDevURL: getenv("MODELS_DEV_URL", modelsdev.DefaultURL),
+		ImageBedURL:  getenv("IMAGE_BED_URL", imgbed.DefaultEndpoint),
 
 		StaticDir: os.Getenv("STATIC_DIR"),
 		LogLevel:  getenv("LOG_LEVEL", "info"),

@@ -12,6 +12,7 @@ function memoryRouter(): Router {
     routes: [
       { path: '/', name: 'home', component: { template: '<div />' } },
       { path: '/methodology', name: 'methodology', component: { template: '<div />' } },
+      { path: '/showcase', name: 'showcase', component: { template: '<div />' } },
       { path: '/prompts/:id', name: 'detail', component: PromptDetailView },
       { path: '/prompts/:id/edit', name: 'edit', component: { template: '<div />' } },
     ],
