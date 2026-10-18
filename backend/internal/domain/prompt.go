@@ -82,17 +82,20 @@ type Tag struct {
 // HighRisk 是考察目的的高风险标记快照，由查询时连同考察目的一并带出，
 // 使可见性判定的输入齐备，无需判定处再查一次数据库。
 type Prompt struct {
-	ID           int64
-	Title        string
-	Body         string
-	Description  string
-	PurposeID    int64
-	CapabilityID int64
-	DifficultyID *int64
-	Visibility   Visibility
-	Sensitive    SensitiveLevel
-	HighRisk     bool
-	UploaderID   int64
+	ID          int64
+	Title       string
+	Body        string
+	Description string
+	PurposeID   int64
+	// CapabilityID 是首个考察维度，保留给列表、统计与兼容读取使用。
+	// CapabilityIDs 是完整集合（一至五个），顺序与用户选择一致。
+	CapabilityID  int64
+	CapabilityIDs []int64
+	DifficultyID  *int64
+	Visibility    Visibility
+	Sensitive     SensitiveLevel
+	HighRisk      bool
+	UploaderID    int64
 
 	OriginalUploaderID *int64
 	CurrentVersionID   *int64
@@ -121,21 +124,22 @@ func (p Prompt) Access() Access {
 
 // PromptVersion 是提示词的一个历史版本。
 type PromptVersion struct {
-	ID           int64
-	PromptID     int64
-	Version      Version
-	Title        string
-	Body         string
-	Description  string
-	PurposeID    int64
-	CapabilityID int64
-	DifficultyID *int64
-	Visibility   Visibility
-	Sensitive    SensitiveLevel
-	IsMajor      bool
-	ChangeNote   string
-	AuthorID     int64
-	CreatedAt    time.Time
+	ID            int64
+	PromptID      int64
+	Version       Version
+	Title         string
+	Body          string
+	Description   string
+	PurposeID     int64
+	CapabilityID  int64
+	CapabilityIDs []int64
+	DifficultyID  *int64
+	Visibility    Visibility
+	Sensitive     SensitiveLevel
+	IsMajor       bool
+	ChangeNote    string
+	AuthorID      int64
+	CreatedAt     time.Time
 }
 
 // Rating 是用户对「提示词 × 模型」的完成度评分（需求 §3.1）。
@@ -156,6 +160,9 @@ const (
 	ScoreMin = 1
 	ScoreMax = 5
 )
+
+// PromptCapabilityLimit 是单条提示词可关联的考察维度上限。
+const PromptCapabilityLimit = 5
 
 // ValidScore 判定分值是否落在量表区间内。
 func ValidScore(score int) bool {

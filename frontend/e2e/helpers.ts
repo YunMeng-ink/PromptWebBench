@@ -190,6 +190,8 @@ export async function createPrompt(page: Page, title: string): Promise<number> {
   await page.getByRole('option', { name: '边界探测', exact: true }).click()
   await page.getByTestId('prompt-capability').locator('.el-select__wrapper').click()
   await page.getByRole('option', { name: '推理', exact: true }).click()
+  // 多选下拉选中后不会自动收起，显式关闭以免遮住后续控件。
+  await page.keyboard.press('Escape')
 
   await page.getByTestId('prompt-submit').click()
   await expect(page).toHaveURL(/\/prompts\/\d+$/)
@@ -223,6 +225,7 @@ export async function createPromptWithVisibility(
   await page.getByRole('option', { name: '边界探测', exact: true }).click()
   await page.getByTestId('prompt-capability').locator('.el-select__wrapper').click()
   await page.getByRole('option', { name: '推理', exact: true }).click()
+  await page.keyboard.press('Escape')
 
   await page.getByTestId('prompt-visibility').locator('.el-select__wrapper').click()
   await page.getByRole('option', { name: visibilityLabel(visibility) }).click()

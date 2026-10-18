@@ -371,18 +371,40 @@ func (s *Server) handleAdminListModelImportLogs(ctx context.Context, in *adminLi
 	return out, nil
 }
 
-func (s *Server) handleAdminPreviewModelImport(ctx context.Context, _ *struct{}) (*adminModelImportPreviewResponse, error) {
+type adminModelImportPreviewInput struct {
+	Body *struct {
+		Page       int32  `json:"page,omitempty" default:"1" minimum:"1" doc:"页码"`
+		PageSize   int32  `json:"page_size,omitempty" default:"50" minimum:"1" maximum:"100" doc:"每页条目数"`
+		Keyword    string `json:"keyword,omitempty" maxLength:"100" doc:"按名称、标识与厂商搜索"`
+		ProviderID string `json:"provider_id,omitempty" maxLength:"100" doc:"按提供商标识筛选"`
+		Status     string `json:"status,omitempty" doc:"筛选状态：new 或 duplicate；留空为全部"`
+		Refresh    bool   `json:"refresh,omitempty" doc:"是否重新读取 models.dev 目录"`
+	}
+}
+
+func (s *Server) handleAdminPreviewModelImport(
+	ctx context.Context, in *adminModelImportPreviewInput,
+) (*adminModelImportPreviewResponse, error) {
 	if _, err := requireAdmin(ctx); err != nil {
 		return nil, err
 	}
-	entries, err := s.deps.Admin.PreviewModelImport(ctx)
+	params := admin.ModelImportPreviewParams{Page: 1, PageSize: 50}
+	if in != nil && in.Body != nil {
+		params.Page = in.Body.Page
+		params.PageSize = in.Body.PageSize
+		params.Refresh = in.Body.Refresh
+		params.Filter = admin.ModelImportFilter{
+			Keyword: in.Body.Keyword, ProviderID: in.Body.ProviderID, Status: in.Body.Status,
+		}
+	}
+	preview, err := s.deps.Admin.PreviewModelImport(ctx, params)
 	if err != nil {
 		return nil, err
 	}
 
 	out := &adminModelImportPreviewResponse{}
-	out.Body.Items = make([]adminModelImportEntryDTO, 0, len(entries))
-	for _, entry := range entries {
+	out.Body.Items = make([]adminModelImportEntryDTO, 0, len(preview.Items))
+	for _, entry := range preview.Items {
 		item := adminModelImportEntryDTO{
 			ProviderID: entry.ProviderID, ProviderName: entry.ProviderName,
 			ModelID: entry.ModelID, Name: entry.Name, Description: entry.Description,
@@ -394,16 +416,47 @@ func (s *Server) handleAdminPreviewModelImport(ctx context.Context, _ *struct{})
 				ID: entry.Duplicate.ID, Name: entry.Duplicate.Name,
 				ProviderName: entry.Duplicate.ProviderName,
 			}
-			out.Body.DuplicateCount++
 		}
 		out.Body.Items = append(out.Body.Items, item)
+	}
+	out.Body.Page = preview.Page
+	out.Body.PageSize = preview.PageSize
+	out.Body.Total = preview.Total
+	out.Body.CatalogTotal = preview.CatalogTotal
+	out.Body.DuplicateCount = preview.DuplicateCount
+	out.Body.FetchedAt = formatTime(preview.FetchedAt)
+	out.Body.Providers = make([]adminModelImportProviderDTO, 0, len(preview.Providers))
+	for _, provider := range preview.Providers {
+		out.Body.Providers = append(out.Body.Providers, adminModelImportProviderDTO{
+			ID: provider.ID, Name: provider.Name,
+			Total: provider.Total, Duplicates: provider.Duplicates,
+		})
 	}
 	return out, nil
 }
 
+type adminImportKeyDTO struct {
+	ProviderID string `json:"provider_id" maxLength:"100"`
+	ModelID    string `json:"model_id" maxLength:"200"`
+}
+
+type adminImportFilterDTO struct {
+	Keyword    string `json:"keyword,omitempty" maxLength:"100"`
+	ProviderID string `json:"provider_id,omitempty" maxLength:"100"`
+	Status     string `json:"status,omitempty" doc:"筛选状态：new 或 duplicate；留空为全部"`
+}
+
+type adminImportSelectionDTO struct {
+	Mode    string                `json:"mode,omitempty" doc:"keys 表示按条目精确导入，filter 表示按筛选条件导入"`
+	Keys    []adminImportKeyDTO   `json:"keys,omitempty" maxItems:"20000"`
+	Filter  *adminImportFilterDTO `json:"filter,omitempty"`
+	Exclude []adminImportKeyDTO   `json:"exclude,omitempty" maxItems:"20000"`
+}
+
 type adminImportModelsInput struct {
 	Body struct {
-		Overwrite bool `json:"overwrite" doc:"是否覆盖同名模型；为假时跳过（需求 §13.4）"`
+		Overwrite bool                     `json:"overwrite" doc:"是否覆盖同名模型；为假时跳过（需求 §13.4）"`
+		Selection *adminImportSelectionDTO `json:"selection,omitempty" doc:"导入范围；省略时导入目录全部条目"`
 	}
 }
 
@@ -412,9 +465,22 @@ func (s *Server) handleAdminImportModels(ctx context.Context, in *adminImportMod
 	if err != nil {
 		return nil, err
 	}
-	result, err := s.deps.Admin.ImportModels(ctx, operator, admin.ModelImportOptions{
-		Overwrite: in.Body.Overwrite,
-	}, clientIP(ctx))
+	opts := admin.ModelImportOptions{Overwrite: in.Body.Overwrite}
+	if selection := in.Body.Selection; selection != nil {
+		opts.Selection = admin.ModelImportSelection{
+			Mode:    selection.Mode,
+			Keys:    toImportKeys(selection.Keys),
+			Exclude: toImportKeys(selection.Exclude),
+		}
+		if selection.Filter != nil {
+			opts.Selection.Filter = admin.ModelImportFilter{
+				Keyword:    selection.Filter.Keyword,
+				ProviderID: selection.Filter.ProviderID,
+				Status:     selection.Filter.Status,
+			}
+		}
+	}
+	result, err := s.deps.Admin.ImportModels(ctx, operator, opts, clientIP(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -424,4 +490,12 @@ func (s *Server) handleAdminImportModels(ctx context.Context, in *adminImportMod
 	out.Body.Overwritten = result.Overwritten
 	out.Body.Skipped = result.Skipped
 	return out, nil
+}
+
+func toImportKeys(items []adminImportKeyDTO) []admin.ModelImportKey {
+	out := make([]admin.ModelImportKey, 0, len(items))
+	for _, item := range items {
+		out = append(out, admin.ModelImportKey{ProviderID: item.ProviderID, ModelID: item.ModelID})
+	}
+	return out
 }

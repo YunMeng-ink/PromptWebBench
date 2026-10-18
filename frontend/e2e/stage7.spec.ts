@@ -25,6 +25,7 @@ const GUEST_ROUTES = [
   '/register',
   '/reset-password',
   '/methodology',
+  '/leaderboard',
   '/privacy',
   '/terms',
   '/no-such-page',
@@ -121,6 +122,51 @@ async function registerAccount(
   return (await page.getByTestId('header-user').innerText()).trim()
 }
 
+test.describe('顶栏自适应', () => {
+  for (const width of [420, 865, 1280]) {
+    test(`${width}px 宽度下顶栏元素不重叠`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 900 })
+      await loginAs(page, ADMIN_EMAIL, ADMIN_PASSWORD)
+
+      const boxes = await page.evaluate(() => {
+        const rect = (selector: string) => {
+          const element = document.querySelector(selector)
+          if (element === null) {
+            return null
+          }
+          const box = element.getBoundingClientRect()
+          return { left: box.left, right: box.right, top: box.top, bottom: box.bottom }
+        }
+        return {
+          brand: rect('.pb-brand'),
+          links: rect('.pb-header__links'),
+          utils: rect('.pb-header__utils'),
+          scrollWidth: document.documentElement.scrollWidth,
+          viewport: document.documentElement.clientWidth,
+        }
+      })
+
+      expect(boxes.brand).not.toBeNull()
+      expect(boxes.links).not.toBeNull()
+      expect(boxes.utils).not.toBeNull()
+      if (boxes.brand === null || boxes.links === null || boxes.utils === null) {
+        return
+      }
+      expect(boxes.scrollWidth, '顶栏不应撑出横向滚动').toBeLessThanOrEqual(boxes.viewport + 1)
+
+      if (width <= 900) {
+        // 窄屏：品牌与工具同排，导航换到下一行。
+        expect(boxes.brand.right).toBeLessThanOrEqual(boxes.utils.left + 1)
+        expect(boxes.links.top).toBeGreaterThanOrEqual(boxes.brand.bottom - 1)
+      } else {
+        // 宽屏：品牌、导航、工具依次排列，互不覆盖。
+        expect(boxes.brand.right).toBeLessThanOrEqual(boxes.links.left + 1)
+        expect(boxes.links.right).toBeLessThanOrEqual(boxes.utils.left + 1)
+      }
+    })
+  }
+})
+
 test.describe('375px 窄屏适配', () => {
   test.use({ viewport: MOBILE_VIEWPORT })
 
@@ -193,6 +239,21 @@ test.describe('隐私政策与用户条款', () => {
     await expect(page.getByTestId('methodology-page')).toContainText('计算方法')
     await expect(page.getByTestId('methodology-page')).toContainText('贝叶斯校准平均分')
     await expect(page.getByTestId('methodology-page')).toContainText('discrimination = clamp')
+  })
+
+  test('计算方法目录可展开并跳转到章节', async ({ page }) => {
+    await page.goto('/methodology')
+    await page.locator('.pb-toc__toggle').click()
+    await page.locator('.pb-toc__list a', { hasText: '能力区分度' }).click()
+
+    await expect(page.locator('#discrimination')).toBeInViewport({ timeout: 5000 })
+  })
+
+  test('排行榜对游客开放并说明刷新周期', async ({ page }) => {
+    await page.goto('/leaderboard')
+
+    await expect(page.getByTestId('leaderboard-page')).toContainText('区分度排行榜')
+    await expect(page.getByTestId('leaderboard-page')).toContainText('自动刷新')
   })
 })
 

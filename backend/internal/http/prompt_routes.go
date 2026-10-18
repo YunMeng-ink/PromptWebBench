@@ -183,7 +183,8 @@ type promptBody struct {
 	Body           string  `json:"body" required:"true" minLength:"1" maxLength:"200000" doc:"提示词正文"`
 	Description    string  `json:"description,omitempty" maxLength:"2000" doc:"描述说明"`
 	PurposeID      int64   `json:"purpose_id" required:"true" minimum:"1" doc:"考察目的"`
-	CapabilityID   int64   `json:"capability_id" required:"true" minimum:"1" doc:"考察维度"`
+	CapabilityIDs  []int64 `json:"capability_ids,omitempty" minItems:"1" maxItems:"5" doc:"考察维度，一至五个"`
+	CapabilityID   int64   `json:"capability_id,omitempty" minimum:"1" doc:"兼容旧客户端：单个考察维度"`
 	DifficultyID   *int64  `json:"difficulty_id,omitempty" minimum:"1" doc:"难度"`
 	Visibility     string  `json:"visibility,omitempty" default:"public" enum:"public,private,developer" doc:"可见性，默认公开"`
 	SensitiveLevel string  `json:"sensitive_level,omitempty" default:"low" enum:"low,medium,high" doc:"敏感级别，默认 low"`
@@ -219,6 +220,7 @@ func (b promptBody) toInput() (prompt.Input, error) {
 		Description:   b.Description,
 		PurposeID:     b.PurposeID,
 		CapabilityID:  b.CapabilityID,
+		CapabilityIDs: b.CapabilityIDs,
 		DifficultyID:  b.DifficultyID,
 		Visibility:    parsedVisibility,
 		Sensitive:     parsedSensitive,

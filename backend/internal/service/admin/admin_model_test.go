@@ -227,14 +227,14 @@ func TestImportModelsSkipsOrOverwritesDuplicates(t *testing.T) {
 	}
 
 	// 预览标出重复项。
-	preview, err := h.service.PreviewModelImport(ctx)
+	preview, err := h.service.PreviewModelImport(ctx, admin.ModelImportPreviewParams{Page: 1, PageSize: 50})
 	if err != nil {
 		t.Fatalf("预览导入失败: %v", err)
 	}
-	if len(preview) != 3 {
-		t.Fatalf("预览条目 = %d，期望 3", len(preview))
+	if len(preview.Items) != 3 || preview.Total != 3 || preview.DuplicateCount != 3 {
+		t.Fatalf("预览结果 = %+v，期望 3 条全部重复", preview)
 	}
-	for _, entry := range preview {
+	for _, entry := range preview.Items {
 		if entry.Duplicate == nil {
 			t.Fatalf("条目 %s 应被标记为重复", entry.ModelID)
 		}
@@ -260,6 +260,131 @@ func TestImportModelsSkipsOrOverwritesDuplicates(t *testing.T) {
 	if h.scalar(t, `SELECT count(*) FROM operation_logs WHERE action = 'model_overwrite'`) != 1 {
 		t.Fatal("覆盖应写入 model_overwrite 操作日志")
 	}
+}
+
+func TestPreviewModelImportFiltersAndPaginates(t *testing.T) {
+	h := newFullHarness(t)
+	ctx := context.Background()
+
+	first, err := h.service.PreviewModelImport(ctx, admin.ModelImportPreviewParams{Page: 1, PageSize: 2})
+	if err != nil {
+		t.Fatalf("预览失败: %v", err)
+	}
+	if first.Total != 3 || first.CatalogTotal != 3 || len(first.Items) != 2 {
+		t.Fatalf("首页 = %+v，期望 3 条中取 2 条", first)
+	}
+	if first.DuplicateCount != 0 || len(first.Providers) != 2 {
+		t.Fatalf("摘要 = %+v，期望无重复且两个提供商", first)
+	}
+
+	second, err := h.service.PreviewModelImport(ctx, admin.ModelImportPreviewParams{Page: 2, PageSize: 2})
+	if err != nil {
+		t.Fatalf("第二页失败: %v", err)
+	}
+	if len(second.Items) != 1 || second.Total != 3 {
+		t.Fatalf("第二页 = %+v，期望 1 条", second)
+	}
+
+	byKeyword, err := h.service.PreviewModelImport(ctx, admin.ModelImportPreviewParams{
+		Filter: admin.ModelImportFilter{Keyword: "alpha"}, Page: 1, PageSize: 50,
+	})
+	if err != nil {
+		t.Fatalf("关键词筛选失败: %v", err)
+	}
+	if byKeyword.Total != 2 || len(byKeyword.Items) != 2 {
+		t.Fatalf("关键词筛选 = %d 条，期望 2", byKeyword.Total)
+	}
+
+	byProvider, err := h.service.PreviewModelImport(ctx, admin.ModelImportPreviewParams{
+		Filter: admin.ModelImportFilter{ProviderID: "beta"}, Page: 1, PageSize: 50,
+	})
+	if err != nil {
+		t.Fatalf("厂商筛选失败: %v", err)
+	}
+	if byProvider.Total != 1 || byProvider.Items[0].ModelID != "beta-one" {
+		t.Fatalf("厂商筛选 = %+v，期望仅 beta-one", byProvider.Items)
+	}
+
+	newOnly, err := h.service.PreviewModelImport(ctx, admin.ModelImportPreviewParams{
+		Filter: admin.ModelImportFilter{Status: admin.ModelImportStatusNew}, Page: 1, PageSize: 50,
+	})
+	if err != nil {
+		t.Fatalf("新模型筛选失败: %v", err)
+	}
+	if newOnly.Total != 3 {
+		t.Fatalf("导入前新模型 = %d 条，期望 3", newOnly.Total)
+	}
+
+	// 同一份目录在缓存有效期内不会重复回源。
+	if h.catalog.requests() != 1 {
+		t.Fatalf("上游访问次数 = %d，期望 1（目录已缓存）", h.catalog.requests())
+	}
+
+	// 管理员主动刷新时丢弃快照并重新回源。
+	if _, err := h.service.PreviewModelImport(ctx, admin.ModelImportPreviewParams{
+		Page: 1, PageSize: 50, Refresh: true,
+	}); err != nil {
+		t.Fatalf("刷新目录失败: %v", err)
+	}
+	if h.catalog.requests() != 2 {
+		t.Fatalf("刷新后上游访问次数 = %d，期望 2", h.catalog.requests())
+	}
+}
+
+func TestImportModelsImportsSelectedEntriesOnly(t *testing.T) {
+	h := newFullHarness(t)
+	ctx := context.Background()
+	operator := h.operator(t)
+
+	result, err := h.service.ImportModels(ctx, operator, admin.ModelImportOptions{
+		Selection: admin.ModelImportSelection{
+			Mode: "keys",
+			Keys: []admin.ModelImportKey{{ProviderID: "alpha", ModelID: "alpha-one"}},
+		},
+	}, "")
+	if err != nil {
+		t.Fatalf("按条目导入失败: %v", err)
+	}
+	if result.Total != 1 || result.Created != 1 {
+		t.Fatalf("按条目导入 = %+v，期望只新建 1 条", result)
+	}
+	if h.scalar(t, `SELECT count(*) FROM models`) != 1 {
+		t.Fatal("未选中的条目不应写入数据库")
+	}
+
+	result, err = h.service.ImportModels(ctx, operator, admin.ModelImportOptions{
+		Selection: admin.ModelImportSelection{
+			Mode:   "filter",
+			Filter: admin.ModelImportFilter{ProviderID: "beta"},
+		},
+	}, "")
+	if err != nil {
+		t.Fatalf("按筛选导入失败: %v", err)
+	}
+	if result.Total != 1 || result.Created != 1 {
+		t.Fatalf("按筛选导入 = %+v，期望新建 beta-one", result)
+	}
+
+	result, err = h.service.ImportModels(ctx, operator, admin.ModelImportOptions{
+		Selection: admin.ModelImportSelection{
+			Mode:    "filter",
+			Exclude: []admin.ModelImportKey{{ProviderID: "beta", ModelID: "beta-one"}},
+		},
+	}, "")
+	if err != nil {
+		t.Fatalf("排除后导入失败: %v", err)
+	}
+	if result.Total != 2 || result.Created != 1 || result.Skipped != 1 {
+		t.Fatalf("排除后导入 = %+v，期望新建 alpha-two 并跳过 alpha-one", result)
+	}
+
+	_, err = h.service.ImportModels(ctx, operator, admin.ModelImportOptions{
+		Selection: admin.ModelImportSelection{
+			Mode: "keys",
+			Keys: []admin.ModelImportKey{{ProviderID: "alpha", ModelID: "missing"}},
+		},
+	}, "")
+	expectCode(t, err, apperr.CodeValidationFailed)
 }
 
 func TestImportModelsReportsBadGatewayWhenUpstreamFails(t *testing.T) {

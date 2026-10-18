@@ -108,6 +108,24 @@ const capabilityGroupByID = computed(
   () => new Map(dictionary.data.capabilities.map((item) => [item.id, item.group_key])),
 )
 
+const capabilityByID = computed(
+  () => new Map(dictionary.data.capabilities.map((item) => [item.id, item])),
+)
+
+/** capabilityNames 用字典把全部维度 ID 转成当前语言的名称。 */
+function capabilityNames(item: PromptListItem): string {
+  const ids = (item.capability_ids?.length ?? 0) > 0 ? item.capability_ids : [item.capability_id]
+  const names = ids
+    .map((id) => {
+      const capability = capabilityByID.value.get(id)
+      return capability ? localized(capability.name_zh, capability.name_en) : ''
+    })
+    .filter((name) => name !== '')
+  return names.length > 0
+    ? names.join(' · ')
+    : localized(item.capability_name_zh, item.capability_name_en)
+}
+
 /** capabilityGroupOf 把维度 ID 映射到分组；字典尚未加载时按认知组处理。 */
 function capabilityGroupOf(id: number): CapabilityGroup {
   return capabilityGroupByID.value.get(id) ?? 'cognitive'
@@ -224,6 +242,22 @@ watch(locale, () => {
         <div class="pb-hero__actions">
           <RouterLink v-if="auth.isAuthenticated" to="/upload" data-testid="home-upload">
             <el-button type="primary">{{ t('nav.upload') }}</el-button>
+          </RouterLink>
+          <RouterLink class="pb-hero__method" to="/leaderboard" data-testid="home-leaderboard">
+            {{ t('home.leaderboard') }}
+            <svg
+              viewBox="0 0 24 24"
+              width="15"
+              height="15"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.6"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <path d="M5 12h13M13 6l6 6-6 6" />
+            </svg>
           </RouterLink>
           <RouterLink class="pb-hero__method" to="/methodology">
             {{ t('home.methodology') }}
@@ -556,7 +590,7 @@ watch(locale, () => {
               <span class="pb-list__chip pb-list__chip--capability">
                 <span class="pb-axis-mark" aria-hidden="true" />
                 {{ t('dimension.capability') }} ·
-                {{ localized(item.capability_name_zh, item.capability_name_en) }}
+                {{ capabilityNames(item) }}
               </span>
               <span
                 v-if="item.difficulty_name_zh && item.difficulty_name_en"

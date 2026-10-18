@@ -15,7 +15,7 @@ import { useErrorMessage } from '@/composables/useErrorMessage'
 
 type TabName = 'capabilities' | 'purposes'
 
-const { t, locale } = useI18n()
+const { t, te, locale } = useI18n()
 const { messageOf } = useErrorMessage()
 
 const activeTab = ref<TabName>('capabilities')
@@ -73,7 +73,8 @@ function localizedDescription(zh: string, en: string): string {
 }
 
 function groupLabel(groupKey: string): string {
-  return t(`admin.dictionary.group${groupKey.charAt(0).toUpperCase()}${groupKey.slice(1)}`)
+  const key = `admin.dictionary.group${groupKey.charAt(0).toUpperCase()}${groupKey.slice(1)}`
+  return te(key) ? t(key) : groupKey
 }
 
 async function load(): Promise<void> {
@@ -301,7 +302,7 @@ onMounted(load)
                 {{ t('admin.common.edit') }}
               </el-button>
               <el-button size="small" text type="danger" @click="removeCapability(row)">
-                {{ t('admin.common.delete') }}
+                {{ t('admin.common.remove') }}
               </el-button>
             </template>
           </el-table-column>
@@ -353,7 +354,7 @@ onMounted(load)
                 {{ t('admin.common.edit') }}
               </el-button>
               <el-button size="small" text type="danger" @click="removePurpose(row)">
-                {{ t('admin.common.delete') }}
+                {{ t('admin.common.remove') }}
               </el-button>
             </template>
           </el-table-column>

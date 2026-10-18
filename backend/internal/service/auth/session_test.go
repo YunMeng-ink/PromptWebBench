@@ -2,9 +2,11 @@ package auth_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/promptbench/backend/internal/apperr"
+	"github.com/promptbench/backend/internal/domain"
 	"github.com/promptbench/backend/internal/platform/pgtest"
 )
 
@@ -219,4 +221,19 @@ func TestUpdateProfile(t *testing.T) {
 	other := h.registerAndVerify(t, "other@example.com", testPassword)
 	_, err = h.service.UpdateProfile(ctx, other, "新昵称", "", "")
 	expectCode(t, err, apperr.CodeConflict)
+
+	// 昵称上限按字符数计，超出即拒绝。
+	tooLong := strings.Repeat("长", domain.UsernameMaxRunes+1)
+	_, err = h.service.UpdateProfile(ctx, userID, tooLong, "", "")
+	expectCode(t, err, apperr.CodeValidationFailed)
+
+	// 正好等于上限的中文昵称可以保存。
+	atLimit := strings.Repeat("长", domain.UsernameMaxRunes)
+	saved, err := h.service.UpdateProfile(ctx, userID, atLimit, "", "")
+	if err != nil {
+		t.Fatalf("保存上限长度昵称失败: %v", err)
+	}
+	if saved.Username != atLimit {
+		t.Fatalf("昵称 = %q，期望 %q", saved.Username, atLimit)
+	}
 }

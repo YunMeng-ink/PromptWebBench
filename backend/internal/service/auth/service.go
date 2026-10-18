@@ -327,8 +327,10 @@ func usernameBase(source string) string {
 	if base == "" {
 		base = "user"
 	}
-	if len(base) > 32 {
-		base = base[:32]
+	// 去重后缀最长会追加 7 个字符（"-" 加 6 位），基名必须为后缀留出余量，
+	// 否则拼接结果会超出昵称上限。
+	if len(base) > domain.UsernameMaxRunes-8 {
+		base = base[:domain.UsernameMaxRunes-8]
 	}
 	return base
 }

@@ -14,6 +14,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -83,6 +84,12 @@ type Service struct {
 	prompts   PromptWriter
 	moderate  ContentModerator
 	stats     StatsHook
+
+	// catalogMu 保护 models.dev 目录快照。预览与导入共享同一份快照，
+	// 使分页检索不会反复回源。
+	catalogMu        sync.Mutex
+	catalogEntries   []modelsdev.Entry
+	catalogFetchedAt time.Time
 
 	now func() time.Time
 }

@@ -202,6 +202,56 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('PromptDetailView 评分模型选择', () => {
+  it('模型较多时默认只展示有评分的模型，并可切换为全部', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const path = url.replace(/^https?:\/\/[^/]+/, '').split('?')[0] ?? ''
+        if (path.endsWith('/session')) {
+          return stubResponse({ status: 401, body: errorEnvelope('unauthorized') })
+        }
+        if (path === '/api/v1/prompts/1/stats') {
+          return stubResponse({ status: 200, body: statsFixture })
+        }
+        if (path === '/api/v1/prompts/1/ratings') {
+          const items = Array.from({ length: 12 }, (_, index) => ({
+            model_id: index + 1,
+            model_name: `模型 ${String(index + 1).padStart(2, '0')}`,
+            rating_count: index === 0 ? 3 : 0,
+            user_count: index === 0 ? 3 : 0,
+            mean_score: index === 0 ? 4.2 : 0,
+          }))
+          return stubResponse({ status: 200, body: { items } })
+        }
+        if (path === '/api/v1/prompts/1') {
+          return stubResponse({ status: 200, body: detailFixture })
+        }
+        return stubResponse({ status: 404, body: errorEnvelope('not_found') })
+      }),
+    )
+
+    const wrapper = await mountDetail()
+    // 默认展示 8 个：有评分的模型优先，其余按字典顺序补足。
+    expect(wrapper.findAll('[data-testid^="rating-count-"]')).toHaveLength(8)
+    expect(wrapper.find('[data-testid="ratings-selection-summary"]').text()).toContain(
+      '显示 8 / 12 个模型',
+    )
+
+    await wrapper.find('[data-testid="ratings-quick-all"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid^="rating-count-"]')).toHaveLength(12)
+
+    await wrapper.find('[data-testid="ratings-quick-rated"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid^="rating-count-"]')).toHaveLength(1)
+
+    await wrapper.find('[data-testid="ratings-quick-reset"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid^="rating-count-"]')).toHaveLength(8)
+  })
+})
+
 describe('PromptDetailView 测量结果', () => {
   it('数据充足的历史区分度显示数值', async () => {
     stubDetailEndpoints()

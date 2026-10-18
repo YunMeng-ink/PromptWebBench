@@ -1027,6 +1027,14 @@ html.dark .el-button--primary {
 
 .el-table td.el-table__cell {
   padding: 14px 0;
+  transition: background-color var(--pb-duration-fast) var(--pb-ease);
+}
+
+.el-tag {
+  transition:
+    color var(--pb-duration-fast) var(--pb-ease),
+    background-color var(--pb-duration-fast) var(--pb-ease),
+    border-color var(--pb-duration-fast) var(--pb-ease);
 }
 
 .el-table__inner-wrapper::before {

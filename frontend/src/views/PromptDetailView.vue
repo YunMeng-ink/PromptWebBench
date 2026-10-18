@@ -60,14 +60,131 @@ const dialogVisible = computed({
 
 const scores = [1, 2, 3, 4, 5] as const
 
+/**
+ * ratingModelIDs 是评分列表中当前展示的模型集合。
+ *
+ * 模型字典可能有上百条，全部平铺会让页面无限变长。默认只展示已有评分与
+ * 本人评过的模型；其余模型由用户通过上方的选择器按需加入。
+ */
+const ratingModelIDs = ref<number[]>([])
+/** ratingSelectionTouched 记录用户是否调整过集合，避免刷新评分后覆盖其选择。 */
+const ratingSelectionTouched = ref(false)
+
+/** DEFAULT_RATING_MODELS 是没有任何评分时默认展示的模型数量。 */
+const DEFAULT_RATING_MODELS = 8
+
+/**
+ * defaultRatingModelIDs 给出默认展示集合。
+ *
+ * 先纳入已有评分与本人评过的模型，再按字典顺序补足到默认条数。
+ * 页面长度因此有固定上界，同时不会因为只有一条评分就把其余模型全部藏起来。
+ */
+function defaultRatingModelIDs(items: PromptModelRating[]): number[] {
+  const active = items.filter((item) => item.rating_count > 0 || item.my_score !== undefined)
+  const selected = active.map((item) => item.model_id)
+  if (selected.length >= DEFAULT_RATING_MODELS) {
+    return selected
+  }
+  const chosen = new Set(selected)
+  for (const item of items) {
+    if (selected.length >= DEFAULT_RATING_MODELS) {
+      break
+    }
+    if (!chosen.has(item.model_id)) {
+      chosen.add(item.model_id)
+      selected.push(item.model_id)
+    }
+  }
+  return selected
+}
+
+/** ratingOptions 是选择器的全部候选模型，附带评分与本人评分便于检索。 */
+const ratingOptions = computed(() =>
+  ratings.value.map((item) => ({
+    value: item.model_id,
+    label: item.model_name,
+    rated: item.rating_count > 0,
+    mine: item.my_score !== undefined,
+  })),
+)
+
+/** selectedRatings 是按选择集合过滤后的评分行。 */
+const selectedRatings = computed(() => {
+  const selected = new Set(ratingModelIDs.value)
+  return ratings.value.filter((item) => selected.has(item.model_id))
+})
+
+/** hiddenRatingCount 是当前未展示的模型数量。 */
+const hiddenRatingCount = computed(() => ratings.value.length - selectedRatings.value.length)
+
+/** ratingSelectionIsDefault 表示当前集合仍是默认集合，用于显示补充说明。 */
+const ratingSelectionIsDefault = computed(
+  () => !ratingSelectionTouched.value && hiddenRatingCount.value > 0,
+)
+
+/** setRatingModelIDs 记录用户的手动选择并去掉已不存在的模型。 */
+function setRatingModelIDs(ids: number[]): void {
+  const available = new Set(ratings.value.map((item) => item.model_id))
+  ratingSelectionTouched.value = true
+  ratingModelIDs.value = ids.filter((id) => available.has(id))
+}
+
+/** ensureRatingModel 把指定模型加入展示集合，供外部直接发起评分时使用。 */
+function ensureRatingModel(modelID: number): void {
+  if (ratingModelIDs.value.includes(modelID)) {
+    return
+  }
+  ratingSelectionTouched.value = true
+  ratingModelIDs.value = [...ratingModelIDs.value, modelID]
+}
+
+/** applyRatingQuick 按快捷条件重设展示集合。 */
+function applyRatingQuick(kind: 'all' | 'rated' | 'mine'): void {
+  ratingSelectionTouched.value = true
+  switch (kind) {
+    case 'all':
+      ratingModelIDs.value = ratings.value.map((item) => item.model_id)
+      break
+    case 'rated':
+      ratingModelIDs.value = ratings.value
+        .filter((item) => item.rating_count > 0)
+        .map((item) => item.model_id)
+      break
+    case 'mine':
+      ratingModelIDs.value = ratings.value
+        .filter((item) => item.my_score !== undefined)
+        .map((item) => item.model_id)
+      break
+  }
+}
+
+/** resetRatingSelection 回到默认展示集合。 */
+function resetRatingSelection(): void {
+  ratingSelectionTouched.value = false
+  ratingModelIDs.value = defaultRatingModelIDs(ratings.value)
+}
+
 function localized(zh: string, en: string): string {
   return locale.value === 'en' ? en : zh
 }
 
 /** groupClass 把考察维度的分组映射为详情页的强调色类名。 */
 const groupClass = computed(() => {
-  const group = detail.value?.capability.group_key ?? 'cognitive'
+  const group =
+    detail.value?.capabilities?.[0]?.group_key ?? detail.value?.capability.group_key ?? 'cognitive'
   return `pb-prompt-detail--${group}`
+})
+
+/** capabilityNames 把全部考察维度按当前语言拼成一行。 */
+const capabilityNames = computed(() => {
+  if (detail.value === null) {
+    return ''
+  }
+  const rows =
+    (detail.value.capabilities?.length ?? 0) > 0
+      ? detail.value.capabilities
+      : [detail.value.capability]
+  return rows.map((item) => localized(item.name_zh, item.name_en)).join(' · ')
 })
 
 /** meterStyle 把 1～5 分的取值映射为量表条宽度。 */
@@ -122,6 +239,7 @@ function tagText(tag: PromptStats['recommendation'][number]): string {
 const maxEdits = ref(3)
 
 function startRating(item: PromptModelRating): void {
+  ensureRatingModel(item.model_id)
   pendingModel.value = item.model_id
   pendingScore.value = item.my_score
   editingExisting.value = item.my_score !== undefined
@@ -200,8 +318,7 @@ async function copyFull(): Promise<void> {
   }
   const current = detail.value
   const purposeName = locale.value === 'en' ? current.purpose.name_en : current.purpose.name_zh
-  const capabilityName =
-    locale.value === 'en' ? current.capability.name_en : current.capability.name_zh
+  const capabilityName = capabilityNames.value
   await copy(
     promptFullText(
       {
@@ -237,6 +354,9 @@ async function reloadRatings(): Promise<void> {
   }
   const result = await ratingApi.byPrompt(promptID.value)
   ratings.value = result.items
+  if (!ratingSelectionTouched.value) {
+    ratingModelIDs.value = defaultRatingModelIDs(ratings.value)
+  }
 }
 
 /**
@@ -331,6 +451,8 @@ async function loadDetail(): Promise<void> {
   failure.value = ''
   detail.value = null
   ratings.value = []
+  ratingModelIDs.value = []
+  ratingSelectionTouched.value = false
   if (promptID.value === null) {
     loading.value = false
     failure.value = t('prompt.notFound')
@@ -378,7 +500,7 @@ watch(promptID, () => {
             <span class="pb-prompt-detail__chip pb-prompt-detail__chip--capability">
               <span class="pb-axis-mark" aria-hidden="true" />
               {{ t('dimension.capability') }} ·
-              {{ localized(detail.capability.name_zh, detail.capability.name_en) }}
+              {{ capabilityNames }}
             </span>
             <span v-if="detail.difficulty" class="pb-prompt-detail__chip">
               {{ t('dimension.difficulty') }} ·
@@ -447,9 +569,7 @@ watch(promptID, () => {
         </div>
         <div>
           <dt>{{ t('prompt.capability') }}</dt>
-          <dd data-testid="detail-capability">
-            {{ localized(detail.capability.name_zh, detail.capability.name_en) }}
-          </dd>
+          <dd data-testid="detail-capability">{{ capabilityNames }}</dd>
         </div>
         <div v-if="detail.difficulty">
           <dt>{{ t('prompt.difficulty') }}</dt>
@@ -493,10 +613,83 @@ watch(promptID, () => {
         <h2 class="pb-ratings__title">{{ t('prompt.ratingSection') }}</h2>
         <p class="pb-ratings__hint">{{ t('prompt.ratingHint') }}</p>
 
+        <div v-if="ratings.length > 0" class="pb-ratings__picker">
+          <el-select
+            :model-value="ratingModelIDs"
+            data-testid="ratings-model-select"
+            class="pb-ratings__select"
+            multiple
+            filterable
+            collapse-tags
+            collapse-tags-tooltip
+            clearable
+            :placeholder="t('prompt.ratingSelectPlaceholder')"
+            @update:model-value="setRatingModelIDs($event as number[])"
+          >
+            <el-option
+              v-for="option in ratingOptions"
+              :key="option.value"
+              :value="option.value"
+              :label="option.label"
+            >
+              <span class="pb-ratings__option">
+                <span>{{ option.label }}</span>
+                <span class="pb-ratings__option-tags">
+                  <span v-if="option.rated" class="pb-ratings__option-tag">
+                    {{ t('prompt.ratingSelectRated') }}
+                  </span>
+                  <span v-if="option.mine" class="pb-ratings__option-tag is-mine">
+                    {{ t('prompt.ratingSelectMine') }}
+                  </span>
+                </span>
+              </span>
+            </el-option>
+          </el-select>
+
+          <div class="pb-ratings__quick">
+            <el-button size="small" text data-testid="ratings-quick-all" @click="applyRatingQuick('all')">
+              {{ t('prompt.ratingSelectAll') }}
+            </el-button>
+            <el-button size="small" text data-testid="ratings-quick-rated" @click="applyRatingQuick('rated')">
+              {{ t('prompt.ratingSelectRatedOnly') }}
+            </el-button>
+            <el-button
+              v-if="auth.isAuthenticated"
+              size="small"
+              text
+              data-testid="ratings-quick-mine"
+              @click="applyRatingQuick('mine')"
+            >
+              {{ t('prompt.ratingSelectMineOnly') }}
+            </el-button>
+            <el-button size="small" text data-testid="ratings-quick-reset" @click="resetRatingSelection">
+              {{ t('prompt.ratingSelectReset') }}
+            </el-button>
+          </div>
+
+          <p class="pb-ratings__selection" data-testid="ratings-selection-summary">
+            {{
+              t('prompt.ratingSelectSummary', {
+                selected: selectedRatings.length,
+                total: ratings.length,
+              })
+            }}
+            <span v-if="ratingSelectionIsDefault">{{ t('prompt.ratingSelectDefaultHint') }}</span>
+          </p>
+        </div>
+
         <p v-if="ratings.length === 0" data-testid="ratings-empty">{{ t('prompt.ratingEmpty') }}</p>
 
+        <p
+          v-else-if="selectedRatings.length === 0"
+          class="pb-ratings__selection-empty"
+          data-testid="ratings-selection-empty"
+        >
+          {{ t('prompt.ratingSelectEmpty') }}
+        </p>
+
         <ul v-else class="pb-ratings__list" data-testid="ratings-list">
-          <li v-for="item in ratings" :key="item.model_id" class="pb-ratings__item">
+          <li v-for="item in selectedRatings" :key="item.model_id" class="pb-ratings__item">
             <div class="pb-ratings__row">
               <span class="pb-ratings__model">{{ item.model_name }}</span>
               <span class="pb-ratings__count" :data-testid="`rating-count-${item.model_id}`">
@@ -1038,6 +1231,67 @@ watch(promptID, () => {
   transform: rotate(45deg);
 }
 
+.pb-ratings__picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-sm);
+  margin-bottom: var(--pb-space-md);
+}
+
+.pb-ratings__select {
+  max-width: 100%;
+  width: 420px;
+}
+
+.pb-ratings__option {
+  align-items: center;
+  display: flex;
+  gap: var(--pb-space-sm);
+  justify-content: space-between;
+  width: 100%;
+}
+
+.pb-ratings__option-tags {
+  display: inline-flex;
+  flex: none;
+  gap: 4px;
+}
+
+.pb-ratings__option-tag {
+  background: var(--pb-surface-muted);
+  border-radius: var(--pb-radius-pill);
+  color: var(--pb-ink-faint);
+  font-size: 10.5px;
+  padding: 1px 7px;
+}
+
+.pb-ratings__option-tag.is-mine {
+  background: var(--pb-accent-soft);
+  color: var(--pb-accent-strong);
+}
+
+.pb-ratings__quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pb-space-xs);
+}
+
+.pb-ratings__selection {
+  color: var(--pb-ink-faint);
+  font-size: 12px;
+  margin: 0;
+}
+
+.pb-ratings__selection-empty {
+  border: 1px dashed var(--pb-line-strong);
+  border-radius: var(--pb-radius-md);
+  color: var(--pb-ink-faint);
+  font-size: 13px;
+  margin: 0;
+  padding: var(--pb-space-lg);
+  text-align: center;
+}
+
 .pb-ratings__hint,
 .pb-stats__hint {
   margin: 0 0 var(--pb-space-md);
@@ -1351,6 +1605,10 @@ watch(promptID, () => {
 
   .pb-ratings__model {
     min-width: 0;
+  }
+
+  .pb-ratings__select {
+    width: 100%;
   }
 
   .pb-versions__item {

@@ -122,6 +122,98 @@ func (q *Queries) GetPromptStatsWatermark(ctx context.Context, promptID int64) (
 	return watermark, err
 }
 
+const listDiscriminationLeaderboard = `-- name: ListDiscriminationLeaderboard :many
+SELECT
+    p.id,
+    p.title,
+    ps.computed_at,
+    COALESCE(CASE $1::text
+        WHEN 'recent' THEN ps.recent_discrimination
+        WHEN 'history' THEN ps.history_discrimination
+        ELSE ps.sort_discrimination
+    END, 0)::float8 AS discrimination,
+    COALESCE(CASE
+        WHEN $1::text = 'recent' THEN ps.recent_confidence
+        WHEN $1::text = 'history' THEN ps.history_confidence
+        WHEN ps.recent_discrimination >= COALESCE(ps.history_discrimination, 0) THEN ps.recent_confidence
+        ELSE ps.history_confidence
+    END, 'low')::text AS confidence,
+    COALESCE(CASE
+        WHEN $1::text = 'recent' THEN ps.recent_valid_model_count
+        WHEN $1::text = 'history' THEN ps.history_valid_model_count
+        WHEN ps.recent_discrimination >= COALESCE(ps.history_discrimination, 0) THEN ps.recent_valid_model_count
+        ELSE ps.history_valid_model_count
+    END, 0)::int AS valid_model_count,
+    COALESCE(CASE
+        WHEN $1::text = 'recent' THEN ps.recent_total_rating_count
+        WHEN $1::text = 'history' THEN ps.history_total_rating_count
+        WHEN ps.recent_discrimination >= COALESCE(ps.history_discrimination, 0) THEN ps.recent_total_rating_count
+        ELSE ps.history_total_rating_count
+    END, 0)::int AS total_rating_count
+FROM prompt_stats ps
+JOIN prompts p ON p.id = ps.prompt_id
+WHERE p.deleted_at IS NULL
+  AND p.visibility = 'public'
+  AND CASE $1::text
+        WHEN 'recent' THEN NOT ps.recent_insufficient AND ps.recent_discrimination IS NOT NULL
+        WHEN 'history' THEN NOT ps.history_insufficient AND ps.history_discrimination IS NOT NULL
+        ELSE ps.data_sufficient AND ps.sort_discrimination IS NOT NULL
+      END
+ORDER BY
+    CASE $1::text
+        WHEN 'recent' THEN ps.recent_discrimination
+        WHEN 'history' THEN ps.history_discrimination
+        ELSE ps.sort_discrimination
+    END DESC NULLS LAST,
+    p.id DESC
+LIMIT $2
+`
+
+type ListDiscriminationLeaderboardParams struct {
+	WindowKey  string
+	LimitCount int32
+}
+
+type ListDiscriminationLeaderboardRow struct {
+	ID               int64
+	Title            string
+	ComputedAt       pgtype.Timestamptz
+	Discrimination   float64
+	Confidence       string
+	ValidModelCount  int32
+	TotalRatingCount int32
+}
+
+// 区分度排行榜：只列公开提示词，按指定窗口的区分度降序。
+// window_key 取 overall、recent 或 history；数据不足的窗口不参与排名。
+func (q *Queries) ListDiscriminationLeaderboard(ctx context.Context, arg ListDiscriminationLeaderboardParams) ([]ListDiscriminationLeaderboardRow, error) {
+	rows, err := q.db.Query(ctx, listDiscriminationLeaderboard, arg.WindowKey, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDiscriminationLeaderboardRow{}
+	for rows.Next() {
+		var i ListDiscriminationLeaderboardRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.ComputedAt,
+			&i.Discrimination,
+			&i.Confidence,
+			&i.ValidModelCount,
+			&i.TotalRatingCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPromptModelAggregates = `-- name: ListPromptModelAggregates :many
 
 SELECT m.id AS model_id,

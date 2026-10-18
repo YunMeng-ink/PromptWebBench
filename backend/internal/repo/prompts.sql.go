@@ -50,6 +50,23 @@ func (q *Queries) ArchivePromptRatings(ctx context.Context, arg ArchivePromptRat
 	return items, nil
 }
 
+const attachPromptCapability = `-- name: AttachPromptCapability :exec
+INSERT INTO prompt_capabilities (prompt_id, capability_id, sort_order)
+VALUES ($1, $2, $3)
+ON CONFLICT (prompt_id, capability_id) DO UPDATE SET sort_order = EXCLUDED.sort_order
+`
+
+type AttachPromptCapabilityParams struct {
+	PromptID     int64
+	CapabilityID int64
+	SortOrder    int16
+}
+
+func (q *Queries) AttachPromptCapability(ctx context.Context, arg AttachPromptCapabilityParams) error {
+	_, err := q.db.Exec(ctx, attachPromptCapability, arg.PromptID, arg.CapabilityID, arg.SortOrder)
+	return err
+}
+
 const attachPromptTag = `-- name: AttachPromptTag :exec
 INSERT INTO prompt_tags (prompt_id, tag_id)
 VALUES ($1, $2)
@@ -63,6 +80,24 @@ type AttachPromptTagParams struct {
 
 func (q *Queries) AttachPromptTag(ctx context.Context, arg AttachPromptTagParams) error {
 	_, err := q.db.Exec(ctx, attachPromptTag, arg.PromptID, arg.TagID)
+	return err
+}
+
+const attachPromptVersionCapability = `-- name: AttachPromptVersionCapability :exec
+INSERT INTO prompt_version_capabilities (prompt_version_id, capability_id, sort_order)
+VALUES ($1, $2, $3)
+ON CONFLICT DO NOTHING
+`
+
+type AttachPromptVersionCapabilityParams struct {
+	PromptVersionID int64
+	CapabilityID    int64
+	SortOrder       int16
+}
+
+// 版本维度的写入只发生在版本创建时；历史版本不修改。
+func (q *Queries) AttachPromptVersionCapability(ctx context.Context, arg AttachPromptVersionCapabilityParams) error {
+	_, err := q.db.Exec(ctx, attachPromptVersionCapability, arg.PromptVersionID, arg.CapabilityID, arg.SortOrder)
 	return err
 }
 
@@ -614,6 +649,73 @@ func (q *Queries) ListOwnPrompts(ctx context.Context, arg ListOwnPromptsParams) 
 	return items, nil
 }
 
+const listPromptCapabilities = `-- name: ListPromptCapabilities :many
+SELECT c.id, c.slug, c.name_zh, c.name_en, c.group_key, c.description_zh, c.description_en, c.is_enabled, c.sort_order, c.created_at, c.updated_at
+FROM capabilities c
+JOIN prompt_capabilities pc ON pc.capability_id = c.id
+WHERE pc.prompt_id = $1
+ORDER BY pc.sort_order, c.id
+`
+
+func (q *Queries) ListPromptCapabilities(ctx context.Context, promptID int64) ([]Capability, error) {
+	rows, err := q.db.Query(ctx, listPromptCapabilities, promptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Capability{}
+	for rows.Next() {
+		var i Capability
+		if err := rows.Scan(
+			&i.ID,
+			&i.Slug,
+			&i.NameZh,
+			&i.NameEn,
+			&i.GroupKey,
+			&i.DescriptionZh,
+			&i.DescriptionEn,
+			&i.IsEnabled,
+			&i.SortOrder,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPromptCapabilityIDs = `-- name: ListPromptCapabilityIDs :many
+SELECT capability_id
+FROM prompt_capabilities
+WHERE prompt_id = $1
+ORDER BY sort_order, capability_id
+`
+
+func (q *Queries) ListPromptCapabilityIDs(ctx context.Context, promptID int64) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listPromptCapabilityIDs, promptID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var capability_id int64
+		if err := rows.Scan(&capability_id); err != nil {
+			return nil, err
+		}
+		items = append(items, capability_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPromptTagIDs = `-- name: ListPromptTagIDs :many
 SELECT tag_id FROM prompt_tags WHERE prompt_id = $1
 `
@@ -671,6 +773,33 @@ func (q *Queries) ListPromptTags(ctx context.Context, promptID int64) ([]Tag, er
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPromptVersionCapabilityIDs = `-- name: ListPromptVersionCapabilityIDs :many
+SELECT capability_id
+FROM prompt_version_capabilities
+WHERE prompt_version_id = $1
+ORDER BY sort_order, capability_id
+`
+
+func (q *Queries) ListPromptVersionCapabilityIDs(ctx context.Context, promptVersionID int64) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listPromptVersionCapabilityIDs, promptVersionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var capability_id int64
+		if err := rows.Scan(&capability_id); err != nil {
+			return nil, err
+		}
+		items = append(items, capability_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -864,6 +993,16 @@ SELECT pg_advisory_xact_lock((4::bigint << 32) + $1::bigint)
 // 4 私有提示词额度。高位置命名空间使不同域的同号对象不再互相阻塞。
 func (q *Queries) LockPromptOwner(ctx context.Context, ownerID int64) error {
 	_, err := q.db.Exec(ctx, lockPromptOwner, ownerID)
+	return err
+}
+
+const replacePromptCapabilities = `-- name: ReplacePromptCapabilities :exec
+DELETE FROM prompt_capabilities WHERE prompt_id = $1
+`
+
+// 提示词当前版本的考察维度集合（一至五个）。整体替换使取消勾选可以生效。
+func (q *Queries) ReplacePromptCapabilities(ctx context.Context, promptID int64) error {
+	_, err := q.db.Exec(ctx, replacePromptCapabilities, promptID)
 	return err
 }
 

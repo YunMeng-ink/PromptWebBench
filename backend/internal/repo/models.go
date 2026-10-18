@@ -300,6 +300,12 @@ type Prompt struct {
 	CapabilityID       int64
 }
 
+type PromptCapability struct {
+	PromptID     int64
+	CapabilityID int64
+	SortOrder    int16
+}
+
 type PromptModelStat struct {
 	PromptID               int64
 	ModelID                int64
@@ -368,6 +374,12 @@ type PromptVersion struct {
 	CreatedAt      pgtype.Timestamptz
 	PurposeID      int64
 	CapabilityID   int64
+}
+
+type PromptVersionCapability struct {
+	PromptVersionID int64
+	CapabilityID    int64
+	SortOrder       int16
 }
 
 type PromptVersionRating struct {

@@ -84,6 +84,9 @@ async function onLogout(): Promise<void> {
           <RouterLink class="pb-header__link" to="/" data-testid="header-home">
             {{ t('nav.home') }}
           </RouterLink>
+          <RouterLink class="pb-header__link" to="/leaderboard" data-testid="header-leaderboard">
+            {{ t('nav.leaderboard') }}
+          </RouterLink>
           <RouterLink
             v-if="auth.status === 'authenticated'"
             class="pb-header__link"
@@ -181,8 +184,13 @@ async function onLogout(): Promise<void> {
 
           <template v-if="auth.status === 'authenticated'">
             <el-dropdown trigger="click">
-              <button type="button" class="pb-header__user" data-testid="header-user">
-                {{ auth.user?.username }}
+              <button
+                type="button"
+                class="pb-header__user"
+                :title="auth.user?.username"
+                data-testid="header-user"
+              >
+                <span class="pb-header__user-name">{{ auth.user?.username }}</span>
               </button>
               <template #dropdown>
                 <el-dropdown-menu>
@@ -298,10 +306,12 @@ html.dark .pb-brand__mark {
 }
 
 .pb-brand__title {
+  overflow: hidden;
   font-family: var(--pb-font-display);
   font-size: 21px;
   font-weight: 500;
   letter-spacing: -0.015em;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -445,7 +455,10 @@ html.dark .pb-brand__mark {
   align-items: center;
   gap: 7px;
   max-width: 180px;
+  min-width: 0;
+  overflow: hidden;
   padding: 6px 13px;
+  white-space: nowrap;
   border: 1px solid var(--pb-line);
   border-radius: var(--pb-radius-pill);
   background: var(--pb-surface);
@@ -456,6 +469,12 @@ html.dark .pb-brand__mark {
   transition:
     border-color var(--pb-duration) var(--pb-ease),
     background-color var(--pb-duration) var(--pb-ease);
+}
+
+.pb-header__user-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .pb-header__user::before {
@@ -495,36 +514,101 @@ html.dark .pb-brand__mark {
   }
 }
 
-@media (max-width: 760px) {
+/* 中等宽度先收紧间距与次要文案，避免导航项和右侧工具挤在一起。 */
+@media (max-width: 980px) {
+  .pb-header__inner {
+    gap: var(--pb-space-md);
+  }
+
+  .pb-header__actions {
+    gap: var(--pb-space-md);
+  }
+
+  .pb-header__links {
+    gap: var(--pb-space-sm);
+  }
+
+  .pb-header__icon-label {
+    display: none;
+  }
+
+  .pb-header__locale {
+    width: 72px;
+  }
+}
+
+/* 窄屏改为两行网格：品牌与工具在首行，导航单独占第二行并可横向滑动。 */
+@media (max-width: 900px) {
   .pb-header {
     height: auto;
     min-height: var(--pb-header-height);
   }
 
   .pb-header__inner {
-    flex-wrap: wrap;
-    padding-top: var(--pb-space-sm);
+    display: grid;
+    grid-template-areas:
+      "brand utils"
+      "links links";
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--pb-space-sm) var(--pb-space-sm);
+    height: auto;
     padding-bottom: var(--pb-space-sm);
-    row-gap: var(--pb-space-sm);
+    padding-top: var(--pb-space-sm);
   }
 
   .pb-header__actions {
-    width: 100%;
-    justify-content: space-between;
-    gap: var(--pb-space-sm);
+    display: contents;
+  }
+
+  .pb-brand {
+    grid-area: brand;
   }
 
   .pb-header__links {
+    grid-area: links;
+    min-width: 0;
     overflow-x: auto;
     padding-bottom: 2px;
+    scrollbar-width: none;
+  }
+
+  .pb-header__links::-webkit-scrollbar {
+    display: none;
   }
 
   .pb-header__link {
+    flex: none;
     font-size: 13px;
+  }
+
+  .pb-header__utils {
+    grid-area: utils;
+    justify-self: end;
+    min-width: 0;
   }
 
   .pb-header__locale {
     width: 76px;
+  }
+
+  .pb-header__user {
+    max-width: 112px;
+  }
+}
+
+@media (max-width: 460px) {
+  .pb-brand__title {
+    font-size: 17px;
+  }
+
+  .pb-header__locale {
+    width: 68px;
+  }
+
+  .pb-header__user {
+    max-width: 84px;
+    padding-left: 10px;
+    padding-right: 10px;
   }
 }
 </style>

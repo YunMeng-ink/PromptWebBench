@@ -78,6 +78,23 @@ function clickElement(wrapper: VueWrapper, testid: string): void {
   element.click()
 }
 
+/** clickCheckbox 点击复选框内部的 input，触发 Element Plus 的 change 事件。 */
+function clickCheckbox(wrapper: VueWrapper, testid: string): void {
+  const host = hostElement(wrapper, testid)
+  if (host === null) {
+    throw new Error(`未找到 ${testid}`)
+  }
+  const input =
+    host instanceof HTMLInputElement
+      ? host
+      : host.querySelector<HTMLInputElement>('input[type="checkbox"]')
+  if (input === null) {
+    throw new Error(`${testid} 内没有复选框`)
+  }
+  input.checked = !input.checked
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
 /** clickMessageBoxConfirm 点击 ElMessageBox 的确认按钮。 */
 async function clickMessageBoxConfirm(): Promise<void> {
   await flushPromises()
@@ -338,7 +355,13 @@ function stubAdminEndpoints(overrides: Record<string, unknown> = {}): RecordedRe
               duplicate: { id: 4, name: 'Alpha One', provider_name: 'Alpha Lab' },
             },
           ],
+          page: 1,
+          page_size: 50,
+          total: 1,
+          catalog_total: 1,
           duplicate_count: 1,
+          providers: [{ id: 'alpha', name: 'Alpha Lab', total: 1, duplicates: 1 }],
+          fetched_at: '2026-01-01T00:00:00Z',
         })
       }
       if (path === '/api/v1/admin/models/import') {
@@ -783,29 +806,63 @@ describe('提示词管理', () => {
 })
 
 describe('模型管理', () => {
-  it('预览导入并展示重复项', async () => {
+  it('预览导入、跨页选择并只导入选中的条目', async () => {
     const recorded = stubAdminEndpoints()
     const wrapper = await mountAdmin(AdminModelsView)
 
     await wrapper.find('[data-testid="admin-models-import"]').trigger('click')
     await flushPromises()
 
-    expect(requestTo(recorded, '/api/v1/admin/models/import/preview', 'POST')).toHaveLength(1)
+    const previews = requestTo(recorded, '/api/v1/admin/models/import/preview', 'POST')
+    expect(previews).toHaveLength(1)
+    expect(previews[0]?.body).toMatchObject({ page: 1, page_size: 50 })
     expect(hostElement(wrapper, 'admin-models-import-run')).not.toBeNull()
+    expect(hostElement(wrapper, 'admin-models-import-selected')).toBeNull()
+
+    clickCheckbox(wrapper, 'admin-models-import-select')
+    await flushPromises()
+    expect(hostElement(wrapper, 'admin-models-import-selected')?.textContent).toContain('已选 1 条')
 
     clickElement(wrapper, 'admin-models-import-run')
     await flushPromises()
 
     const applied = requestTo(recorded, '/api/v1/admin/models/import', 'POST')
     expect(applied).toHaveLength(1)
-    expect(applied[0]?.body).toEqual({ overwrite: false })
+    expect(applied[0]?.body).toEqual({
+      overwrite: false,
+      selection: {
+        mode: 'keys',
+        keys: [{ provider_id: 'alpha', model_id: 'alpha-one' }],
+      },
+    })
+  })
+
+  it('按关键词重新检索目录', async () => {
+    const recorded = stubAdminEndpoints()
+    const wrapper = await mountAdmin(AdminModelsView)
+
+    await wrapper.find('[data-testid="admin-models-import"]').trigger('click')
+    await flushPromises()
+
+    const search = inputElement(wrapper, 'admin-models-import-search')
+    search.value = 'alpha'
+    search.dispatchEvent(new Event('input'))
+    search.dispatchEvent(new KeyboardEvent('keyup', { key: 'Enter' }))
+    await flushPromises()
+
+    const previews = requestTo(recorded, '/api/v1/admin/models/import/preview', 'POST')
+    expect(previews).toHaveLength(2)
+    expect(previews[1]?.body).toMatchObject({ keyword: 'alpha', page: 1 })
   })
 
   it('禁用模型发出状态变更请求', async () => {
     const recorded = stubAdminEndpoints()
     const wrapper = await mountAdmin(AdminModelsView)
 
-    await wrapper.find('[data-testid="admin-models-enable"]').trigger('click')
+    await wrapper.find('[data-testid="admin-models-more"]').trigger('click')
+    await flushPromises()
+
+    clickElement(wrapper, 'admin-models-enable')
     await flushPromises()
 
     expect(requestTo(recorded, '/api/v1/admin/models/4/enabled', 'POST')).toHaveLength(1)

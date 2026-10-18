@@ -323,4 +323,27 @@ func TestRegisterGeneratesUniqueUsername(t *testing.T) {
 	if !strings.HasPrefix(second.Username, "same") {
 		t.Fatalf("昵称 = %s，期望以 same 开头", second.Username)
 	}
+
+	// 长邮箱前缀会被截短，且去重后缀不会让昵称超出上限。
+	// 两个邮箱的前缀在截短后完全相同，第二个必须靠后缀避让。
+	longPrefix := strings.Repeat("a", 40)
+	third, err := h.service.Register(context.Background(),
+		auth.RegisterInput{Email: longPrefix + "b@example.com", Password: testPassword})
+	if err != nil {
+		t.Fatalf("注册失败: %v", err)
+	}
+	if runes := []rune(third.Username); len(runes) > domain.UsernameMaxRunes {
+		t.Fatalf("昵称长度 = %d，期望不超过 %d", len(runes), domain.UsernameMaxRunes)
+	}
+	fourth, err := h.service.Register(context.Background(),
+		auth.RegisterInput{Email: longPrefix + "c@example.com", Password: testPassword})
+	if err != nil {
+		t.Fatalf("重复注册失败: %v", err)
+	}
+	if fourth.Username == third.Username {
+		t.Fatalf("长昵称去重后仍然重复: %s", fourth.Username)
+	}
+	if runes := []rune(fourth.Username); len(runes) > domain.UsernameMaxRunes {
+		t.Fatalf("去重后的昵称长度 = %d，期望不超过 %d", len(runes), domain.UsernameMaxRunes)
+	}
 }

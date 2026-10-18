@@ -7,7 +7,7 @@ import { useI18n } from 'vue-i18n'
 import { type AdminOperationLog, adminApi } from '@/api/admin'
 import { useErrorMessage } from '@/composables/useErrorMessage'
 
-const { t } = useI18n()
+const { t, te } = useI18n()
 const { messageOf } = useErrorMessage()
 
 const rows = ref<AdminOperationLog[]>([])
@@ -22,11 +22,13 @@ const actions = ref<string[]>([])
 const requiredActions = ref<string[]>([])
 const selected = ref<AdminOperationLog | null>(null)
 
-/** actionLabel 返回操作类型的中文文案；未登记取值直接显示英文键。 */
-function actionLabel(action: string): string {
+/** actionLabel 返回操作类型文案；未登记取值直接显示英文键，缺值时不拼出裸键。 */
+function actionLabel(action: string | null | undefined): string {
+  if (!action) {
+    return ''
+  }
   const key = `admin.logs.actionLabels.${action}`
-  const label = t(key)
-  return label === key ? action : label
+  return te(key) ? t(key) : action
 }
 
 async function loadLogs(): Promise<void> {

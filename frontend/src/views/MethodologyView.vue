@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import DocToc from '@/components/DocToc.vue'
 
 const { t, tm } = useI18n()
 
@@ -127,16 +128,6 @@ const exampleModels = [
     </header>
 
     <div class="pb-doc__layout">
-      <aside class="pb-doc__toc">
-        <span class="pb-doc__toc-label">{{ t('methodology.toc') }}</span>
-        <nav class="pb-doc__toc-nav">
-          <a v-for="section in sections" :key="section.id" :href="`#${section.id}`">
-            <span class="pb-doc__toc-index">{{ section.index }}</span>
-            {{ section.title }}
-          </a>
-        </nav>
-      </aside>
-
       <div class="pb-doc__content">
         <section
           v-for="section in sections"
@@ -339,6 +330,12 @@ const exampleModels = [
         </RouterLink>
       </div>
     </div>
+
+    <DocToc
+      :sections="sections"
+      :label="t('methodology.toc')"
+      :close-label="t('methodology.tocClose')"
+    />
   </article>
 </template>
 
@@ -407,71 +404,16 @@ const exampleModels = [
   font-size: 13px;
 }
 
+/* 目录改为右下角的浮动窗口，正文不再为侧栏预留列宽。 */
 .pb-doc__layout {
-  display: grid;
-  grid-template-columns: 200px minmax(0, 780px);
-  gap: var(--pb-space-2xl);
-  align-items: start;
-}
-
-.pb-doc__toc {
-  position: sticky;
-  top: calc(var(--pb-header-height) + var(--pb-space-lg));
-  display: flex;
-  flex-direction: column;
-  gap: var(--pb-space-sm);
-  min-width: 0;
-  padding-top: var(--pb-space-xs);
-}
-
-.pb-doc__toc-label {
-  color: var(--pb-ink-faint);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.pb-doc__toc-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  width: 100%;
-  min-width: 0;
-}
-
-.pb-doc__toc-nav a {
-  display: flex;
-  align-items: baseline;
-  gap: 9px;
-  padding: 5px 8px 5px 0;
-  border-left: 1px solid transparent;
-  color: var(--pb-ink-soft);
-  font-size: 12.5px;
-  line-height: 1.5;
-  transition:
-    color var(--pb-duration) var(--pb-ease),
-    border-color var(--pb-duration) var(--pb-ease),
-    padding-left var(--pb-duration) var(--pb-ease);
-}
-
-.pb-doc__toc-nav a:hover {
-  padding-left: 8px;
-  border-left-color: var(--pb-accent);
-  color: var(--pb-accent);
-}
-
-.pb-doc__toc-index {
-  color: var(--pb-ink-faint);
-  font-family: var(--pb-font-mono);
-  font-size: 9.5px;
-  letter-spacing: 0.04em;
+  display: block;
 }
 
 .pb-doc__content {
   display: flex;
   flex-direction: column;
   gap: var(--pb-space-xl);
+  max-width: 780px;
   min-width: 0;
 }
 
@@ -765,25 +707,9 @@ const exampleModels = [
 }
 
 @media (max-width: 900px) {
-  .pb-doc__layout {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--pb-space-lg);
-  }
-
-  .pb-doc__toc {
-    position: static;
-    padding-bottom: var(--pb-space-sm);
-    border-bottom: 1px solid var(--pb-line);
-  }
-
-  .pb-doc__toc-nav {
-    flex-direction: row;
-    overflow-x: auto;
-    padding-bottom: 2px;
-  }
-
-  .pb-doc__toc-nav a {
-    flex-shrink: 0;
+  /* 窄屏顶栏为两行，直接打开带片段的地址时仍要让标题落在顶栏下方。 */
+  .pb-doc__section {
+    scroll-margin-top: 120px;
   }
 }
 

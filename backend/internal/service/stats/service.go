@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -37,16 +38,22 @@ type Service struct {
 
 	// flight 合并同一提示词的并发重算，使一批并发读取只算一次。
 	flight *flight
+
+	// leaderboardMu 保护排行榜快照。排行榜按固定周期刷新，
+	// 避免每次打开页面都对全量统计做一次排序。
+	leaderboardMu sync.Mutex
+	leaderboard   map[string]leaderboardCacheEntry
 }
 
 func New(deps Deps) *Service {
 	return &Service{
-		pool:   deps.Pool,
-		config: deps.Config,
-		logger: deps.Logger,
-		now:    time.Now,
-		cache:  newCache(),
-		flight: newFlight(),
+		pool:        deps.Pool,
+		config:      deps.Config,
+		logger:      deps.Logger,
+		now:         time.Now,
+		cache:       newCache(),
+		flight:      newFlight(),
+		leaderboard: make(map[string]leaderboardCacheEntry),
 	}
 }
 

@@ -63,8 +63,33 @@ export interface PromptStats {
   computed_at: string
 }
 
+export type LeaderboardWindow = 'overall' | 'recent' | 'history'
+
+export interface LeaderboardEntry {
+  rank: number
+  prompt_id: number
+  title: string
+  discrimination: number
+  confidence: ConfidenceLevel
+  valid_model_count: number
+  total_rating_count: number
+  computed_at: string
+}
+
+/** Leaderboard 是按固定周期刷新的区分度榜单。 */
+export interface Leaderboard {
+  window: LeaderboardWindow
+  refreshed_at: string
+  refresh_seconds: number
+  items: LeaderboardEntry[]
+}
+
 export const statsApi = {
   byPrompt(promptId: number): Promise<PromptStats> {
     return api.get<PromptStats>(`/prompts/${promptId}/stats`)
+  },
+
+  leaderboard(window: LeaderboardWindow, limit = 20): Promise<Leaderboard> {
+    return api.get<Leaderboard>(`/leaderboard?window=${window}&limit=${limit}`)
   },
 }

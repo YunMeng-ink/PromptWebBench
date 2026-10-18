@@ -145,10 +145,10 @@ onMounted(async () => {
               {{ item.title }}
             </RouterLink>
             <span class="pb-admin-module__metric">
-              {{ t('prompt.comments') }} {{ item.comment_count }}
+              {{ t('home.comments') }} {{ item.comment_count }}
             </span>
             <span class="pb-admin-module__metric">
-              {{ t('prompt.favorites') }} {{ item.favorite_count }}
+              {{ t('home.favorites') }} {{ item.favorite_count }}
             </span>
           </li>
         </ul>
@@ -165,10 +165,10 @@ onMounted(async () => {
               {{ item.title }}
             </RouterLink>
             <span class="pb-admin-module__metric">
-              {{ t('prompt.comments') }} {{ item.comment_count }}
+              {{ t('home.comments') }} {{ item.comment_count }}
             </span>
             <span class="pb-admin-module__metric">
-              {{ t('prompt.favorites') }} {{ item.favorite_count }}
+              {{ t('home.favorites') }} {{ item.favorite_count }}
             </span>
           </li>
         </ul>

@@ -60,9 +60,9 @@ func TestApplyBuildsFullSchema(t *testing.T) {
 		t.Fatalf("应用迁移失败: %v", err)
 	}
 
-	// 40 张业务表，另有引擎自建的 schema_migrations。
-	if got := countTables(t, pool); got != 41 {
-		t.Fatalf("表数量 = %d，期望 41（40 张业务表 + schema_migrations）", got)
+	// 42 张业务表，另有引擎自建的 schema_migrations。
+	if got := countTables(t, pool); got != 43 {
+		t.Fatalf("表数量 = %d，期望 43（42 张业务表 + schema_migrations）", got)
 	}
 	if got, want := countMigrated(t, pool), embeddedMigrationCount(t); got != want {
 		t.Fatalf("迁移记录数 = %d，期望 %d（内嵌迁移文件数）", got, want)
@@ -81,8 +81,8 @@ func TestApplyIsIdempotent(t *testing.T) {
 	if got, want := countMigrated(t, pool), embeddedMigrationCount(t); got != want {
 		t.Fatalf("重复应用后迁移记录数 = %d，期望仍为 %d", got, want)
 	}
-	if got := countTables(t, pool); got != 41 {
-		t.Fatalf("重复应用后表数量 = %d，期望仍为 41", got)
+	if got := countTables(t, pool); got != 43 {
+		t.Fatalf("重复应用后表数量 = %d，期望仍为 43", got)
 	}
 }
 
@@ -162,7 +162,13 @@ func TestDownScriptsDropEverything(t *testing.T) {
 
 	// 直接执行仓库中的逆向脚本，验证建表与删表互相对称。
 	downDir := filepath.Join("..", "..", "..", "migrations", "down")
-	for _, name := range []string{"009_classification.sql", "003_seed.sql", "002_schema.sql", "001_extensions.sql"} {
+	for _, name := range []string{
+		"010_prompt_capabilities.sql",
+		"009_classification.sql",
+		"003_seed.sql",
+		"002_schema.sql",
+		"001_extensions.sql",
+	} {
 		content, err := os.ReadFile(filepath.Join(downDir, name))
 		if err != nil {
 			t.Fatalf("读取逆向脚本 %s 失败: %v", name, err)

@@ -52,6 +52,43 @@ test('评分提交后展示我的评分与剩余修改次数', async ({ page }) 
   await expect(page.getByTestId(`rating-edits-${modelID}`)).toContainText('还可修改 3 次')
 })
 
+/** readSelectionSummary 读取「显示 N / M 个模型」中的两个数字。 */
+async function readSelectionSummary(
+  page: import('@playwright/test').Page,
+): Promise<{ selected: number; total: number }> {
+  const text = await page.getByTestId('ratings-selection-summary').innerText()
+  const match = text.match(/显示 (\d+) \/ (\d+) 个模型/)
+  if (match?.[1] === undefined || match[2] === undefined) {
+    throw new Error(`无法解析模型选择摘要：${text}`)
+  }
+  return { selected: Number.parseInt(match[1], 10), total: Number.parseInt(match[2], 10) }
+}
+
+test('模型选择器可以收窄与恢复展示范围', async ({ page }) => {
+  await loginShared(page)
+  const promptID = await createPrompt(page, `模型选择-${Date.now()}`)
+
+  await page.goto(`/prompts/${promptID}`)
+  await expect(page.getByTestId('ratings-model-select')).toBeVisible()
+
+  // 默认集合是「有评分的模型 + 按顺序补足到 8 个」，因此不超过 min(8, 总数)。
+  const initial = await readSelectionSummary(page)
+  expect(initial.total).toBeGreaterThan(0)
+  expect(initial.selected).toBe(Math.min(8, initial.total))
+  await expect(page.getByTestId('ratings-list').locator('li')).toHaveCount(initial.selected)
+
+  await page.getByTestId('ratings-quick-all').click()
+  await expect(page.getByTestId('ratings-list').locator('li')).toHaveCount(initial.total)
+
+  // 新建的提示词没有任何评分，「仅有评分」因此是空集合。
+  await page.getByTestId('ratings-quick-rated').click()
+  await expect(page.getByTestId('ratings-selection-empty')).toBeVisible()
+  await expect(page.getByTestId('ratings-list')).toHaveCount(0)
+
+  await page.getByTestId('ratings-quick-reset').click()
+  await expect(page.getByTestId('ratings-list').locator('li')).toHaveCount(initial.selected)
+})
+
 test('量表只有 1-5 五档', async ({ page }) => {
   await loginShared(page)
   const promptID = await createPrompt(page, `量表校验-${Date.now()}`)

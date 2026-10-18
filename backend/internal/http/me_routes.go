@@ -116,7 +116,7 @@ func (s *Server) handleGetMe(ctx context.Context, _ *struct{}) (*userResponse, e
 
 type updateMeInput struct {
 	Body struct {
-		Username  string `json:"username,omitempty" maxLength:"32" doc:"昵称，留空表示不修改"`
+		Username  string `json:"username,omitempty" maxLength:"20" doc:"昵称，最多 20 个字符；留空表示不修改"`
 		Bio       string `json:"bio,omitempty" maxLength:"500" doc:"简介"`
 		AvatarURL string `json:"avatar_url,omitempty" maxLength:"512" doc:"头像地址，留空表示清空；非空时须为 http(s) 绝对地址"`
 	}

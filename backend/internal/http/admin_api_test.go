@@ -166,6 +166,66 @@ func TestAdminModelImportPreviewAndApplyOverHTTP(t *testing.T) {
 	}
 }
 
+func TestAdminModelImportPreviewPaginatesAndImportsSelection(t *testing.T) {
+	env := newTestEnv(t)
+	client := adminSession(t, env)
+
+	resp := client.post(api.APIPrefix+"/admin/models/import/preview",
+		map[string]any{"page": 1, "page_size": 1, "keyword": "alpha"})
+	expectStatus(t, resp, http.StatusOK)
+	preview := decodeBody[struct {
+		Items          []json.RawMessage `json:"items"`
+		Page           int32             `json:"page"`
+		PageSize       int32             `json:"page_size"`
+		Total          int               `json:"total"`
+		CatalogTotal   int               `json:"catalog_total"`
+		DuplicateCount int               `json:"duplicate_count"`
+		Providers      []struct {
+			ID    string `json:"id"`
+			Total int    `json:"total"`
+		} `json:"providers"`
+	}](t, resp)
+	if len(preview.Items) != 1 || preview.Total != 2 || preview.CatalogTotal != 3 {
+		t.Fatalf("分页预览 = %+v，期望 2 条匹配中返回 1 条", preview)
+	}
+	if preview.Page != 1 || preview.PageSize != 1 || len(preview.Providers) != 2 {
+		t.Fatalf("分页与提供商摘要 = %+v", preview)
+	}
+
+	// 只导入选中的一条：未选中的条目不落库。
+	resp = client.post(api.APIPrefix+"/admin/models/import", map[string]any{
+		"overwrite": false,
+		"selection": map[string]any{
+			"mode": "keys",
+			"keys": []map[string]string{{"provider_id": "alpha", "model_id": "alpha-one"}},
+		},
+	})
+	expectStatus(t, resp, http.StatusOK)
+	applied := decodeBody[struct {
+		Total   int `json:"total"`
+		Created int `json:"created"`
+	}](t, resp)
+	if applied.Total != 1 || applied.Created != 1 {
+		t.Fatalf("按条目导入 = %+v，期望只新建 1 条", applied)
+	}
+
+	// 状态筛选走服务端：一条已重复，两条仍是新模型。
+	resp = client.post(api.APIPrefix+"/admin/models/import/preview",
+		map[string]any{"status": "new", "page_size": 50})
+	expectStatus(t, resp, http.StatusOK)
+	remaining := decodeBody[struct {
+		Total int `json:"total"`
+	}](t, resp)
+	if remaining.Total != 2 {
+		t.Fatalf("新模型 = %d 条，期望 2", remaining.Total)
+	}
+
+	// 目录缓存命中后，分页与筛选不会反复回源。
+	if env.modelsDev.requestCount() != 1 {
+		t.Fatalf("上游访问次数 = %d，期望 1", env.modelsDev.requestCount())
+	}
+}
+
 func TestAdminSettingsRequireMasterKeyForSecrets(t *testing.T) {
 	env := newTestEnv(t)
 	pgtest.SeedUser(t, env.pool, pgtest.UserOptions{

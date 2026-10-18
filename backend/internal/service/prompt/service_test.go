@@ -605,6 +605,85 @@ func TestPurgeAdjustsFavoriteItemCounts(t *testing.T) {
 	}
 }
 
+func TestCreateAndUpdateMultipleCapabilities(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	user := f.normalUser(t)
+	purposeID := f.purposeID(t, "capability_boundary")
+
+	reasoning := f.capabilityID(t, "reasoning")
+	coding := f.capabilityID(t, "coding")
+	toolUse := f.capabilityID(t, "tool_use")
+	language := f.capabilityID(t, "language")
+	longContext := f.capabilityID(t, "long_context")
+
+	input := f.baseInput(t, purposeID, domain.VisibilityPublic)
+	input.CapabilityIDs = []int64{reasoning, coding, toolUse}
+	created, err := f.svc.Create(ctx, user, input)
+	if err != nil {
+		t.Fatalf("创建多维度提示词失败: %v", err)
+	}
+	if created.Prompt.CapabilityID != reasoning {
+		t.Fatalf("主考察维度 = %d，期望首个维度 %d", created.Prompt.CapabilityID, reasoning)
+	}
+
+	viewer := domain.ViewerFor(user)
+	detail, err := f.svc.Get(ctx, viewer, created.Prompt.ID, "")
+	if err != nil {
+		t.Fatalf("读取详情失败: %v", err)
+	}
+	if len(detail.Capabilities) != 3 {
+		t.Fatalf("详情考察维度 = %d 个，期望 3 个", len(detail.Capabilities))
+	}
+	wantOrder := []int64{reasoning, coding, toolUse}
+	for index, capability := range detail.Capabilities {
+		if capability.ID != wantOrder[index] {
+			t.Fatalf("第 %d 个考察维度 = %d，期望 %d", index+1, capability.ID, wantOrder[index])
+		}
+	}
+	if len(detail.Version.CapabilityIDs) != 3 {
+		t.Fatalf("版本考察维度 = %v，期望 3 个", detail.Version.CapabilityIDs)
+	}
+
+	// 列表筛选命中第二、第三个维度，而不是只看主维度。
+	list, err := repo.PromptListPage(ctx, f.pool, viewer,
+		repo.PromptListFilter{CapabilityID: &toolUse}, domain.SortLatest, 1, 20)
+	if err != nil {
+		t.Fatalf("按考察维度筛选失败: %v", err)
+	}
+	if list.Total != 1 || len(list.Items) != 1 || len(list.Items[0].Prompt.CapabilityIDs) != 3 {
+		t.Fatalf("筛选结果 = %+v，期望命中该提示词并带出 3 个维度", list.Items)
+	}
+
+	// 更新整体替换维度集合。
+	update := input
+	update.Title = "多维度提示词（改）"
+	update.Body = "更新后的正文"
+	update.CapabilityIDs = []int64{language, longContext}
+	update.CapabilityID = 0
+	if _, err := f.svc.Update(ctx, user, created.Prompt.ID, update); err != nil {
+		t.Fatalf("更新多维度提示词失败: %v", err)
+	}
+	after, err := f.svc.Get(ctx, viewer, created.Prompt.ID, "")
+	if err != nil {
+		t.Fatalf("读取更新后的详情失败: %v", err)
+	}
+	if len(after.Capabilities) != 2 || after.Capabilities[0].ID != language || after.Capabilities[1].ID != longContext {
+		t.Fatalf("更新后考察维度 = %+v，期望 language、long_context", after.Capabilities)
+	}
+	if after.Prompt.CapabilityID != language {
+		t.Fatalf("更新后主考察维度 = %d，期望 %d", after.Prompt.CapabilityID, language)
+	}
+
+	// 六个维度超出上限，创建与更新都应拒绝。
+	over := f.baseInput(t, purposeID, domain.VisibilityPublic)
+	over.CapabilityIDs = []int64{
+		reasoning, coding, toolUse, language, longContext, f.capabilityID(t, "math"),
+	}
+	_, err = f.svc.Create(ctx, user, over)
+	assertAppErrCode(t, err, apperr.CodeInvalidClassification)
+}
+
 func isNoRows(err error) bool {
 	return err == pgx.ErrNoRows
 }

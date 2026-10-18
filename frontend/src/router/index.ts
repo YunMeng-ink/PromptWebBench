@@ -6,30 +6,40 @@ import {
   type RouterHistory,
 } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
-import AdminLayout from '@/views/admin/AdminLayout.vue'
-import FavoritesView from '@/views/FavoritesView.vue'
 import HomeView from '@/views/HomeView.vue'
-import LegalView from '@/views/LegalView.vue'
-import LibraryDetailView from '@/views/LibraryDetailView.vue'
-import LibraryListView from '@/views/LibraryListView.vue'
-import LibraryQuestionView from '@/views/LibraryQuestionView.vue'
-import LoginView from '@/views/LoginView.vue'
-import MethodologyView from '@/views/MethodologyView.vue'
-import MeView from '@/views/MeView.vue'
-import NotFoundView from '@/views/NotFoundView.vue'
-import NotificationsView from '@/views/NotificationsView.vue'
-import OAuthCallbackView from '@/views/OAuthCallbackView.vue'
-import PromptDetailView from '@/views/PromptDetailView.vue'
-import PromptFormView from '@/views/PromptFormView.vue'
-import RegisterView from '@/views/RegisterView.vue'
-import ResetPasswordView from '@/views/ResetPasswordView.vue'
-import VerifyEmailView from '@/views/VerifyEmailView.vue'
+
+// 首页是主要入口，保持在首屏包内；其余视图按路由拆分，
+// 使登录、后台与详情页的代码只在真正进入时下载。
+const LeaderboardView = () => import('@/views/LeaderboardView.vue')
+const LegalView = () => import('@/views/LegalView.vue')
+const MethodologyView = () => import('@/views/MethodologyView.vue')
+const PromptFormView = () => import('@/views/PromptFormView.vue')
+const PromptDetailView = () => import('@/views/PromptDetailView.vue')
+const LoginView = () => import('@/views/LoginView.vue')
+const RegisterView = () => import('@/views/RegisterView.vue')
+const VerifyEmailView = () => import('@/views/VerifyEmailView.vue')
+const ResetPasswordView = () => import('@/views/ResetPasswordView.vue')
+const OAuthCallbackView = () => import('@/views/OAuthCallbackView.vue')
+const MeView = () => import('@/views/MeView.vue')
+const FavoritesView = () => import('@/views/FavoritesView.vue')
+const LibraryListView = () => import('@/views/LibraryListView.vue')
+const LibraryDetailView = () => import('@/views/LibraryDetailView.vue')
+const LibraryQuestionView = () => import('@/views/LibraryQuestionView.vue')
+const NotificationsView = () => import('@/views/NotificationsView.vue')
+const NotFoundView = () => import('@/views/NotFoundView.vue')
+const AdminLayout = () => import('@/views/admin/AdminLayout.vue')
 
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
     name: 'home',
     component: HomeView,
+  },
+  {
+    // 区分度排行榜对游客公开：榜单只统计公开提示词。
+    path: '/leaderboard',
+    name: 'leaderboard',
+    component: LeaderboardView,
   },
   {
     // 隐私政策与用户条款（G-10）。两个页面共用同一视图，文案随界面语言切换。

@@ -213,6 +213,54 @@ SELECT current_version_id
 FROM prompts
 WHERE id = sqlc.arg(prompt_id)::bigint AND deleted_at IS NULL;
 
+-- 区分度排行榜：只列公开提示词，按指定窗口的区分度降序。
+-- window_key 取 overall、recent 或 history；数据不足的窗口不参与排名。
+-- name: ListDiscriminationLeaderboard :many
+SELECT
+    p.id,
+    p.title,
+    ps.computed_at,
+    COALESCE(CASE sqlc.arg(window_key)::text
+        WHEN 'recent' THEN ps.recent_discrimination
+        WHEN 'history' THEN ps.history_discrimination
+        ELSE ps.sort_discrimination
+    END, 0)::float8 AS discrimination,
+    COALESCE(CASE
+        WHEN sqlc.arg(window_key)::text = 'recent' THEN ps.recent_confidence
+        WHEN sqlc.arg(window_key)::text = 'history' THEN ps.history_confidence
+        WHEN ps.recent_discrimination >= COALESCE(ps.history_discrimination, 0) THEN ps.recent_confidence
+        ELSE ps.history_confidence
+    END, 'low')::text AS confidence,
+    COALESCE(CASE
+        WHEN sqlc.arg(window_key)::text = 'recent' THEN ps.recent_valid_model_count
+        WHEN sqlc.arg(window_key)::text = 'history' THEN ps.history_valid_model_count
+        WHEN ps.recent_discrimination >= COALESCE(ps.history_discrimination, 0) THEN ps.recent_valid_model_count
+        ELSE ps.history_valid_model_count
+    END, 0)::int AS valid_model_count,
+    COALESCE(CASE
+        WHEN sqlc.arg(window_key)::text = 'recent' THEN ps.recent_total_rating_count
+        WHEN sqlc.arg(window_key)::text = 'history' THEN ps.history_total_rating_count
+        WHEN ps.recent_discrimination >= COALESCE(ps.history_discrimination, 0) THEN ps.recent_total_rating_count
+        ELSE ps.history_total_rating_count
+    END, 0)::int AS total_rating_count
+FROM prompt_stats ps
+JOIN prompts p ON p.id = ps.prompt_id
+WHERE p.deleted_at IS NULL
+  AND p.visibility = 'public'
+  AND CASE sqlc.arg(window_key)::text
+        WHEN 'recent' THEN NOT ps.recent_insufficient AND ps.recent_discrimination IS NOT NULL
+        WHEN 'history' THEN NOT ps.history_insufficient AND ps.history_discrimination IS NOT NULL
+        ELSE ps.data_sufficient AND ps.sort_discrimination IS NOT NULL
+      END
+ORDER BY
+    CASE sqlc.arg(window_key)::text
+        WHEN 'recent' THEN ps.recent_discrimination
+        WHEN 'history' THEN ps.history_discrimination
+        ELSE ps.sort_discrimination
+    END DESC NULLS LAST,
+    p.id DESC
+LIMIT sqlc.arg(limit_count);
+
 -- name: GetPromptStats :one
 SELECT * FROM prompt_stats WHERE prompt_id = $1;
 

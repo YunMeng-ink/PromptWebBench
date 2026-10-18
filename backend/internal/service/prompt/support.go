@@ -232,38 +232,101 @@ func loadCapability(ctx context.Context, q *repo.Queries, id int64) (domain.Capa
 	}, nil
 }
 
-// validateReferences 校验必填考察维度与可选字典项存在且启用。考察目的必填由 loadPurpose 负责。
-func (s *Service) validateReferences(ctx context.Context, q *repo.Queries, in Input) error {
-	if in.CapabilityID <= 0 {
-		return apperr.New(apperr.CodeInvalidClassification, "考察维度不可为空")
+// normalizeCapabilityIDs 合并单值兼容字段，去重并限制在 1 至 5 个。
+func normalizeCapabilityIDs(in Input) ([]int64, error) {
+	raw := in.CapabilityIDs
+	if len(raw) == 0 && in.CapabilityID > 0 {
+		raw = []int64{in.CapabilityID}
 	}
-	if _, err := loadCapability(ctx, q, in.CapabilityID); err != nil {
-		return err
+	seen := make(map[int64]struct{}, len(raw))
+	out := make([]int64, 0, len(raw))
+	for _, id := range raw {
+		if id <= 0 {
+			return nil, apperr.New(apperr.CodeInvalidClassification, "考察维度取值非法")
+		}
+		if _, duplicate := seen[id]; duplicate {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	if len(out) == 0 {
+		return nil, apperr.New(apperr.CodeInvalidClassification, "考察维度不可为空")
+	}
+	if len(out) > domain.PromptCapabilityLimit {
+		return nil, apperr.New(apperr.CodeInvalidClassification,
+			fmt.Sprintf("考察维度最多选择 %d 个", domain.PromptCapabilityLimit))
+	}
+	return out, nil
+}
+
+// validateReferences 校验考察维度与可选字典项存在且启用，返回规范化后的维度集合。
+// 考察目的必填由 loadPurpose 负责。
+func (s *Service) validateReferences(ctx context.Context, q *repo.Queries, in Input) ([]int64, error) {
+	capabilityIDs, err := normalizeCapabilityIDs(in)
+	if err != nil {
+		return nil, err
+	}
+	for _, capabilityID := range capabilityIDs {
+		if _, err := loadCapability(ctx, q, capabilityID); err != nil {
+			return nil, err
+		}
 	}
 	if in.DifficultyID != nil {
 		row, err := q.GetDifficulty(ctx, *in.DifficultyID)
 		if err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return apperr.New(apperr.CodeInvalidClassification, "难度不存在")
+				return nil, apperr.New(apperr.CodeInvalidClassification, "难度不存在")
 			}
-			return fmt.Errorf("查询难度: %w", err)
+			return nil, fmt.Errorf("查询难度: %w", err)
 		}
 		if !row.IsEnabled {
-			return apperr.New(apperr.CodeInvalidClassification, "难度已停用")
+			return nil, apperr.New(apperr.CodeInvalidClassification, "难度已停用")
 		}
 	}
 	if len(in.TagIDs) > 0 {
 		rows, err := q.GetTagsByIDs(ctx, in.TagIDs)
 		if err != nil {
-			return fmt.Errorf("查询标签: %w", err)
+			return nil, fmt.Errorf("查询标签: %w", err)
 		}
 		if len(rows) != len(in.TagIDs) {
-			return apperr.New(apperr.CodeInvalidClassification, "标签不存在")
+			return nil, apperr.New(apperr.CodeInvalidClassification, "标签不存在")
 		}
 		for _, row := range rows {
 			if !row.IsEnabled {
-				return apperr.New(apperr.CodeInvalidClassification, "标签已停用")
+				return nil, apperr.New(apperr.CodeInvalidClassification, "标签已停用")
 			}
+		}
+	}
+	return capabilityIDs, nil
+}
+
+// replaceCapabilities 重设提示词的考察维度集合。整体替换使取消勾选可以生效。
+func replaceCapabilities(ctx context.Context, q *repo.Queries, promptID int64, capabilityIDs []int64) error {
+	if err := q.ReplacePromptCapabilities(ctx, promptID); err != nil {
+		return fmt.Errorf("清空提示词考察维度: %w", err)
+	}
+	for index, capabilityID := range capabilityIDs {
+		if err := q.AttachPromptCapability(ctx, repo.AttachPromptCapabilityParams{
+			PromptID:     promptID,
+			CapabilityID: capabilityID,
+			SortOrder:    int16(index),
+		}); err != nil {
+			return fmt.Errorf("写入提示词考察维度: %w", err)
+		}
+	}
+	return nil
+}
+
+// attachVersionCapabilities 保存版本发布时的考察维度集合。
+func attachVersionCapabilities(ctx context.Context, q *repo.Queries, versionID int64, capabilityIDs []int64) error {
+	for index, capabilityID := range capabilityIDs {
+		if err := q.AttachPromptVersionCapability(ctx, repo.AttachPromptVersionCapabilityParams{
+			PromptVersionID: versionID,
+			CapabilityID:    capabilityID,
+			SortOrder:       int16(index),
+		}); err != nil {
+			return fmt.Errorf("写入版本考察维度: %w", err)
 		}
 	}
 	return nil

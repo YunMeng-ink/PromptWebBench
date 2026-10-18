@@ -6,6 +6,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import {
+  type Announcement,
   NOTIFICATION_KINDS,
   type Notification,
   type NotificationKind,
@@ -22,6 +23,7 @@ const notifications = useNotificationStore()
 const { messageOf } = useErrorMessage()
 
 const items = ref<Notification[]>([])
+const announcements = ref<Announcement[]>([])
 const total = ref(0)
 const page = ref(1)
 const pageSize = 20
@@ -29,6 +31,18 @@ const selectedKinds = ref<NotificationKind[]>([])
 const loading = ref(true)
 const failure = ref('')
 const notice = ref('')
+
+/** announcementUnread 统计当前展示的公告中未读的条数。 */
+const announcementUnread = computed(() => announcements.value.filter((item) => !item.read).length)
+
+/** formatTime 把 UTC 时刻按本机时区呈现。 */
+function formatTime(raw: string): string {
+  if (raw === '') {
+    return ''
+  }
+  const parsed = new Date(raw)
+  return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString()
+}
 
 const kindOptions = computed(() =>
   NOTIFICATION_KINDS.map((kind) => ({
@@ -51,12 +65,21 @@ function kindSuffix(kind: NotificationKind): string {
   }
 }
 
-/** load 拉取当前筛选条件下的通知。 */
+/**
+ * load 拉取当前筛选条件下的通知与全部有效公告。
+ *
+ * 未读数由「站内通知 + 未读公告」两部分组成，因此公告必须出现在这里；
+ * 否则首页角标会指向用户在本页看不到的内容。
+ */
 async function load(): Promise<void> {
   loading.value = true
   try {
-    const result = await socialApi.notifications(selectedKinds.value, page.value, pageSize)
+    const [result, announcementPage] = await Promise.all([
+      socialApi.notifications(selectedKinds.value, page.value, pageSize),
+      socialApi.announcements(1, 100),
+    ])
     items.value = result.items
+    announcements.value = announcementPage.items
     total.value = result.total
     failure.value = ''
   } catch (error) {
@@ -93,8 +116,11 @@ async function markRead(item: Notification): Promise<void> {
 
 async function markAllRead(): Promise<void> {
   try {
-    await socialApi.markAllRead()
+    await Promise.all([socialApi.markAllRead(), socialApi.markAnnouncementsRead()])
     for (const item of items.value) {
+      item.read = true
+    }
+    for (const item of announcements.value) {
       item.read = true
     }
     notifications.setUnread(0)
@@ -161,6 +187,38 @@ onMounted(async () => {
       }}
     </p>
 
+    <section
+      v-if="announcements.length > 0"
+      class="pb-notifications__announcements"
+      data-testid="notifications-announcements"
+    >
+      <div class="pb-notifications__section-head">
+        <span class="pb-notifications__section-title">{{ t('announcements.title') }}</span>
+        <span v-if="announcementUnread > 0" class="pb-notifications__section-count">
+          {{ t('notifications.unread', { count: announcementUnread }) }}
+        </span>
+      </div>
+      <article
+        v-for="item in announcements"
+        :key="item.id"
+        class="pb-notifications__announcement"
+        :class="{ 'pb-notifications__item--unread': !item.read }"
+        :data-testid="`announcement-${item.id}`"
+      >
+        <div class="pb-notifications__item-head">
+          <span class="pb-notifications__kind">{{ t('notifications.kindAnnouncement') }}</span>
+          <span class="pb-notifications__item-title">{{ item.title }}</span>
+          <span v-if="!item.read" class="pb-notifications__dot">
+            {{ t('announcements.unread') }}
+          </span>
+        </div>
+        <p class="pb-notifications__body">{{ item.body }}</p>
+        <time v-if="item.published_at" class="pb-notifications__time">
+          {{ formatTime(item.published_at) }}
+        </time>
+      </article>
+    </section>
+
     <div class="pb-notifications__filter" data-testid="notifications-filter">
       <el-select
         multiple
@@ -186,8 +244,12 @@ onMounted(async () => {
       {{ notice }}
     </p>
 
-    <p v-if="loading" class="pb-notifications__hint">{{ t('notifications.loadFailed') }}</p>
-    <div v-else-if="items.length === 0" class="pb-empty" data-testid="notifications-empty">
+    <p v-if="loading" class="pb-notifications__hint">{{ t('notifications.loading') }}</p>
+    <div
+      v-else-if="items.length === 0 && announcements.length === 0"
+      class="pb-empty"
+      data-testid="notifications-empty"
+    >
       <span class="pb-empty__title">{{ t('notifications.empty') }}</span>
     </div>
 
@@ -304,6 +366,50 @@ onMounted(async () => {
 
 .pb-notifications__filter {
   max-width: 320px;
+}
+
+.pb-notifications__announcements {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-sm);
+}
+
+.pb-notifications__section-head {
+  align-items: baseline;
+  display: flex;
+  gap: var(--pb-space-sm);
+}
+
+.pb-notifications__section-title {
+  font-family: var(--pb-font-display);
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.pb-notifications__section-count {
+  background: var(--pb-surface-muted);
+  border-radius: var(--pb-radius-pill);
+  color: var(--pb-ink-faint);
+  font-size: 11.5px;
+  padding: 2px 9px;
+}
+
+.pb-notifications__announcement {
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-left: 2px solid transparent;
+  border-radius: var(--pb-radius-md);
+  padding: var(--pb-space-md) var(--pb-space-lg);
+  transition:
+    background-color var(--pb-duration) var(--pb-ease),
+    border-color var(--pb-duration) var(--pb-ease);
+}
+
+.pb-notifications__time {
+  color: var(--pb-ink-faint);
+  display: block;
+  font-size: 12px;
+  margin-top: var(--pb-space-xs);
 }
 
 .pb-notifications__list {

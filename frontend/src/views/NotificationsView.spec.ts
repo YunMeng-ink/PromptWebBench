@@ -13,6 +13,7 @@ interface RecordedRequest {
 
 interface StubOptions {
   notifications?: unknown[]
+  announcements?: unknown[]
   unread?: number
   authenticated?: boolean
 }
@@ -21,6 +22,7 @@ interface StubOptions {
 function stubNotificationEndpoints(options: StubOptions = {}): RecordedRequest[] {
   const recorded: RecordedRequest[] = []
   const notifications = options.notifications ?? []
+  const announcements = options.announcements ?? []
   const unread = options.unread ?? 0
 
   vi.stubGlobal(
@@ -53,8 +55,15 @@ function stubNotificationEndpoints(options: StubOptions = {}): RecordedRequest[]
         return stubResponse({ status: 200, body: { unread } })
       }
 
-      if (path.endsWith('/notifications/read-all')) {
+      if (path.endsWith('/notifications/read-all') || path.endsWith('/announcements/read-all')) {
         return stubResponse({ status: 204 })
+      }
+
+      if (path.endsWith('/announcements')) {
+        return stubResponse({
+          status: 200,
+          body: { items: announcements, page: 1, page_size: 20, total: announcements.length },
+        })
       }
 
       if (/\/notifications\/\d+\/read$/.test(path)) {
@@ -192,6 +201,28 @@ describe('通知中心', () => {
     )
     expect(deleted).toBeDefined()
     expect(wrapper.find('[data-testid="notifications-notice"]').text()).toBe('通知已删除。')
+  })
+
+  it('未读公告出现在通知中心，未读数与可见内容一致', async () => {
+    stubNotificationEndpoints({
+      notifications: [],
+      announcements: [
+        {
+          id: 7,
+          title: '黑盒检测公告',
+          body: '公告正文',
+          published_at: '2026-10-17T08:44:32Z',
+          read: false,
+        },
+      ],
+      unread: 1,
+    })
+    const wrapper = await mountNotifications()
+
+    expect(wrapper.find('[data-testid="notifications-announcements"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="notifications-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="notifications-unread"]').text()).toBe('未读 1 条')
+    expect(wrapper.text()).toContain('黑盒检测公告')
   })
 
   it('未登录时不发起通知查询', async () => {

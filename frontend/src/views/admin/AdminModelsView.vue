@@ -3,12 +3,17 @@
 
 <script setup lang="ts">
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   type AdminModel,
   type AdminModelImportEntry,
+  type AdminModelImportFilter,
+  type AdminModelImportKey,
   type AdminModelImportLog,
+  type AdminModelImportPreview,
+  type AdminModelImportSelection,
+  type AdminModelImportStatus,
   type AdminModelInput,
   type AdminModelPrompt,
   type AdminModelSnapshot,
@@ -227,6 +232,27 @@ async function toggleEnabled(row: AdminModel): Promise<void> {
   }
 }
 
+/** runModelAction 分发操作列「更多」菜单的动作。 */
+function runModelAction(command: string, row: AdminModel): void {
+  switch (command) {
+    case 'toggle':
+      void toggleEnabled(row)
+      break
+    case 'related':
+      openRelated(row)
+      break
+    case 'stats':
+      openStats(row)
+      break
+    case 'snapshots':
+      openSnapshots(row)
+      break
+    case 'delete':
+      void removeModel(row)
+      break
+  }
+}
+
 async function removeModel(row: AdminModel): Promise<void> {
   try {
     await ElMessageBox.confirm(t('admin.common.confirmDelete'), t('admin.common.remove'), {
@@ -251,43 +277,247 @@ async function removeModel(row: AdminModel): Promise<void> {
 
 const importVisible = ref(false)
 const importLoading = ref(false)
+const importRunning = ref(false)
 const importOverwrite = ref(false)
-const importItems = ref<AdminModelImportEntry[]>([])
-const importDuplicates = ref(0)
+const importPreview = ref<AdminModelImportPreview | null>(null)
+const importPage = ref(1)
+const importPageSize = ref(50)
+const importKeyword = ref('')
+const importProvider = ref('')
+const importStatus = ref<AdminModelImportStatus>('')
 const previewError = ref('')
 const runError = ref('')
 
-function openImport(): void {
-  importVisible.value = true
-  importLoading.value = true
-  importOverwrite.value = false
-  importItems.value = []
-  importDuplicates.value = 0
-  previewError.value = ''
-  runError.value = ''
-  void loadPreview()
+/** 已选条目的键。跨页选择保存在这里，表格只渲染当前页。 */
+const importSelected = ref(new Set<string>())
+/** 选择全部筛选结果时，记录当时的筛选条件与总数。 */
+const importSelectAll = ref<{ filter: AdminModelImportFilter; total: number } | null>(null)
+/** 全选筛选结果后被取消的条目。 */
+const importExcluded = ref(new Set<string>())
+
+let previewSequence = 0
+let keywordTimer: number | undefined
+
+const importItems = computed(() => importPreview.value?.items ?? [])
+const importTotal = computed(() => importPreview.value?.total ?? 0)
+const importCatalogTotal = computed(() => importPreview.value?.catalog_total ?? 0)
+const importDuplicateCount = computed(() => importPreview.value?.duplicate_count ?? 0)
+const importProviders = computed(() => importPreview.value?.providers ?? [])
+const importFetchedAt = computed(() => formatTime(importPreview.value?.fetched_at ?? ''))
+const importSelectedCount = computed(() => {
+  if (importSelectAll.value !== null) {
+    return Math.max(0, importSelectAll.value.total - importExcluded.value.size)
+  }
+  return importSelected.value.size
+})
+const importPageSelected = computed(
+  () => importItems.value.length > 0 && importItems.value.every((item) => isImportSelected(item)),
+)
+const importPageIndeterminate = computed(
+  () => !importPageSelected.value && importItems.value.some((item) => isImportSelected(item)),
+)
+
+function importKey(providerID: string, modelID: string): string {
+  return `${providerID}\u0000${modelID}`
 }
 
-/** loadPreview 拉取 models.dev 的导入清单，上游不可用时后端返回 502。 */
-async function loadPreview(): Promise<void> {
-  try {
-    const result = await adminApi.previewModelImport()
-    importItems.value = result.items
-    importDuplicates.value = result.duplicate_count
-    previewError.value = ''
-  } catch (error) {
-    importItems.value = []
-    importDuplicates.value = 0
-    previewError.value = messageOf(error)
-  } finally {
-    importLoading.value = false
+function importKeyOf(entry: AdminModelImportEntry): string {
+  return importKey(entry.provider_id, entry.model_id)
+}
+
+function parseImportKey(key: string): AdminModelImportKey {
+  const separator = key.indexOf('\u0000')
+  return { provider_id: key.slice(0, separator), model_id: key.slice(separator + 1) }
+}
+
+function isImportSelected(entry: AdminModelImportEntry): boolean {
+  const key = importKeyOf(entry)
+  if (importSelectAll.value !== null) {
+    return !importExcluded.value.has(key)
+  }
+  return importSelected.value.has(key)
+}
+
+function setImportSelected(entry: AdminModelImportEntry, selected: boolean): void {
+  const key = importKeyOf(entry)
+  if (importSelectAll.value !== null) {
+    if (selected) {
+      importExcluded.value.delete(key)
+    } else {
+      importExcluded.value.add(key)
+    }
+    return
+  }
+  if (selected) {
+    importSelected.value.add(key)
+  } else {
+    importSelected.value.delete(key)
   }
 }
 
-async function runImport(): Promise<void> {
+function setImportPageSelected(selected: boolean): void {
+  for (const item of importItems.value) {
+    setImportSelected(item, selected)
+  }
+}
+
+function importRowClass({ row }: { row: AdminModelImportEntry }): string {
+  return isImportSelected(row) ? 'pb-import__row--selected' : ''
+}
+
+/** selectAllImportMatches 选中当前筛选下的全部条目，包括尚未翻到的页。 */
+function selectAllImportMatches(): void {
+  importSelectAll.value = { filter: currentImportFilter(), total: importTotal.value }
+  importExcluded.value.clear()
+  importSelected.value.clear()
+}
+
+function clearImportSelection(): void {
+  importSelectAll.value = null
+  importExcluded.value.clear()
+  importSelected.value.clear()
+}
+
+function currentImportFilter(): AdminModelImportFilter {
+  return {
+    keyword: importKeyword.value.trim(),
+    provider_id: importProvider.value,
+    status: importStatus.value,
+  }
+}
+
+function openImport(): void {
+  importVisible.value = true
+  importOverwrite.value = false
+  importPage.value = 1
+  importKeyword.value = ''
+  importProvider.value = ''
+  importStatus.value = ''
+  importPreview.value = null
+  previewError.value = ''
   runError.value = ''
+  clearImportSelection()
+  void loadPreview()
+}
+
+/** loadPreview 拉取一页导入清单，上游不可用时后端返回 502。 */
+async function loadPreview(refresh = false): Promise<void> {
+  const sequence = ++previewSequence
+  importLoading.value = true
   try {
-    const result = await adminApi.importModels(importOverwrite.value)
+    const result = await adminApi.previewModelImport({
+      page: importPage.value,
+      page_size: importPageSize.value,
+      keyword: importKeyword.value.trim(),
+      provider_id: importProvider.value,
+      status: importStatus.value,
+      refresh,
+    })
+    if (sequence !== previewSequence) {
+      return
+    }
+    importPreview.value = result
+    previewError.value = ''
+  } catch (error) {
+    if (sequence !== previewSequence) {
+      return
+    }
+    importPreview.value = null
+    previewError.value = messageOf(error)
+  } finally {
+    if (sequence === previewSequence) {
+      importLoading.value = false
+    }
+  }
+}
+
+/**
+ * dropFilterSelection 在筛选条件变化时放弃「全部筛选结果」选择。
+ * 该选择绑定上一次的筛选条件，继续保留会让已选条数与眼前的结果不一致。
+ */
+function dropFilterSelection(): void {
+  if (importSelectAll.value !== null) {
+    clearImportSelection()
+  }
+}
+
+function scheduleImportSearch(): void {
+  window.clearTimeout(keywordTimer)
+  keywordTimer = window.setTimeout(() => {
+    importPage.value = 1
+    dropFilterSelection()
+    void loadPreview()
+  }, 260)
+}
+
+function applyImportSearch(): void {
+  window.clearTimeout(keywordTimer)
+  importPage.value = 1
+  dropFilterSelection()
+  void loadPreview()
+}
+
+function resetImportFilters(): void {
+  window.clearTimeout(keywordTimer)
+  importKeyword.value = ''
+  importProvider.value = ''
+  importStatus.value = ''
+  importPage.value = 1
+  dropFilterSelection()
+  void loadPreview()
+}
+
+function changeImportProvider(): void {
+  importPage.value = 1
+  dropFilterSelection()
+  void loadPreview()
+}
+
+function changeImportStatus(): void {
+  importPage.value = 1
+  dropFilterSelection()
+  void loadPreview()
+}
+
+function changeImportPage(next: number): void {
+  importPage.value = next
+  void loadPreview()
+}
+
+function changeImportPageSize(size: number): void {
+  importPageSize.value = size
+  importPage.value = 1
+  void loadPreview()
+}
+
+/** refreshImportCatalog 丢弃服务端目录快照并重新读取 models.dev。 */
+function refreshImportCatalog(): void {
+  clearImportSelection()
+  importPage.value = 1
+  void loadPreview(true)
+}
+
+async function runImport(): Promise<void> {
+  if (importRunning.value || importSelectedCount.value === 0) {
+    return
+  }
+  runError.value = ''
+  importRunning.value = true
+
+  const selection: AdminModelImportSelection =
+    importSelectAll.value !== null
+      ? {
+          mode: 'filter',
+          filter: importSelectAll.value.filter,
+          exclude: [...importExcluded.value].map(parseImportKey),
+        }
+      : {
+          mode: 'keys',
+          keys: [...importSelected.value].map(parseImportKey),
+        }
+
+  try {
+    const result = await adminApi.importModels(importOverwrite.value, selection)
     ElMessage.success(
       t('admin.models.importDone', {
         created: result.created,
@@ -299,8 +529,12 @@ async function runImport(): Promise<void> {
     await loadModels()
   } catch (error) {
     runError.value = `${t('admin.models.importFailed')}：${messageOf(error)}`
+  } finally {
+    importRunning.value = false
   }
 }
+
+onBeforeUnmount(() => window.clearTimeout(keywordTimer))
 
 // ---------- 关联提示词 ----------
 
@@ -536,26 +770,47 @@ onMounted(async () => {
       <el-table-column :label="t('admin.common.updatedAt')" width="170">
         <template #default="{ row }: { row: AdminModel }">{{ formatTime(row.updated_at) }}</template>
       </el-table-column>
-      <el-table-column :label="t('admin.common.actions')" width="300">
+      <el-table-column :label="t('admin.common.actions')" width="152" fixed="right">
         <template #default="{ row }: { row: AdminModel }">
-          <el-button size="small" text data-testid="admin-models-edit" @click="openEdit(row)">
-            {{ t('admin.common.edit') }}
-          </el-button>
-          <el-button size="small" text data-testid="admin-models-enable" @click="toggleEnabled(row)">
-            {{ row.is_enabled ? t('admin.models.disable') : t('admin.models.enable') }}
-          </el-button>
-          <el-button size="small" text data-testid="admin-models-delete" @click="removeModel(row)">
-            {{ t('admin.common.remove') }}
-          </el-button>
-          <el-button size="small" text data-testid="admin-models-related" @click="openRelated(row)">
-            {{ t('admin.models.relatedPrompts') }}
-          </el-button>
-          <el-button size="small" text data-testid="admin-models-stats" @click="openStats(row)">
-            {{ t('admin.models.modelStats') }}
-          </el-button>
-          <el-button size="small" text data-testid="admin-models-snapshots" @click="openSnapshots(row)">
-            {{ t('admin.models.snapshots') }}
-          </el-button>
+          <div class="pb-admin-module__row-actions">
+            <el-button size="small" text data-testid="admin-models-edit" @click="openEdit(row)">
+              {{ t('admin.common.edit') }}
+            </el-button>
+            <el-dropdown
+              trigger="click"
+              placement="bottom-end"
+              @command="(command: string) => runModelAction(command, row)"
+            >
+              <el-button size="small" text data-testid="admin-models-more">
+                {{ t('admin.common.more') }}
+                <span class="pb-admin-module__caret" aria-hidden="true">▾</span>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="toggle" data-testid="admin-models-enable">
+                    {{ row.is_enabled ? t('admin.models.disable') : t('admin.models.enable') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="related" data-testid="admin-models-related">
+                    {{ t('admin.models.relatedPrompts') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="stats" data-testid="admin-models-stats">
+                    {{ t('admin.models.modelStats') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item command="snapshots" data-testid="admin-models-snapshots">
+                    {{ t('admin.models.snapshots') }}
+                  </el-dropdown-item>
+                  <el-dropdown-item
+                    command="delete"
+                    divided
+                    class="pb-admin-module__danger"
+                    data-testid="admin-models-delete"
+                  >
+                    {{ t('admin.common.remove') }}
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -661,74 +916,276 @@ onMounted(async () => {
       </template>
     </el-dialog>
 
-    <el-dialog v-model="importVisible" :title="t('admin.models.importTitle')" width="720px">
-      <div v-if="previewError !== ''">
-        <p class="pb-admin-module__error">
-          {{ t('admin.models.previewFailed') }}：{{ previewError }}
-        </p>
-        <p class="pb-admin-module__hint">{{ t('admin.models.badGatewayHint') }}</p>
-      </div>
-      <template v-else>
-        <p class="pb-admin-module__hint">
-          {{
-            t('admin.models.importSummary', {
-              total: importItems.length,
-              duplicates: importDuplicates,
-            })
-          }}
-        </p>
-        <p class="pb-admin-module__hint">{{ t('admin.models.importDuplicateHint') }}</p>
-        <div class="pb-admin-module__switcher">
-          <el-switch
-            v-model="importOverwrite"
+    <el-dialog
+      v-model="importVisible"
+      class="pb-import-dialog"
+      :title="t('admin.models.importTitle')"
+      width="min(1080px, 94vw)"
+      top="6vh"
+      :close-on-click-modal="!importRunning"
+      :close-on-press-escape="!importRunning"
+      :show-close="!importRunning"
+    >
+      <div class="pb-import">
+        <div v-if="previewError !== ''" class="pb-import__failure">
+          <p class="pb-admin-module__error">
+            {{ t('admin.models.previewFailed') }}：{{ previewError }}
+          </p>
+          <p class="pb-admin-module__hint">{{ t('admin.models.badGatewayHint') }}</p>
+          <el-button
             size="small"
-            data-testid="admin-models-import-overwrite"
-          />
-          <span class="pb-admin-module__hint">{{ t('admin.models.importOverwrite') }}</span>
+            data-testid="admin-models-import-retry"
+            @click="loadPreview(true)"
+          >
+            {{ t('admin.models.importRetry') }}
+          </el-button>
         </div>
-        <p v-if="!importOverwrite" class="pb-admin-module__hint">
-          {{ t('admin.models.importSkipHint') }}
-        </p>
-        <el-table v-loading="importLoading" :data="importItems" size="small" max-height="360">
-          <el-table-column prop="provider_name" :label="t('admin.models.providerName')" width="140" />
-          <el-table-column prop="model_id" :label="t('admin.models.modelKey')" min-width="160" />
-          <el-table-column :label="t('admin.models.name')" min-width="200">
-            <template #default="{ row }: { row: AdminModelImportEntry }">
-              <span>{{ row.name }}</span>
-              <el-tag
-                v-if="row.duplicate"
-                class="pb-admin-module__badge"
-                type="warning"
+        <div v-else-if="importPreview === null" class="pb-import__loading">
+          <span class="pb-import__pulse" />
+          <span>{{ t('admin.models.importLoading') }}</span>
+        </div>
+        <template v-else>
+          <header class="pb-import__summary">
+            <div class="pb-import__figures">
+              <span class="pb-import__figure" data-testid="admin-models-import-figure-total">
+                <strong>{{ importCatalogTotal }}</strong>
+                <span>{{ t('admin.models.importFigureTotal') }}</span>
+              </span>
+              <span class="pb-import__figure" data-testid="admin-models-import-figure-duplicate">
+                <strong>{{ importDuplicateCount }}</strong>
+                <span>{{ t('admin.models.importFigureDuplicate') }}</span>
+              </span>
+              <span class="pb-import__figure" data-testid="admin-models-import-figure-matched">
+                <strong>{{ importTotal }}</strong>
+                <span>{{ t('admin.models.importFigureMatched') }}</span>
+              </span>
+            </div>
+            <div class="pb-import__catalog">
+              <span v-if="importFetchedAt" class="pb-admin-module__hint">
+                {{ t('admin.models.importFetchedAt', { time: importFetchedAt }) }}
+              </span>
+              <el-button
                 size="small"
+                text
+                :loading="importLoading"
+                data-testid="admin-models-import-refresh"
+                @click="refreshImportCatalog"
               >
-                {{ duplicateText(row) }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column prop="release_date" :label="t('admin.models.releaseDate')" width="120" />
-          <el-table-column :label="t('admin.models.inputModalities')" width="140">
-            <template #default="{ row }: { row: AdminModelImportEntry }">
-              {{ row.input_modalities.join(',') }}
-            </template>
-          </el-table-column>
-          <el-table-column
-            prop="context_length"
-            :label="t('admin.models.contextLength')"
-            width="110"
-          />
-        </el-table>
-      </template>
+                {{ t('admin.models.importRefresh') }}
+              </el-button>
+            </div>
+          </header>
+
+          <div class="pb-import__toolbar">
+            <el-input
+              v-model="importKeyword"
+              class="pb-import__search"
+              :placeholder="t('admin.models.importSearch')"
+              clearable
+              data-testid="admin-models-import-search"
+              @input="scheduleImportSearch"
+              @keyup.enter="applyImportSearch"
+              @clear="applyImportSearch"
+            />
+            <el-select
+              v-model="importProvider"
+              class="pb-import__provider"
+              clearable
+              filterable
+              :placeholder="t('admin.models.importProviderAll')"
+              data-testid="admin-models-import-provider"
+              @change="changeImportProvider"
+            >
+              <el-option
+                v-for="provider in importProviders"
+                :key="provider.id"
+                :value="provider.id"
+                :label="`${provider.name} · ${provider.total}`"
+              />
+            </el-select>
+            <el-radio-group
+              v-model="importStatus"
+              size="small"
+              data-testid="admin-models-import-status"
+              @change="changeImportStatus"
+            >
+              <el-radio-button value="">{{ t('admin.models.importStatusAll') }}</el-radio-button>
+              <el-radio-button value="new">{{ t('admin.models.importStatusNew') }}</el-radio-button>
+              <el-radio-button value="duplicate">
+                {{ t('admin.models.importStatusDuplicate') }}
+              </el-radio-button>
+            </el-radio-group>
+            <el-button
+              size="small"
+              text
+              data-testid="admin-models-import-reset"
+              @click="resetImportFilters"
+            >
+              {{ t('admin.common.reset') }}
+            </el-button>
+          </div>
+
+          <Transition name="pb-import-bar">
+            <div v-if="importSelectedCount > 0" class="pb-import__selection">
+              <span class="pb-import__selection-count" data-testid="admin-models-import-selected">
+                {{
+                  importSelectAll
+                    ? t('admin.models.importSelectedFiltered', { count: importSelectedCount })
+                    : t('admin.models.importSelected', { count: importSelectedCount })
+                }}
+              </span>
+              <span class="pb-import__selection-actions">
+                <el-button
+                  size="small"
+                  text
+                  data-testid="admin-models-import-clear"
+                  @click="clearImportSelection"
+                >
+                  {{ t('admin.models.importClearSelection') }}
+                </el-button>
+              </span>
+            </div>
+          </Transition>
+
+          <div class="pb-import__table" :class="{ 'is-refreshing': importLoading }">
+            <el-table
+              :data="importItems"
+              size="small"
+              max-height="400"
+              :row-class-name="importRowClass"
+              data-testid="admin-models-import-table"
+            >
+              <el-table-column width="46" align="center">
+                <template #header>
+                  <el-checkbox
+                    :model-value="importPageSelected"
+                    :indeterminate="importPageIndeterminate"
+                    data-testid="admin-models-import-select-page"
+                    @change="setImportPageSelected(Boolean($event))"
+                  />
+                </template>
+                <template #default="{ row }: { row: AdminModelImportEntry }">
+                  <el-checkbox
+                    :model-value="isImportSelected(row)"
+                    data-testid="admin-models-import-select"
+                    @change="setImportSelected(row, Boolean($event))"
+                  />
+                </template>
+              </el-table-column>
+              <el-table-column :label="t('admin.models.name')" min-width="210">
+                <template #default="{ row }: { row: AdminModelImportEntry }">
+                  <div class="pb-import__name">
+                    <span class="pb-import__name-text" :title="row.description">
+                      {{ row.name }}
+                    </span>
+                    <el-tag
+                      v-if="row.duplicate"
+                      class="pb-admin-module__badge"
+                      type="warning"
+                      size="small"
+                      effect="plain"
+                      :title="duplicateText(row)"
+                    >
+                      {{ t('admin.models.importStatusDuplicate') }}
+                    </el-tag>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column
+                prop="provider_name"
+                :label="t('admin.models.providerName')"
+                width="150"
+                show-overflow-tooltip
+              />
+              <el-table-column
+                prop="model_id"
+                :label="t('admin.models.modelKey')"
+                min-width="170"
+                show-overflow-tooltip
+              />
+              <el-table-column prop="release_date" :label="t('admin.models.releaseDate')" width="110" />
+              <el-table-column :label="t('admin.models.inputModalities')" width="130">
+                <template #default="{ row }: { row: AdminModelImportEntry }">
+                  <span class="pb-import__modalities">
+                    {{ row.input_modalities.length > 0 ? row.input_modalities.join(' · ') : t('admin.common.none') }}
+                  </span>
+                </template>
+              </el-table-column>
+              <el-table-column
+                prop="context_length"
+                :label="t('admin.models.contextLength')"
+                width="110"
+              />
+            </el-table>
+            <p v-if="!importLoading && importItems.length === 0" class="pb-admin-module__empty">
+              {{ t('admin.models.importEmpty') }}
+            </p>
+          </div>
+
+          <div class="pb-import__foot">
+            <span class="pb-import__foot-info">
+              <span class="pb-admin-module__hint">
+                {{ t('admin.models.importPageHint', { total: importTotal }) }}
+              </span>
+              <el-button
+                v-if="importSelectAll === null && importTotal > importItems.length"
+                size="small"
+                text
+                data-testid="admin-models-import-select-all"
+                @click="selectAllImportMatches"
+              >
+                {{ t('admin.models.importSelectAll', { count: importTotal }) }}
+              </el-button>
+            </span>
+            <el-pagination
+              v-if="importTotal > 0"
+              layout="sizes, prev, pager, next"
+              :current-page="importPage"
+              :page-size="importPageSize"
+              :page-sizes="[20, 50, 100]"
+              :total="importTotal"
+              @current-change="changeImportPage"
+              @size-change="changeImportPageSize"
+            />
+          </div>
+        </template>
+      </div>
       <p v-if="runError !== ''" class="pb-admin-module__error">{{ runError }}</p>
+      <Transition name="pb-import-bar">
+        <div v-if="importRunning" class="pb-import__running" data-testid="admin-models-import-running">
+          <span class="pb-import__pulse" />
+          {{ t('admin.models.importRunning', { count: importSelectedCount }) }}
+        </div>
+      </Transition>
       <template #footer>
-        <el-button
-          type="primary"
-          :disabled="previewError !== ''"
-          data-testid="admin-models-import-run"
-          @click="runImport"
-        >
-          {{ t('admin.models.importRun') }}
-        </el-button>
-        <el-button @click="importVisible = false">{{ t('admin.common.cancel') }}</el-button>
+        <div class="pb-import__footer">
+          <label class="pb-import__overwrite">
+            <el-switch
+              v-model="importOverwrite"
+              size="small"
+              :disabled="importRunning"
+              data-testid="admin-models-import-overwrite"
+            />
+            <span>{{ t('admin.models.importOverwrite') }}</span>
+            <el-tooltip :content="t('admin.models.importDuplicateHint')" placement="top">
+              <span class="pb-import__tip">?</span>
+            </el-tooltip>
+          </label>
+          <div class="pb-import__footer-actions">
+            <el-button :disabled="importRunning" @click="importVisible = false">
+              {{ t('admin.common.cancel') }}
+            </el-button>
+            <el-button
+              type="primary"
+              :disabled="previewError !== '' || importSelectedCount === 0"
+              :loading="importRunning"
+              data-testid="admin-models-import-run"
+              @click="runImport"
+            >
+              {{ t('admin.models.importRunSelected', { count: importSelectedCount }) }}
+            </el-button>
+          </div>
+        </div>
       </template>
     </el-dialog>
 
@@ -939,6 +1396,22 @@ onMounted(async () => {
   margin-top: var(--pb-space-sm);
 }
 
+.pb-admin-module__row-actions {
+  align-items: center;
+  display: flex;
+  gap: 2px;
+  white-space: nowrap;
+}
+
+.pb-admin-module__caret {
+  font-size: 10px;
+  margin-left: 3px;
+}
+
+:global(.el-dropdown-menu__item.pb-admin-module__danger) {
+  color: var(--el-color-danger);
+}
+
 .pb-admin-module__badge {
   margin-left: var(--pb-space-xs);
 }
@@ -950,5 +1423,273 @@ onMounted(async () => {
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* ---------- models.dev 导入工作台 ---------- */
+
+.pb-import {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-sm);
+}
+
+.pb-import__failure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-sm);
+  align-items: flex-start;
+}
+
+.pb-import__loading {
+  align-items: center;
+  color: var(--pb-ink-soft);
+  display: flex;
+  font-size: 14px;
+  gap: var(--pb-space-sm);
+  justify-content: center;
+  min-height: 220px;
+}
+
+.pb-import__summary {
+  align-items: center;
+  background:
+    linear-gradient(120deg, var(--pb-surface-muted), transparent 68%),
+    var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-md);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pb-space-md);
+  justify-content: space-between;
+  padding: 12px 16px;
+}
+
+.pb-import__figures {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pb-space-lg);
+}
+
+.pb-import__figure {
+  align-items: baseline;
+  color: var(--pb-ink-faint);
+  display: flex;
+  font-size: 13px;
+  gap: 6px;
+}
+
+.pb-import__figure strong {
+  color: var(--pb-ink);
+  font-family: var(--pb-font-display);
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.pb-import__catalog {
+  align-items: center;
+  display: flex;
+  gap: var(--pb-space-xs);
+}
+
+.pb-import__toolbar {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pb-space-sm);
+}
+
+.pb-import__search {
+  width: 280px;
+}
+
+.pb-import__provider {
+  width: 220px;
+}
+
+.pb-import__selection {
+  align-items: center;
+  background: var(--pb-accent-soft);
+  border: 1px solid var(--pb-accent-ring);
+  border-radius: var(--pb-radius-sm);
+  color: var(--pb-accent-strong);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 13px;
+  gap: var(--pb-space-sm);
+  justify-content: space-between;
+  padding: 6px 12px;
+}
+
+.pb-import__selection-count {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+}
+
+.pb-import__selection-actions {
+  display: flex;
+  gap: var(--pb-space-xs);
+}
+
+.pb-import__table {
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-md);
+  overflow: hidden;
+  transition: opacity var(--pb-duration) var(--pb-ease);
+}
+
+.pb-import__table.is-refreshing {
+  opacity: 0.55;
+}
+
+.pb-import__name {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+}
+
+.pb-import__name-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pb-import__modalities {
+  color: var(--pb-ink-soft);
+}
+
+.pb-import__foot {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pb-space-sm);
+  justify-content: space-between;
+}
+
+.pb-import__foot-info {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pb-space-xs);
+}
+
+.pb-import__running {
+  align-items: center;
+  background: var(--pb-surface-muted);
+  border-radius: var(--pb-radius-sm);
+  color: var(--pb-ink-soft);
+  display: flex;
+  font-size: 13px;
+  gap: var(--pb-space-sm);
+  margin-top: var(--pb-space-sm);
+  padding: 8px 12px;
+}
+
+.pb-import__pulse {
+  animation: pb-import-pulse 1.1s ease-in-out infinite;
+  background: var(--pb-accent);
+  border-radius: 50%;
+  flex: none;
+  height: 8px;
+  width: 8px;
+}
+
+@keyframes pb-import-pulse {
+  0%,
+  100% {
+    opacity: 0.35;
+    transform: scale(0.8);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.pb-import__footer {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pb-space-md);
+  justify-content: space-between;
+}
+
+.pb-import__overwrite {
+  align-items: center;
+  color: var(--pb-ink-soft);
+  display: flex;
+  font-size: 13px;
+  gap: var(--pb-space-sm);
+}
+
+.pb-import__tip {
+  align-items: center;
+  border: 1px solid var(--pb-line-strong);
+  border-radius: 50%;
+  color: var(--pb-ink-faint);
+  cursor: help;
+  display: inline-flex;
+  font-size: 11px;
+  height: 16px;
+  justify-content: center;
+  width: 16px;
+}
+
+.pb-import__footer-actions {
+  display: flex;
+  gap: var(--pb-space-sm);
+}
+
+.pb-import :deep(.el-table__row) {
+  transition: background-color var(--pb-duration-fast) var(--pb-ease);
+}
+
+.pb-import :deep(.el-table__row:hover > td.el-table__cell) {
+  background-color: var(--pb-surface-muted);
+}
+
+.pb-import :deep(.pb-import__row--selected > td.el-table__cell) {
+  background-color: var(--pb-accent-soft);
+}
+
+.pb-import :deep(.pb-import__row--selected:hover > td.el-table__cell) {
+  background-color: var(--pb-accent-soft);
+}
+
+.pb-import-bar-enter-active,
+.pb-import-bar-leave-active {
+  transition:
+    opacity 160ms var(--pb-ease),
+    transform 160ms var(--pb-ease);
+}
+
+.pb-import-bar-enter-from,
+.pb-import-bar-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+@media (max-width: 720px) {
+  .pb-import__search,
+  .pb-import__provider {
+    width: 100%;
+  }
+
+  .pb-import__figures {
+    gap: var(--pb-space-md);
+  }
+
+  .pb-import__footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pb-import__footer-actions {
+    justify-content: flex-end;
+  }
 }
 </style>

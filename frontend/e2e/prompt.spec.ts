@@ -52,6 +52,53 @@ test('三种排序方式均可选择并触发查询', async ({ page }) => {
   await page.keyboard.press('Escape')
 })
 
+test('上传页展示提示词写作指南', async ({ page }) => {
+  await loginShared(page)
+  await openAsShared(page, '/upload')
+
+  await expect(page.getByTestId('prompt-guide-banner')).toBeVisible()
+  await page.getByTestId('prompt-guide-open').click()
+  await expect(page.getByRole('dialog')).toContainText('提示词写作指南')
+  await expect(page.getByTestId('prompt-guide-dialog')).toContainText('参考来源')
+})
+
+test('考察维度支持多选且最多 5 个', async ({ page }) => {
+  await loginShared(page)
+  await openAsShared(page, '/upload')
+
+  await page.getByTestId('prompt-capability').locator('.el-select__wrapper').click()
+  for (const name of ['推理', '知识', '数学', '语言', '创造性']) {
+    await page.getByRole('option', { name, exact: true }).click()
+  }
+
+  await expect(page.getByTestId('prompt-capability-count')).toContainText('已选 5 / 5 个')
+  await expect(page.getByRole('option', { name: '代码', exact: true })).toHaveClass(/is-disabled/)
+})
+
+test('多选的考察维度在详情页完整展示', async ({ page }) => {
+  await loginShared(page)
+  await openAsShared(page, '/upload')
+
+  await page.getByTestId('prompt-title').fill(`多维度提示词 ${Date.now()}`)
+  await page.getByTestId('prompt-body').fill('同时考察推理、代码与工具调用。')
+  await page.getByTestId('prompt-purpose').locator('.el-select__wrapper').click()
+  await page.getByRole('option', { name: '边界探测', exact: true }).click()
+
+  await page.getByTestId('prompt-capability').locator('.el-select__wrapper').click()
+  for (const name of ['推理', '代码', '工具调用']) {
+    await page.getByRole('option', { name, exact: true }).click()
+  }
+  await page.keyboard.press('Escape')
+
+  await page.getByTestId('prompt-submit').click()
+  await expect(page).toHaveURL(/\/prompts\/\d+$/)
+
+  const capability = page.getByTestId('detail-capability')
+  await expect(capability).toContainText('推理')
+  await expect(capability).toContainText('代码')
+  await expect(capability).toContainText('工具调用')
+})
+
 test('普通用户的可见性选项不含开发者可见', async ({ page }) => {
   await loginShared(page)
 

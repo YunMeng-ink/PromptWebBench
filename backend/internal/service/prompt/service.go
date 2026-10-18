@@ -77,10 +77,13 @@ func majorChangeTagKinds() []string {
 // Input 是创建与更新共用的字段集合。两条路径共用同一套校验与权限判定函数，
 // 使「只能由开发者使用」的约束在两个入口上同时生效（开发方案 §3.3）。
 type Input struct {
-	Title         string
-	Body          string
-	Description   string
-	PurposeID     int64
+	Title       string
+	Body        string
+	Description string
+	PurposeID   int64
+	// CapabilityIDs 是完整的考察维度集合（一至五个）。
+	// CapabilityID 保留给旧调用方；两者都为空时校验失败。
+	CapabilityIDs []int64
 	CapabilityID  int64
 	DifficultyID  *int64
 	Visibility    domain.Visibility
@@ -116,9 +119,12 @@ func (s *Service) Create(ctx context.Context, actor domain.User, in Input) (Resu
 		if err := viewer.AuthorizePurpose(purpose.IsHighRisk, in.Visibility); err != nil {
 			return translatePermission(err)
 		}
-		if err := s.validateReferences(ctx, q, in); err != nil {
+		capabilityIDs, err := s.validateReferences(ctx, q, in)
+		if err != nil {
 			return err
 		}
+		in.CapabilityIDs = capabilityIDs
+		in.CapabilityID = capabilityIDs[0]
 		if in.Visibility == domain.VisibilityPrivate {
 			if err := s.checkPrivateQuota(ctx, q, viewer, actor.Role); err != nil {
 				return err
@@ -177,6 +183,12 @@ func (s *Service) Create(ctx context.Context, actor domain.User, in Input) (Resu
 		if err := replaceTags(ctx, q, row.ID, in.TagIDs); err != nil {
 			return err
 		}
+		if err := replaceCapabilities(ctx, q, row.ID, capabilityIDs); err != nil {
+			return err
+		}
+		if err := attachVersionCapabilities(ctx, q, versionRow.ID, capabilityIDs); err != nil {
+			return err
+		}
 
 		fields := fieldsOfPrompt(updated)
 		// 写入路径的返回行不联表取考察目的，高风险标记直接用事务内已校验的目的赋值。
@@ -185,6 +197,7 @@ func (s *Service) Create(ctx context.Context, actor domain.User, in Input) (Resu
 		if err != nil {
 			return err
 		}
+		prompt.CapabilityIDs = capabilityIDs
 		result = Result{Prompt: prompt, VersionNo: version.String()}
 		return nil
 	})
@@ -222,9 +235,12 @@ func (s *Service) Update(ctx context.Context, actor domain.User, id int64, in In
 		if err := viewer.AuthorizePurpose(purpose.IsHighRisk, in.Visibility); err != nil {
 			return translatePermission(err)
 		}
-		if err := s.validateReferences(ctx, q, in); err != nil {
+		capabilityIDs, err := s.validateReferences(ctx, q, in)
+		if err != nil {
 			return err
 		}
+		in.CapabilityIDs = capabilityIDs
+		in.CapabilityID = capabilityIDs[0]
 		if in.Visibility == domain.VisibilityPrivate && locked.Visibility != domain.VisibilityPrivate {
 			if err := s.checkPrivateQuota(ctx, q, viewer, actor.Role); err != nil {
 				return err
@@ -317,6 +333,12 @@ func (s *Service) Update(ctx context.Context, actor domain.User, id int64, in In
 		if err := replaceTags(ctx, q, locked.ID, in.TagIDs); err != nil {
 			return err
 		}
+		if err := replaceCapabilities(ctx, q, locked.ID, capabilityIDs); err != nil {
+			return err
+		}
+		if err := attachVersionCapabilities(ctx, q, versionRow.ID, capabilityIDs); err != nil {
+			return err
+		}
 
 		fields := fieldsOfPrompt(updated)
 		// 同创建路径：写入返回行不联表，高风险标记取自事务内已校验的考察目的。
@@ -325,6 +347,7 @@ func (s *Service) Update(ctx context.Context, actor domain.User, id int64, in In
 		if err != nil {
 			return err
 		}
+		prompt.CapabilityIDs = capabilityIDs
 		result = Result{
 			Prompt:          prompt,
 			VersionNo:       next.String(),

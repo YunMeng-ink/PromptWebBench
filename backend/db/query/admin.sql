@@ -164,9 +164,9 @@ SELECT * FROM models
 WHERE model_key = $1 AND provider_key = $2 AND deleted_at IS NULL;
 
 -- 导入预览与执行都按身份列比对，一次取出全部在用模型，避免逐条查询。
--- name: ListModelIdentities :many
-SELECT id, name, model_key, provider_key, provider_name
-FROM models
+-- 执行覆盖时还需要别名、启用状态与备注，因此取整行。
+-- name: ListModelsForImport :many
+SELECT * FROM models
 WHERE deleted_at IS NULL
 ORDER BY id;
 

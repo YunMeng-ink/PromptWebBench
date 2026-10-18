@@ -2459,48 +2459,6 @@ func (q *Queries) InsertTag(ctx context.Context, arg InsertTagParams) (Tag, erro
 	return i, err
 }
 
-const listModelIdentities = `-- name: ListModelIdentities :many
-SELECT id, name, model_key, provider_key, provider_name
-FROM models
-WHERE deleted_at IS NULL
-ORDER BY id
-`
-
-type ListModelIdentitiesRow struct {
-	ID           int64
-	Name         string
-	ModelKey     string
-	ProviderKey  string
-	ProviderName string
-}
-
-// 导入预览与执行都按身份列比对，一次取出全部在用模型，避免逐条查询。
-func (q *Queries) ListModelIdentities(ctx context.Context) ([]ListModelIdentitiesRow, error) {
-	rows, err := q.db.Query(ctx, listModelIdentities)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListModelIdentitiesRow{}
-	for rows.Next() {
-		var i ListModelIdentitiesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.ModelKey,
-			&i.ProviderKey,
-			&i.ProviderName,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listModelSnapshots = `-- name: ListModelSnapshots :many
 SELECT id, model_id, source, raw, created_at
 FROM model_snapshots
@@ -2530,6 +2488,51 @@ func (q *Queries) ListModelSnapshots(ctx context.Context, arg ListModelSnapshots
 			&i.Source,
 			&i.Raw,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listModelsForImport = `-- name: ListModelsForImport :many
+SELECT id, name, model_key, provider_key, provider_name, input_modalities, aliases, description, release_date, context_length, is_enabled, note, import_source, deleted_at, created_at, updated_at FROM models
+WHERE deleted_at IS NULL
+ORDER BY id
+`
+
+// 导入预览与执行都按身份列比对，一次取出全部在用模型，避免逐条查询。
+// 执行覆盖时还需要别名、启用状态与备注，因此取整行。
+func (q *Queries) ListModelsForImport(ctx context.Context) ([]Model, error) {
+	rows, err := q.db.Query(ctx, listModelsForImport)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Model{}
+	for rows.Next() {
+		var i Model
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.ModelKey,
+			&i.ProviderKey,
+			&i.ProviderName,
+			&i.InputModalities,
+			&i.Aliases,
+			&i.Description,
+			&i.ReleaseDate,
+			&i.ContextLength,
+			&i.IsEnabled,
+			&i.Note,
+			&i.ImportSource,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

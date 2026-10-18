@@ -50,21 +50,22 @@ func pageValues(page, size int32) (int32, int32) {
 }
 
 type promptDTO struct {
-	ID             int64  `json:"id"`
-	Title          string `json:"title"`
-	Description    string `json:"description"`
-	PurposeID      int64  `json:"purpose_id"`
-	CapabilityID   int64  `json:"capability_id"`
-	DifficultyID   *int64 `json:"difficulty_id,omitempty"`
-	Visibility     string `json:"visibility"`
-	SensitiveLevel string `json:"sensitive_level"`
-	UploaderID     int64  `json:"uploader_id"`
-	VersionNo      string `json:"version_no"`
-	MajorModified  bool   `json:"major_modified"`
-	CommentCount   int32  `json:"comment_count"`
-	FavoriteCount  int32  `json:"favorite_count"`
-	CreatedAt      string `json:"created_at"`
-	UpdatedAt      string `json:"updated_at"`
+	ID             int64   `json:"id"`
+	Title          string  `json:"title"`
+	Description    string  `json:"description"`
+	PurposeID      int64   `json:"purpose_id"`
+	CapabilityID   int64   `json:"capability_id"`
+	CapabilityIDs  []int64 `json:"capability_ids"`
+	DifficultyID   *int64  `json:"difficulty_id,omitempty"`
+	Visibility     string  `json:"visibility"`
+	SensitiveLevel string  `json:"sensitive_level"`
+	UploaderID     int64   `json:"uploader_id"`
+	VersionNo      string  `json:"version_no"`
+	MajorModified  bool    `json:"major_modified"`
+	CommentCount   int32   `json:"comment_count"`
+	FavoriteCount  int32   `json:"favorite_count"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
 }
 
 type promptListItemDTO struct {
@@ -97,6 +98,7 @@ func toPromptDTO(p domain.Prompt) promptDTO {
 		Description:    p.Description,
 		PurposeID:      p.PurposeID,
 		CapabilityID:   p.CapabilityID,
+		CapabilityIDs:  capabilityIDsOrPrimary(p.CapabilityIDs, p.CapabilityID),
 		DifficultyID:   p.DifficultyID,
 		Visibility:     string(p.Visibility),
 		SensitiveLevel: string(p.Sensitive),
@@ -110,26 +112,38 @@ func toPromptDTO(p domain.Prompt) promptDTO {
 	}
 }
 
+// capabilityIDsOrPrimary 在完整集合缺失时退回主维度，保证旧读取路径仍给出非空集合。
+func capabilityIDsOrPrimary(ids []int64, primary int64) []int64 {
+	if len(ids) > 0 {
+		return ids
+	}
+	if primary > 0 {
+		return []int64{primary}
+	}
+	return []int64{}
+}
+
 // formatTime 以 RFC 3339 输出 UTC 时刻，全系统时间字段统一为该形态。
 func formatTime(t time.Time) string {
 	return t.UTC().Format(time.RFC3339)
 }
 
 type promptVersionDTO struct {
-	ID             int64  `json:"id"`
-	VersionNo      string `json:"version_no"`
-	Title          string `json:"title"`
-	Body           string `json:"body"`
-	Description    string `json:"description"`
-	PurposeID      int64  `json:"purpose_id"`
-	CapabilityID   int64  `json:"capability_id"`
-	DifficultyID   *int64 `json:"difficulty_id,omitempty"`
-	Visibility     string `json:"visibility"`
-	SensitiveLevel string `json:"sensitive_level"`
-	IsMajor        bool   `json:"is_major"`
-	ChangeNote     string `json:"change_note"`
-	AuthorID       int64  `json:"author_id"`
-	CreatedAt      string `json:"created_at"`
+	ID             int64   `json:"id"`
+	VersionNo      string  `json:"version_no"`
+	Title          string  `json:"title"`
+	Body           string  `json:"body"`
+	Description    string  `json:"description"`
+	PurposeID      int64   `json:"purpose_id"`
+	CapabilityID   int64   `json:"capability_id"`
+	CapabilityIDs  []int64 `json:"capability_ids"`
+	DifficultyID   *int64  `json:"difficulty_id,omitempty"`
+	Visibility     string  `json:"visibility"`
+	SensitiveLevel string  `json:"sensitive_level"`
+	IsMajor        bool    `json:"is_major"`
+	ChangeNote     string  `json:"change_note"`
+	AuthorID       int64   `json:"author_id"`
+	CreatedAt      string  `json:"created_at"`
 }
 
 func toPromptVersionDTO(v domain.PromptVersion) promptVersionDTO {
@@ -141,6 +155,7 @@ func toPromptVersionDTO(v domain.PromptVersion) promptVersionDTO {
 		Description:    v.Description,
 		PurposeID:      v.PurposeID,
 		CapabilityID:   v.CapabilityID,
+		CapabilityIDs:  capabilityIDsOrPrimary(v.CapabilityIDs, v.CapabilityID),
 		DifficultyID:   v.DifficultyID,
 		Visibility:     string(v.Visibility),
 		SensitiveLevel: string(v.Sensitive),
@@ -162,14 +177,15 @@ type tagDTO struct {
 
 type promptDetailResponse struct {
 	Body struct {
-		Prompt     promptDTO          `json:"prompt"`
-		Version    promptVersionDTO   `json:"version"`
-		Versions   []promptVersionDTO `json:"versions"`
-		Purpose    purposeDTO         `json:"purpose"`
-		Capability capabilityDTO      `json:"capability"`
-		Difficulty *difficultyDTO     `json:"difficulty,omitempty"`
-		Tags       []tagDTO           `json:"tags"`
-		Uploader   string             `json:"uploader"`
+		Prompt       promptDTO          `json:"prompt"`
+		Version      promptVersionDTO   `json:"version"`
+		Versions     []promptVersionDTO `json:"versions"`
+		Purpose      purposeDTO         `json:"purpose"`
+		Capability   capabilityDTO      `json:"capability"`
+		Capabilities []capabilityDTO    `json:"capabilities"`
+		Difficulty   *difficultyDTO     `json:"difficulty,omitempty"`
+		Tags         []tagDTO           `json:"tags"`
+		Uploader     string             `json:"uploader"`
 		// MajorModificationNotice 在提示词发生过重大修改时非空（需求 §7.3 第 5 步）。
 		MajorModificationNotice string `json:"major_modification_notice,omitempty"`
 	}
@@ -192,6 +208,13 @@ func (s *Server) fillDetail(out *promptDetailResponse, detail prompt.Detail) {
 	}
 	out.Body.Purpose = toPurposeDTO(detail.Purpose)
 	out.Body.Capability = toCapabilityDTO(detail.Capability)
+	out.Body.Capabilities = make([]capabilityDTO, 0, len(detail.Capabilities))
+	for _, capability := range detail.Capabilities {
+		out.Body.Capabilities = append(out.Body.Capabilities, toCapabilityDTO(capability))
+	}
+	if len(out.Body.Capabilities) == 0 {
+		out.Body.Capabilities = append(out.Body.Capabilities, out.Body.Capability)
+	}
 	if detail.Difficulty != nil {
 		difficulty := toDifficultyDTO(*detail.Difficulty)
 		out.Body.Difficulty = &difficulty

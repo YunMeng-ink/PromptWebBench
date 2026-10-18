@@ -38,7 +38,8 @@ describe('登录页', () => {
     await wrapper.get('[data-testid="login-form"]').trigger('submit')
     await flushPromises()
 
-    expect(router.currentRoute.value.fullPath).toBe('/me')
+    // 目标视图按路由拆分，跳转需要等动态模块加载完成。
+    await vi.waitFor(() => expect(router.currentRoute.value.fullPath).toBe('/me'))
   })
 
   it('凭据错误时展示本地化提示且不跳转', async () => {

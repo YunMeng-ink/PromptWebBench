@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"math"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -14,6 +15,61 @@ func (s *Server) registerStatsRoutes() {
 		Method: http.MethodGet, Path: APIPrefix + "/prompts/{id}/stats",
 		OperationID: "getPromptStats", Summary: "提示词统计", Tags: []string{"提示词"},
 	}, s.handleGetPromptStats)
+
+	Register(s, "guest_read", huma.Operation{
+		Method: http.MethodGet, Path: APIPrefix + "/leaderboard",
+		OperationID: "getDiscriminationLeaderboard", Summary: "区分度排行榜", Tags: []string{"提示词"},
+	}, s.handleLeaderboard)
+}
+
+type leaderboardInput struct {
+	Window string `query:"window" default:"overall" enum:"overall,recent,history" doc:"统计窗口"`
+	Limit  int32  `query:"limit" default:"20" minimum:"1" maximum:"50" doc:"条目数"`
+}
+
+type leaderboardEntryDTO struct {
+	Rank             int     `json:"rank"`
+	PromptID         int64   `json:"prompt_id"`
+	Title            string  `json:"title"`
+	Discrimination   float64 `json:"discrimination"`
+	Confidence       string  `json:"confidence" enum:"high,medium,low"`
+	ValidModelCount  int     `json:"valid_model_count"`
+	TotalRatingCount int     `json:"total_rating_count"`
+	ComputedAt       string  `json:"computed_at"`
+}
+
+type leaderboardResponse struct {
+	Body struct {
+		Window         string                `json:"window"`
+		RefreshedAt    string                `json:"refreshed_at"`
+		RefreshSeconds int                   `json:"refresh_seconds"`
+		Items          []leaderboardEntryDTO `json:"items"`
+	}
+}
+
+func (s *Server) handleLeaderboard(ctx context.Context, in *leaderboardInput) (*leaderboardResponse, error) {
+	result, err := s.deps.Stats.Leaderboard(ctx, in.Window, in.Limit)
+	if err != nil {
+		return nil, err
+	}
+	out := &leaderboardResponse{}
+	out.Body.Window = result.Window
+	out.Body.RefreshedAt = formatTime(result.RefreshedAt)
+	out.Body.RefreshSeconds = result.RefreshSeconds
+	out.Body.Items = make([]leaderboardEntryDTO, 0, len(result.Items))
+	for _, item := range result.Items {
+		out.Body.Items = append(out.Body.Items, leaderboardEntryDTO{
+			Rank:             item.Rank,
+			PromptID:         item.PromptID,
+			Title:            item.Title,
+			Discrimination:   math.Round(item.Discrimination*100) / 100,
+			Confidence:       string(item.Confidence),
+			ValidModelCount:  item.ValidModelCount,
+			TotalRatingCount: item.TotalRatingCount,
+			ComputedAt:       formatTime(item.ComputedAt),
+		})
+	}
+	return out, nil
 }
 
 type getPromptStatsInput struct {

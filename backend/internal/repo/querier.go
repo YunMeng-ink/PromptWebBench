@@ -125,13 +125,18 @@ type Querier interface {
 	// 先归档再删除：归档表保留原始评分时间与创建时间，统计窗口仍以评分创建时间为准。
 	ArchivePromptRatings(ctx context.Context, arg ArchivePromptRatingsParams) ([]int64, error)
 	AttachModelCapability(ctx context.Context, arg AttachModelCapabilityParams) error
+	AttachPromptCapability(ctx context.Context, arg AttachPromptCapabilityParams) error
 	AttachPromptTag(ctx context.Context, arg AttachPromptTagParams) error
+	// 版本维度的写入只发生在版本创建时；历史版本不修改。
+	AttachPromptVersionCapability(ctx context.Context, arg AttachPromptVersionCapabilityParams) error
 	BumpUserTokenVersion(ctx context.Context, id int64) (User, error)
 	ConsumeEmailVerification(ctx context.Context, id int64) error
 	ConsumeInviteCode(ctx context.Context, id int64) (InviteCode, error)
 	// 注销前统计活跃管理员数量，用于阻止最后一个管理员注销自己：
 	// 注销后无人能进入后台，平台只有重启才会按 ADMIN_INIT_* 重建初始管理员。
 	CountActiveAdmins(ctx context.Context) (int64, error)
+	// 考察维度可能作为提示词的第二至第五个维度出现，引用计数以关联表为准，
+	// 并按提示词与版本去重，避免同一对象被计多次。
 	CountCapabilityReferences(ctx context.Context, capabilityID int64) (int32, error)
 	CountComments(ctx context.Context, promptID int64) (int64, error)
 	CountFavoriteItems(ctx context.Context, favoriteID int64) (int64, error)
@@ -365,6 +370,9 @@ type Querier interface {
 	// 详情页展示已确认的推荐标签。忽略、过期与待确认的推荐不进前台。
 	ListConfirmedRecommendTags(ctx context.Context, promptID int64) ([]RecommendTag, error)
 	ListDifficulties(ctx context.Context) ([]Difficulty, error)
+	// 区分度排行榜：只列公开提示词，按指定窗口的区分度降序。
+	// window_key 取 overall、recent 或 history；数据不足的窗口不参与排名。
+	ListDiscriminationLeaderboard(ctx context.Context, arg ListDiscriminationLeaderboardParams) ([]ListDiscriminationLeaderboardRow, error)
 	// 回收站自动清理：到期且未恢复的记录（需求 §11.3）。
 	// 被题库引用的提示词会长期占住 expires_at 最前的批位、拖住后续条目，
 	// 这里直接把它们排除出批次：引用解除后自然回到候选集。清理事务内仍复查引用计数（C-21）。
@@ -400,10 +408,11 @@ type Querier interface {
 	ListLiveRecommendTagsByKind(ctx context.Context, arg ListLiveRecommendTagsByKindParams) ([]RecommendTag, error)
 	ListModelCapabilitiesForModels(ctx context.Context, modelIds []int64) ([]ModelCapability, error)
 	ListModelCapabilityIDs(ctx context.Context, modelID int64) ([]int64, error)
-	// 导入预览与执行都按身份列比对，一次取出全部在用模型，避免逐条查询。
-	ListModelIdentities(ctx context.Context) ([]ListModelIdentitiesRow, error)
 	ListModelSnapshots(ctx context.Context, arg ListModelSnapshotsParams) ([]ModelSnapshot, error)
 	ListModels(ctx context.Context) ([]Model, error)
+	// 导入预览与执行都按身份列比对，一次取出全部在用模型，避免逐条查询。
+	// 执行覆盖时还需要别名、启用状态与备注，因此取整行。
+	ListModelsForImport(ctx context.Context) ([]Model, error)
 	// 我的评分列表带出提示词的可见性要素，服务层按 domain.Viewer 复查（C-20）：
 	// 已删除的提示词不进列表，改为受限的提示词不再带出标题。
 	ListMyRatings(ctx context.Context, arg ListMyRatingsParams) ([]ListMyRatingsRow, error)
@@ -413,6 +422,8 @@ type Querier interface {
 	ListNotifications(ctx context.Context, arg ListNotificationsParams) ([]Notification, error)
 	ListOwnPrompts(ctx context.Context, arg ListOwnPromptsParams) ([]ListOwnPromptsRow, error)
 	ListOwnedLibraryRecycleBin(ctx context.Context, ownerID int64) ([]RecycleBin, error)
+	ListPromptCapabilities(ctx context.Context, promptID int64) ([]Capability, error)
+	ListPromptCapabilityIDs(ctx context.Context, promptID int64) ([]int64, error)
 	// 统计域的读写：prompt_stats、prompt_model_stats、recommend_tags。
 	//
 	// 时间窗口边界一律由应用层按 UTC 自然日计算后作为参数传入（C-03、开发方案 §3.4）：
@@ -442,6 +453,7 @@ type Querier interface {
 	ListPromptModelStats(ctx context.Context, promptID int64) ([]PromptModelStat, error)
 	ListPromptTagIDs(ctx context.Context, promptID int64) ([]int64, error)
 	ListPromptTags(ctx context.Context, promptID int64) ([]Tag, error)
+	ListPromptVersionCapabilityIDs(ctx context.Context, promptVersionID int64) ([]int64, error)
 	ListPromptVersions(ctx context.Context, promptID int64) ([]PromptVersion, error)
 	// 区分度置信度的 Bootstrap 需要逐条评分样本，重抽样单元就是单条评分。
 	// 一次取回两个窗口的样本，避免两次查询之间出现评分变动导致的口径不一致。
@@ -512,6 +524,8 @@ type Querier interface {
 	// 用 WITH ORDINALITY 把两个数组按下标配对，避免逐条 UPDATE 在一个事务里往返多次。
 	ReorderLibraryQuestions(ctx context.Context, arg ReorderLibraryQuestionsParams) error
 	ReplaceModelCapabilities(ctx context.Context, modelID int64) error
+	// 提示词当前版本的考察维度集合（一至五个）。整体替换使取消勾选可以生效。
+	ReplacePromptCapabilities(ctx context.Context, promptID int64) error
 	ReplacePromptTags(ctx context.Context, promptID int64) error
 	RestoreLibrary(ctx context.Context, id int64) (Library, error)
 	RestoreLibraryQuestion(ctx context.Context, id int64) (LibraryQuestion, error)

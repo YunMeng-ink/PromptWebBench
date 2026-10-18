@@ -67,7 +67,8 @@ func PromptListPage(ctx context.Context, pool *pgxpool.Pool, v domain.Viewer, f 
 		add("p.purpose_id = $%d", *f.PurposeID)
 	}
 	if f.CapabilityID != nil {
-		add("p.capability_id = $%d", *f.CapabilityID)
+		// 多考察维度：命中任意一个即可，与详情页展示的集合保持一致。
+		add("EXISTS (SELECT 1 FROM prompt_capabilities pc WHERE pc.prompt_id = p.id AND pc.capability_id = $%d)", *f.CapabilityID)
 	}
 	if f.DifficultyID != nil {
 		add("p.difficulty_id = $%d", *f.DifficultyID)
@@ -109,6 +110,12 @@ const selectColumns = `
     p.major_modified, p.comment_count, p.favorite_count, p.created_at, p.updated_at,
     pu.name_zh, pu.name_en, pu.is_high_risk,
     cap.name_zh, cap.name_en,
+    ARRAY(
+        SELECT pc.capability_id
+        FROM prompt_capabilities pc
+        WHERE pc.prompt_id = p.id
+        ORDER BY pc.sort_order, pc.capability_id
+    ) AS capability_ids,
     COALESCE(d.name_zh, ''), COALESCE(d.name_en, ''),
     COALESCE(s.sort_discrimination, 0), COALESCE(s.data_sufficient, false),
     COALESCE(top.avg_adjusted, 0)`
@@ -181,7 +188,7 @@ func queryPrompts(ctx context.Context, pool *pgxpool.Pool, where string, args []
 			&versionNo, &item.Prompt.MajorModified, &item.Prompt.CommentCount, &item.Prompt.FavoriteCount,
 			&item.Prompt.CreatedAt, &item.Prompt.UpdatedAt,
 			&item.PurposeNameZh, &item.PurposeNameEn, &item.Prompt.HighRisk,
-			&item.CapabilityNameZh, &item.CapabilityNameEn,
+			&item.CapabilityNameZh, &item.CapabilityNameEn, &item.Prompt.CapabilityIDs,
 			&item.DifficultyNameZh, &item.DifficultyNameEn,
 			&item.Discrimination, &item.DataSufficient, &item.AvgAdjusted,
 		); err != nil {

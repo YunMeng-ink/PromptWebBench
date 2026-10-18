@@ -15,14 +15,16 @@ import (
 
 // Detail 是详情页所需的全部数据。
 type Detail struct {
-	Prompt     domain.Prompt
-	Version    domain.PromptVersion
-	Purpose    domain.Purpose
-	Capability domain.Capability
-	Difficulty *domain.Difficulty
-	Tags       []domain.Tag
-	Versions   []domain.PromptVersion
-	Uploader   string
+	Prompt domain.Prompt
+	// Version 是当前版本；Capability 是首个考察维度，Capabilities 是完整集合。
+	Version      domain.PromptVersion
+	Purpose      domain.Purpose
+	Capability   domain.Capability
+	Capabilities []domain.Capability
+	Difficulty   *domain.Difficulty
+	Tags         []domain.Tag
+	Versions     []domain.PromptVersion
+	Uploader     string
 }
 
 // Get 读取提示词详情。
@@ -75,10 +77,31 @@ func (s *Service) Get(ctx context.Context, v domain.Viewer, id int64, ip string)
 	if err != nil {
 		return Detail{}, fmt.Errorf("查询考察目的: %w", err)
 	}
-	capabilityRow, err := q.GetCapability(ctx, prompt.CapabilityID)
+	capabilityRows, err := q.ListPromptCapabilities(ctx, id)
 	if err != nil {
 		return Detail{}, fmt.Errorf("查询考察维度: %w", err)
 	}
+	if len(capabilityRows) == 0 {
+		// 关联表未回填的异常行：退回主维度，保证详情仍然可读。
+		row, err := q.GetCapability(ctx, prompt.CapabilityID)
+		if err != nil {
+			return Detail{}, fmt.Errorf("查询考察维度: %w", err)
+		}
+		capabilityRows = []repo.Capability{row}
+	}
+	capabilities := make([]domain.Capability, 0, len(capabilityRows))
+	capabilityIDs := make([]int64, 0, len(capabilityRows))
+	for _, row := range capabilityRows {
+		capabilities = append(capabilities, domain.Capability{
+			ID: row.ID, Slug: row.Slug, NameZh: row.NameZh, NameEn: row.NameEn,
+			GroupKey: row.GroupKey, DescriptionZh: row.DescriptionZh,
+			DescriptionEn: row.DescriptionEn, IsEnabled: row.IsEnabled, SortOrder: row.SortOrder,
+		})
+		capabilityIDs = append(capabilityIDs, row.ID)
+	}
+	prompt.CapabilityIDs = capabilityIDs
+	currentVersion := VersionFromRow(current)
+	currentVersion.CapabilityIDs = capabilityIDs
 	var difficulty *domain.Difficulty
 	if prompt.DifficultyID != nil {
 		row, err := q.GetDifficulty(ctx, *prompt.DifficultyID)
@@ -96,19 +119,15 @@ func (s *Service) Get(ctx context.Context, v domain.Viewer, id int64, ip string)
 	uploader, _ := q.GetUserByID(ctx, row.UploaderID)
 
 	return Detail{
-		Prompt:  prompt,
-		Version: VersionFromRow(current),
+		Prompt:       prompt,
+		Version:      currentVersion,
+		Capability:   capabilities[0],
+		Capabilities: capabilities,
 		Purpose: domain.Purpose{
 			ID: purposeRow.ID, Slug: purposeRow.Slug, NameZh: purposeRow.NameZh,
 			NameEn: purposeRow.NameEn, DescriptionZh: purposeRow.DescriptionZh,
 			DescriptionEn: purposeRow.DescriptionEn, IsHighRisk: purposeRow.IsHighRisk,
 			IsEnabled: purposeRow.IsEnabled, SortOrder: purposeRow.SortOrder,
-		},
-		Capability: domain.Capability{
-			ID: capabilityRow.ID, Slug: capabilityRow.Slug, NameZh: capabilityRow.NameZh,
-			NameEn: capabilityRow.NameEn, GroupKey: capabilityRow.GroupKey,
-			DescriptionZh: capabilityRow.DescriptionZh, DescriptionEn: capabilityRow.DescriptionEn,
-			IsEnabled: capabilityRow.IsEnabled, SortOrder: capabilityRow.SortOrder,
 		},
 		Difficulty: difficulty,
 		Tags:       tagsFromRows(tags),

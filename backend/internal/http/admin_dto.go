@@ -389,10 +389,23 @@ type adminDuplicateModelDTO struct {
 	ProviderName string `json:"provider_name"`
 }
 
+type adminModelImportProviderDTO struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Total      int    `json:"total"`
+	Duplicates int    `json:"duplicates"`
+}
+
 type adminModelImportPreviewResponse struct {
 	Body struct {
-		Items          []adminModelImportEntryDTO `json:"items"`
-		DuplicateCount int                        `json:"duplicate_count"`
+		Items          []adminModelImportEntryDTO    `json:"items"`
+		Page           int32                         `json:"page"`
+		PageSize       int32                         `json:"page_size"`
+		Total          int                           `json:"total"`
+		CatalogTotal   int                           `json:"catalog_total"`
+		DuplicateCount int                           `json:"duplicate_count"`
+		Providers      []adminModelImportProviderDTO `json:"providers"`
+		FetchedAt      string                        `json:"fetched_at"`
 	}
 }
 

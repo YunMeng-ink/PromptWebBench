@@ -127,6 +127,40 @@ INSERT INTO prompt_tags (prompt_id, tag_id)
 VALUES ($1, $2)
 ON CONFLICT DO NOTHING;
 
+-- 提示词当前版本的考察维度集合（一至五个）。整体替换使取消勾选可以生效。
+-- name: ReplacePromptCapabilities :exec
+DELETE FROM prompt_capabilities WHERE prompt_id = $1;
+
+-- name: AttachPromptCapability :exec
+INSERT INTO prompt_capabilities (prompt_id, capability_id, sort_order)
+VALUES ($1, $2, $3)
+ON CONFLICT (prompt_id, capability_id) DO UPDATE SET sort_order = EXCLUDED.sort_order;
+
+-- name: ListPromptCapabilityIDs :many
+SELECT capability_id
+FROM prompt_capabilities
+WHERE prompt_id = $1
+ORDER BY sort_order, capability_id;
+
+-- name: ListPromptCapabilities :many
+SELECT c.*
+FROM capabilities c
+JOIN prompt_capabilities pc ON pc.capability_id = c.id
+WHERE pc.prompt_id = $1
+ORDER BY pc.sort_order, c.id;
+
+-- 版本维度的写入只发生在版本创建时；历史版本不修改。
+-- name: AttachPromptVersionCapability :exec
+INSERT INTO prompt_version_capabilities (prompt_version_id, capability_id, sort_order)
+VALUES ($1, $2, $3)
+ON CONFLICT DO NOTHING;
+
+-- name: ListPromptVersionCapabilityIDs :many
+SELECT capability_id
+FROM prompt_version_capabilities
+WHERE prompt_version_id = $1
+ORDER BY sort_order, capability_id;
+
 -- name: ListPromptTagIDs :many
 SELECT tag_id FROM prompt_tags WHERE prompt_id = $1;
 

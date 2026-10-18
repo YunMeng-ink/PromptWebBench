@@ -57,6 +57,7 @@ export interface Prompt {
   description: string
   purpose_id: number
   capability_id: number
+  capability_ids: number[]
   difficulty_id?: number
   visibility: Visibility
   sensitive_level: SensitiveLevel
@@ -109,6 +110,7 @@ export interface PromptVersion {
   description: string
   purpose_id: number
   capability_id: number
+  capability_ids: number[]
   difficulty_id?: number
   visibility: Visibility
   sensitive_level: SensitiveLevel
@@ -124,6 +126,7 @@ export interface PromptDetail {
   versions: PromptVersion[]
   purpose: Purpose
   capability: Capability
+  capabilities: Capability[]
   difficulty?: Difficulty
   tags: Tag[]
   uploader: string
@@ -135,7 +138,7 @@ export interface PromptPayload {
   body: string
   description?: string
   purpose_id: number
-  capability_id: number
+  capability_ids: number[]
   difficulty_id?: number
   visibility?: Visibility
   sensitive_level?: SensitiveLevel

@@ -97,7 +97,7 @@ describe('promptApi.create 与 update', () => {
       title: '标题',
       body: '正文',
       purpose_id: 3,
-      capability_id: 5,
+      capability_ids: [5],
       visibility: 'public',
       sensitive_level: 'low',
     })
@@ -106,7 +106,7 @@ describe('promptApi.create 与 update', () => {
       title: '标题',
       body: '正文',
       purpose_id: 3,
-      capability_id: 5,
+      capability_ids: [5],
       visibility: 'public',
       sensitive_level: 'low',
     })
@@ -124,7 +124,7 @@ describe('promptApi.create 与 update', () => {
       title: '改后标题',
       body: '正文',
       purpose_id: 3,
-      capability_id: 5,
+      capability_ids: [5],
       is_major_change: true,
     })
 

@@ -225,6 +225,71 @@ func TestStatsEndpointComputesDiscriminationOnRealRatings(t *testing.T) {
 	}
 }
 
+func TestLeaderboardListsPublicPromptsByDiscrimination(t *testing.T) {
+	env := newTestEnv(t)
+	client := env.newClient(t)
+	client.prime()
+	registerVerifyLogin(t, env, client, "leaderboard@example.com", httpTestPassword)
+
+	purposeID, capabilityID := defaultClassification(t, env)
+	created := decodeBody[struct {
+		Prompt struct {
+			ID int64 `json:"id"`
+		} `json:"prompt"`
+	}](t, client.post(api.APIPrefix+"/prompts", map[string]any{
+		"title": "排行榜提示词", "body": "正文", "purpose_id": purposeID,
+		"capability_id": capabilityID,
+	}))
+	promptID := created.Prompt.ID
+
+	models := []int64{
+		seedModel(t, env, "榜单模型甲"),
+		seedModel(t, env, "榜单模型乙"),
+		seedModel(t, env, "榜单模型丙"),
+		seedModel(t, env, "榜单模型丁"),
+	}
+	raters := seedRaters(t, env, 8)
+	for m, modelID := range models {
+		for i := 0; i < 8; i++ {
+			seedRate(t, env.pool, promptID, modelID, raters[i], []int{1, 3, 4, 5}[m], time.Time{})
+		}
+	}
+	// 先读一次详情，触发统计快照落库。
+	expectStatus(t, client.get(statsPath(promptID)), http.StatusOK)
+
+	resp := client.get(api.APIPrefix + "/leaderboard?window=recent&limit=20")
+	expectStatus(t, resp, http.StatusOK)
+	board := decodeBody[struct {
+		Window         string `json:"window"`
+		RefreshSeconds int    `json:"refresh_seconds"`
+		Items          []struct {
+			Rank             int     `json:"rank"`
+			PromptID         int64   `json:"prompt_id"`
+			Title            string  `json:"title"`
+			Discrimination   float64 `json:"discrimination"`
+			Confidence       string  `json:"confidence"`
+			ValidModelCount  int     `json:"valid_model_count"`
+			TotalRatingCount int     `json:"total_rating_count"`
+		} `json:"items"`
+	}](t, resp)
+	if board.Window != "recent" || board.RefreshSeconds != 60 {
+		t.Fatalf("榜单窗口与刷新周期 = %s / %d", board.Window, board.RefreshSeconds)
+	}
+	if len(board.Items) != 1 {
+		t.Fatalf("榜单条目 = %d，期望 1", len(board.Items))
+	}
+	item := board.Items[0]
+	if item.Rank != 1 || item.PromptID != promptID || item.Title != "排行榜提示词" {
+		t.Fatalf("榜单首条 = %+v", item)
+	}
+	if item.Discrimination <= 1 || item.ValidModelCount != 4 || item.TotalRatingCount != 32 {
+		t.Fatalf("榜单指标 = %+v，期望区分度高于 1、4 个模型、32 条评分", item)
+	}
+	if item.Confidence == "" {
+		t.Fatal("榜单条目的置信度为空")
+	}
+}
+
 // TestStatsEndpointToleratesModelsWithoutRecentRatings 是「模型有历史评分但近 N 日无评分」
 // 形态在接口层的回归：详情页必须正常返回，不能 500。
 func TestStatsEndpointToleratesModelsWithoutRecentRatings(t *testing.T) {

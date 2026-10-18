@@ -64,9 +64,13 @@ async function loadTokenStatus(): Promise<void> {
 }
 
 async function saveProfile(): Promise<void> {
-  savingProfile.value = true
   errorText.value = ''
   noticeText.value = ''
+  if (username.value.trim() === '') {
+    errorText.value = t('me.usernameRequired')
+    return
+  }
+  savingProfile.value = true
   try {
     await auth.updateProfile({
       username: username.value,
@@ -242,7 +246,13 @@ async function deleteAccount(): Promise<void> {
       <el-tab-pane :label="t('me.profileTab')" name="profile">
         <el-form label-position="top" data-testid="me-profile-form" @submit.prevent="saveProfile">
           <el-form-item :label="t('me.username')">
-            <el-input v-model="username" data-testid="me-username-input" />
+            <el-input
+              v-model="username"
+              data-testid="me-username-input"
+              maxlength="20"
+              show-word-limit
+            />
+            <span class="pb-me__hint">{{ t('me.usernameHint') }}</span>
           </el-form-item>
           <el-form-item :label="t('me.bio')">
             <el-input v-model="bio" type="textarea" :rows="3" data-testid="me-bio-input" />
@@ -436,7 +446,9 @@ async function deleteAccount(): Promise<void> {
 
 .pb-me__hint {
   color: var(--pb-ink-faint);
+  display: block;
   font-size: 13px;
+  margin-top: 4px;
 }
 
 .pb-me__actions {

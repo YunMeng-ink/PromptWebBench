@@ -194,6 +194,51 @@ export interface AdminModelImportEntry {
   duplicate?: { id: number; name: string; provider_name: string }
 }
 
+export type AdminModelImportStatus = '' | 'new' | 'duplicate'
+
+export interface AdminModelImportFilter {
+  keyword?: string
+  provider_id?: string
+  status?: AdminModelImportStatus
+}
+
+export interface AdminModelImportProvider {
+  id: string
+  name: string
+  total: number
+  duplicates: number
+}
+
+export interface AdminModelImportPreview {
+  items: AdminModelImportEntry[]
+  page: number
+  page_size: number
+  total: number
+  catalog_total: number
+  duplicate_count: number
+  providers: AdminModelImportProvider[]
+  fetched_at: string
+}
+
+export interface AdminModelImportPreviewParams extends AdminModelImportFilter {
+  page?: number
+  page_size?: number
+  refresh?: boolean
+}
+
+export interface AdminModelImportKey {
+  provider_id: string
+  model_id: string
+}
+
+/** 导入范围：按键精确导入，或按筛选条件导入并排除个别条目。 */
+export interface AdminModelImportSelection {
+  mode: 'keys' | 'filter'
+  keys?: AdminModelImportKey[]
+  filter?: AdminModelImportFilter
+  exclude?: AdminModelImportKey[]
+}
+
 export interface AdminModelImportResult {
   total: number
   created: number
@@ -662,16 +707,19 @@ export const adminApi = {
     )
   },
 
-  /** 预览 models.dev 的导入内容并标出重复项，供二次确认（需求 §13.4）。 */
-  previewModelImport(): Promise<{ items: AdminModelImportEntry[]; duplicate_count: number }> {
-    return api.post<{ items: AdminModelImportEntry[]; duplicate_count: number }>(
-      '/admin/models/import/preview',
-      undefined,
-    )
+  /** 分页预览 models.dev 的导入内容并标出重复项，供二次确认（需求 §13.4）。 */
+  previewModelImport(params: AdminModelImportPreviewParams = {}): Promise<AdminModelImportPreview> {
+    return api.post<AdminModelImportPreview>('/admin/models/import/preview', params)
   },
 
-  importModels(overwrite: boolean): Promise<AdminModelImportResult> {
-    return api.post<AdminModelImportResult>('/admin/models/import', { overwrite })
+  importModels(
+    overwrite: boolean,
+    selection?: AdminModelImportSelection,
+  ): Promise<AdminModelImportResult> {
+    return api.post<AdminModelImportResult>('/admin/models/import', {
+      overwrite,
+      selection,
+    })
   },
 
   // ---------- 模块 3b：分类字典 ----------

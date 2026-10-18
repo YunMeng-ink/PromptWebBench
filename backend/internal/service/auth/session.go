@@ -157,6 +157,12 @@ func (s *Service) UpdateProfile(ctx context.Context, userID int64, username, bio
 		}
 	}
 
+	username = strings.TrimSpace(username)
+	if runes := []rune(username); len(runes) > domain.UsernameMaxRunes {
+		return domain.User{}, apperr.New(apperr.CodeValidationFailed,
+			fmt.Sprintf("昵称最多 %d 个字符", domain.UsernameMaxRunes))
+	}
+
 	q := repo.New(s.pool)
 
 	if username != "" {

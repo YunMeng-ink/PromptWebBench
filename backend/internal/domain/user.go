@@ -25,6 +25,10 @@ const (
 // SystemAccountUsername 是承接被封禁用户提示词的默认账户（需求 §2.5）。
 const SystemAccountUsername = "沧海遗粟"
 
+// UsernameMaxRunes 是昵称的最大字符数。顶栏的用户胶囊宽度有限，
+// 过长的昵称会把站点标题挤成省略号，因此昵称上限与邮箱前缀一起收紧到 20 个字符。
+const UsernameMaxRunes = 20
+
 // User 是账户实体。
 type User struct {
 	ID              int64

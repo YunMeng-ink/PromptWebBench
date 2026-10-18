@@ -54,13 +54,40 @@ test('管理员可以进入 11 个模块', async ({ page }) => {
   }
 })
 
+test('模型操作收纳在更多菜单中', async ({ page }) => {
+  await openAdmin(page, '/admin/models')
+
+  await page.getByTestId('admin-models-more').first().click()
+  await expect(
+    page.locator('.el-dropdown-menu__item:visible', { hasText: '关联提示词' }),
+  ).toBeVisible()
+  await expect(
+    page.locator('.el-dropdown-menu__item:visible', { hasText: '原始字段快照' }),
+  ).toBeVisible()
+})
+
+test('分类字典的考察目的标签页不显示文案键', async ({ page }) => {
+  await openAdmin(page, '/admin/dictionary')
+  await page.getByRole('tab', { name: '考察目的' }).click()
+
+  const table = page.getByTestId('admin-dictionary-purpose-table')
+  await expect(table).toBeVisible()
+  await expect(table).toContainText('删除')
+  await expect(table).not.toContainText('admin.common.')
+})
+
 test('模型导入的重复处理走二次确认', async ({ page }) => {
   await openAdmin(page, '/admin/models')
 
   // 首次导入：替身目录里的三条条目被导入。库中可能已有同名模型（重复运行套件时），
   // 因此这里只断言导入完成，具体计数留给下一次预览确认。
   await page.getByTestId('admin-models-import').click()
-  await expect(page.getByText('models.dev 导入预览')).toBeVisible()
+  await expect(page.getByRole('dialog')).toContainText('从 models.dev 导入')
+  await expect(page.getByTestId('admin-models-import-figure-matched')).toContainText('3')
+
+  // 先全选当前筛选结果，再执行导入。
+  await page.getByTestId('admin-models-import-select-page').click()
+  await expect(page.getByTestId('admin-models-import-selected')).toContainText('已选 3 条')
   await page.getByTestId('admin-models-import-run').click()
   await expect(page.getByText(/导入完成：新建/)).toBeVisible()
   await expect(page.getByTestId('admin-models-table')).toContainText('E2E Import One')
@@ -70,9 +97,10 @@ test('模型导入的重复处理走二次确认', async ({ page }) => {
 
   // 再次预览：三条都标为重复，管理员据此决定是否覆盖。
   await page.getByTestId('admin-models-import').click()
-  await expect(page.getByText('共 3 条，其中 3 条与已有模型重复。')).toBeVisible()
+  await expect(page.getByTestId('admin-models-import-figure-duplicate')).toContainText('3')
 
   // 不勾选覆盖时重复条目被跳过。
+  await page.getByTestId('admin-models-import-select-page').click()
   await page.getByTestId('admin-models-import-run').click()
   await expect(page.getByText(/跳过 3 条/)).toBeVisible()
 })

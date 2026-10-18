@@ -420,7 +420,7 @@ func (s *Server) handleListLibraryMembers(ctx context.Context, in *libraryIDInpu
 }
 
 type inviteMemberBody struct {
-	Username string `json:"username" required:"true" minLength:"1" maxLength:"50" doc:"被邀请人的用户名"`
+	Username string `json:"username" required:"true" minLength:"1" maxLength:"20" doc:"被邀请人的用户名"`
 }
 
 type inviteMemberInput struct {

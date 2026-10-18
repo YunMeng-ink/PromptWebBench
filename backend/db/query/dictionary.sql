@@ -97,8 +97,12 @@ RETURNING *;
 -- name: DeleteCapability :exec
 DELETE FROM capabilities WHERE id = $1;
 
+-- 考察维度可能作为提示词的第二至第五个维度出现，引用计数以关联表为准，
+-- 并按提示词与版本去重，避免同一对象被计多次。
 -- name: CountCapabilityReferences :one
-SELECT (SELECT count(*) FROM prompts p WHERE p.capability_id = $1)
+SELECT (SELECT count(*) FROM prompt_capabilities pc WHERE pc.capability_id = $1)
+     + (SELECT count(*) FROM prompt_version_capabilities pvc WHERE pvc.capability_id = $1)
+     + (SELECT count(*) FROM prompts p WHERE p.capability_id = $1)
      + (SELECT count(*) FROM prompt_versions v WHERE v.capability_id = $1)
      + (SELECT count(*) FROM library_questions q WHERE q.capability_id = $1)
      + (SELECT count(*) FROM model_capabilities mc WHERE mc.capability_id = $1);

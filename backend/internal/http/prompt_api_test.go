@@ -123,6 +123,73 @@ func TestHighRiskPurposeHiddenFromOrdinaryUserOverHTTP(t *testing.T) {
 	expectStatus(t, devClient.get(fmt.Sprintf("%s/prompts/%d", api.APIPrefix, promptID)), http.StatusOK)
 }
 
+func TestPromptSupportsMultipleCapabilities(t *testing.T) {
+	env := newTestEnv(t)
+	client := env.newClient(t)
+	client.prime()
+	registerVerifyLogin(t, env, client, "multi-capability@example.com", httpTestPassword)
+
+	purposes := purposeIDs(t, client)
+	capabilities := capabilityIDs(t, client)
+	selectedCapabilityIDs := []int64{
+		capabilities["reasoning"], capabilities["coding"], capabilities["tool_use"],
+	}
+	for _, id := range selectedCapabilityIDs {
+		if id == 0 {
+			t.Fatal("考察维度字典缺少 reasoning、coding 或 tool_use")
+		}
+	}
+
+	created := decodeBody[struct {
+		Prompt struct {
+			ID            int64   `json:"id"`
+			CapabilityID  int64   `json:"capability_id"`
+			CapabilityIDs []int64 `json:"capability_ids"`
+		} `json:"prompt"`
+	}](t, client.post(api.APIPrefix+"/prompts", map[string]any{
+		"title": "多维度提示词", "body": "正文", "purpose_id": purposes["capability_boundary"],
+		"capability_ids": selectedCapabilityIDs, "visibility": "public",
+	}))
+	if len(created.Prompt.CapabilityIDs) != 3 {
+		t.Fatalf("创建响应 capability_ids = %v，期望 3 个", created.Prompt.CapabilityIDs)
+	}
+	if created.Prompt.CapabilityID != selectedCapabilityIDs[0] {
+		t.Fatalf("主考察维度 = %d，期望首个 %d", created.Prompt.CapabilityID, selectedCapabilityIDs[0])
+	}
+
+	detail := decodeBody[struct {
+		Prompt struct {
+			CapabilityIDs []int64 `json:"capability_ids"`
+		} `json:"prompt"`
+		Capabilities []struct {
+			ID int64 `json:"id"`
+		} `json:"capabilities"`
+	}](t, client.get(fmt.Sprintf("%s/prompts/%d", api.APIPrefix, created.Prompt.ID)))
+	if len(detail.Prompt.CapabilityIDs) != 3 || len(detail.Capabilities) != 3 {
+		t.Fatalf("详情 capability_ids = %v，capabilities = %d 个", detail.Prompt.CapabilityIDs, len(detail.Capabilities))
+	}
+
+	// 按第二个维度筛选同样命中。
+	list := decodeBody[struct {
+		Items []struct {
+			ID int64 `json:"id"`
+		} `json:"items"`
+		Total int64 `json:"total"`
+	}](t, client.get(fmt.Sprintf("%s/prompts?capability_id=%d", api.APIPrefix, selectedCapabilityIDs[1])))
+	if list.Total != 1 || len(list.Items) != 1 || list.Items[0].ID != created.Prompt.ID {
+		t.Fatalf("按第二维度筛选 = %+v，期望命中该提示词", list)
+	}
+
+	// 超过 5 个维度在请求层即被拒绝。
+	expectErrorCode(t, client.post(api.APIPrefix+"/prompts", map[string]any{
+		"title": "六维度提示词", "body": "正文", "purpose_id": purposes["capability_boundary"],
+		"capability_ids": []int64{
+			capabilities["reasoning"], capabilities["coding"], capabilities["tool_use"],
+			capabilities["language"], capabilities["long_context"], capabilities["math"],
+		},
+	}), http.StatusUnprocessableEntity, "validation_failed")
+}
+
 func TestOrdinaryUserCannotPatchToHighRiskPurpose(t *testing.T) {
 	// C-20 的更新路径回归：这是普通用户绕过限制的主要方式。
 	env := newTestEnv(t)
