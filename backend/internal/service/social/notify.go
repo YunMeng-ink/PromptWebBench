@@ -289,11 +289,8 @@ func (s *Service) MarkAnnouncementsRead(ctx context.Context, v domain.Viewer) er
 	}
 	// 水位线取当前时刻而非最后一条公告的发布时间：撤回后再发布的公告
 	// 若沿用旧水位线会被判为新公告，与「已读全部」的语义不符。
-	now := s.now().UTC()
-	if err := repo.New(s.pool).AdvanceAnnouncementWatermark(ctx, repo.AdvanceAnnouncementWatermarkParams{
-		UserID: v.UserID,
-		ReadAt: repo.Timestamptz(now),
-	}); err != nil {
+	// 时刻由数据库给出，与公告的 published_at 使用同一时钟。
+	if err := repo.New(s.pool).AdvanceAnnouncementWatermark(ctx, v.UserID); err != nil {
 		return wrap("推进公告水位线", v.UserID, err)
 	}
 	return nil

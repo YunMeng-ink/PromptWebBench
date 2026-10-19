@@ -86,11 +86,12 @@ WHERE a.withdrawn_at IS NULL
       OR a.published_at > (SELECT u.last_read_announcement_at FROM users u WHERE u.id = $1)
   );
 
--- 已读全部公告：把水位线推到当前时刻。窗口边界由应用层给出，
--- SQL 中不出现依赖会话时区的表达式（开发方案 §3.4）。
+-- 已读全部公告：把水位线推到当前时刻。
+-- 取值与公告的 published_at 同用数据库时钟，避免应用进程与数据库的时钟偏差
+-- 让刚发布的公告落在水位线之后仍被判为未读。
 -- name: AdvanceAnnouncementWatermark :exec
 UPDATE users
-SET last_read_announcement_at = sqlc.arg(read_at)::timestamptz, updated_at = now()
+SET last_read_announcement_at = now(), updated_at = now()
 WHERE id = sqlc.arg(user_id);
 
 -- name: GetAnnouncementWatermark :one

@@ -13,6 +13,7 @@ import {
 import { useClipboard } from '@/composables/useClipboard'
 import { useErrorMessage } from '@/composables/useErrorMessage'
 import { useAuthStore } from '@/stores/auth'
+import { formatDateTime } from '@/utils/datetime'
 import {
   type CopyLabels,
   kindKey,
@@ -291,7 +292,7 @@ watch(questionId, () => {
             :key="revision.id"
             :data-testid="`revision-${revision.id}`"
           >
-            {{ t('library.revisionBy', { name: revision.editor_name, time: revision.created_at }) }}
+            {{ t('library.revisionBy', { name: revision.editor_name, time: formatDateTime(revision.created_at, locale) }) }}
             <span v-if="revision.note">· {{ revision.note }}</span>
           </li>
         </ul>

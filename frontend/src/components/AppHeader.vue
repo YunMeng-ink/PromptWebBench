@@ -138,7 +138,18 @@ async function onLogout(): Promise<void> {
   <header class="pb-header">
     <div class="pb-container pb-header__inner">
       <RouterLink class="pb-brand" to="/">
-        <span class="pb-brand__mark" aria-hidden="true">P</span>
+        <span class="pb-brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="30" height="30" fill="none">
+            <rect width="32" height="32" rx="8" class="pb-brand__mark-bg" />
+            <path
+              d="M11.4 24V8.8h5.4a4.6 4.6 0 0 1 0 9.2h-5.4"
+              class="pb-brand__mark-stroke"
+              stroke-width="2.5"
+              stroke-linejoin="round"
+            />
+            <path d="M23.2 20.6l2.6 2.6-2.6 2.6-2.6-2.6z" class="pb-brand__mark-dot" />
+          </svg>
+        </span>
         <span class="pb-brand__title">Prompt Benchmark</span>
         <span class="pb-brand__tagline">{{ t('app.tagline') }}</span>
       </RouterLink>
@@ -455,22 +466,34 @@ async function onLogout(): Promise<void> {
   height: 30px;
   flex-shrink: 0;
   border-radius: 9px;
-  background-color: var(--pb-ink);
-  background-image: linear-gradient(135deg, var(--pb-ink) 0%, #3a332b 100%);
-  color: var(--pb-paper);
-  font-family: var(--pb-font-display);
-  font-size: 17px;
-  font-weight: 500;
-  line-height: 1;
   box-shadow:
     0 5px 14px -8px rgba(26, 24, 21, 0.7),
     var(--pb-shadow-inset);
 }
 
-html.dark .pb-brand__mark {
-  background-color: #f3f1ec;
-  background-image: linear-gradient(135deg, #f3f1ec, #cfc8bc);
-  color: #141415;
+.pb-brand__mark svg {
+  display: block;
+  border-radius: 9px;
+}
+
+.pb-brand__mark-bg {
+  fill: var(--pb-ink);
+}
+
+.pb-brand__mark-stroke {
+  stroke: var(--pb-paper);
+}
+
+.pb-brand__mark-dot {
+  fill: var(--pb-accent);
+}
+
+html.dark .pb-brand__mark-bg {
+  fill: #f3f1ec;
+}
+
+html.dark .pb-brand__mark-stroke {
+  stroke: #141415;
 }
 
 .pb-brand__title {

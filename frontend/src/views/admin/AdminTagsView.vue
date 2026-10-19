@@ -16,8 +16,9 @@ import {
   type RecommendTagState,
 } from '@/api/admin'
 import { useErrorMessage } from '@/composables/useErrorMessage'
+import { formatDateTime } from '@/utils/datetime'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { messageOf } = useErrorMessage()
 
 /** TabName 是两个页签的取值。 */
@@ -100,8 +101,7 @@ function formatTime(raw: string): string {
   if (raw === '') {
     return ''
   }
-  const parsed = new Date(raw)
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString()
+  return formatDateTime(raw, locale.value)
 }
 
 async function loadTags(): Promise<void> {

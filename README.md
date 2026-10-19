@@ -24,6 +24,7 @@
 | `docs/需求追溯表.md` | 需求条目 → 实现位置 → 验收方式 的逐条映射 |
 | `docs/部署手册.md` | Ubuntu 单实例部署的完整命令 |
 | `docs/开发与测试指南.md` | 构建、检查、测试、冒烟的完整命令 |
+| `docs/品牌图标.md` | 图标设计说明、接入位置与生图提示词 |
 | API 文档 | 由 Huma 生成，不手工维护：`/api/v1/docs` |
 
 ## 目录结构
@@ -136,11 +137,11 @@ BACKUP_DIR=/var/backups/prompt-benchmark deploy/backup.sh
 
 ```sh
 sudo deploy/update.sh                      # 最新正式版
-sudo TAG=v0.3.1 FORCE=1 deploy/update.sh   # 重装或回退
+sudo TAG=v0.4.0 FORCE=1 deploy/update.sh   # 重装或回退
 sudo deploy/update.sh --check              # 只检查
 ```
 
-自动检查由 `deploy/prompt-benchmark-update.timer` 驱动，配置方式见 `docs/部署手册.md` 第十三节。
+自动检查由 `deploy/prompt-benchmark-update.timer` 驱动，配置方式见 `docs/部署手册.md` 第十四节。
 
 ## 门禁
 

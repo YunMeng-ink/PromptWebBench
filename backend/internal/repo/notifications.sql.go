@@ -13,19 +13,15 @@ import (
 
 const advanceAnnouncementWatermark = `-- name: AdvanceAnnouncementWatermark :exec
 UPDATE users
-SET last_read_announcement_at = $1::timestamptz, updated_at = now()
-WHERE id = $2
+SET last_read_announcement_at = now(), updated_at = now()
+WHERE id = $1
 `
 
-type AdvanceAnnouncementWatermarkParams struct {
-	ReadAt pgtype.Timestamptz
-	UserID int64
-}
-
-// 已读全部公告：把水位线推到当前时刻。窗口边界由应用层给出，
-// SQL 中不出现依赖会话时区的表达式（开发方案 §3.4）。
-func (q *Queries) AdvanceAnnouncementWatermark(ctx context.Context, arg AdvanceAnnouncementWatermarkParams) error {
-	_, err := q.db.Exec(ctx, advanceAnnouncementWatermark, arg.ReadAt, arg.UserID)
+// 已读全部公告：把水位线推到当前时刻。
+// 取值与公告的 published_at 同用数据库时钟，避免应用进程与数据库的时钟偏差
+// 让刚发布的公告落在水位线之后仍被判为未读。
+func (q *Queries) AdvanceAnnouncementWatermark(ctx context.Context, userID int64) error {
+	_, err := q.db.Exec(ctx, advanceAnnouncementWatermark, userID)
 	return err
 }
 

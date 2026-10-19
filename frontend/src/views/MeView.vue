@@ -6,8 +6,9 @@ import { type APITokenStatus, authApi } from '@/api/auth'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { useErrorMessage } from '@/composables/useErrorMessage'
 import { useAuthStore } from '@/stores/auth'
+import { formatDateTime } from '@/utils/datetime'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 const { messageOf } = useErrorMessage()
@@ -148,13 +149,9 @@ async function copyToken(): Promise<void> {
   noticeText.value = t('me.tokenCopied')
 }
 
-/** formatDate 把 RFC3339 时间转为本地可读形式。 */
+/** formatDate 把 RFC3339 时间按本机时区呈现。 */
 function formatDate(raw: string): string {
-  const parsed = new Date(raw)
-  if (Number.isNaN(parsed.getTime())) {
-    return raw
-  }
-  return parsed.toLocaleString()
+  return formatDateTime(raw, locale.value)
 }
 
 /** exportData 下载「我的数据」JSON 文件（G-08）。 */

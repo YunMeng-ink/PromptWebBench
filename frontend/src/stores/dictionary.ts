@@ -79,10 +79,11 @@ export const useDictionaryStore = defineStore('dictionary', () => {
    *
    * 标签可以在后台随时增删，而字典缓存在整个会话内有效；
    * 进入提示词表单时刷新标签，管理员刚创建的标签才能立即出现在下拉菜单中。
+   * 接口带共享缓存头，这里显式绕过浏览器与 CDN 的副本。
    */
   async function refreshTags(): Promise<void> {
     try {
-      const result = await dictionaryApi.tags()
+      const result = await dictionaryApi.tags({ cache: 'no-store' })
       data.value = { ...data.value, tags: result.items }
       error.value = ''
     } catch {

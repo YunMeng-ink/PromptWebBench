@@ -4,8 +4,9 @@ import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
 import { type ShowcaseEntry, type ShowcaseGroup, showcaseApi } from '@/api/showcase'
 import { useErrorMessage } from '@/composables/useErrorMessage'
+import { formatDate } from '@/utils/datetime'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const { messageOf } = useErrorMessage()
@@ -278,7 +279,7 @@ onMounted(loadGroups)
                   {{ entry.kind === 'image' ? t('showcase.kindImage') : t('showcase.kindOutput') }}
                 </span>
                 <span>{{ t('showcase.contributedBy', { user: entry.username }) }}</span>
-                <span>{{ entry.created_at.slice(0, 10) }}</span>
+                <span>{{ formatDate(entry.created_at, locale) }}</span>
               </div>
             </div>
           </li>

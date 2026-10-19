@@ -4,8 +4,9 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { type AdminShowcaseImage, type AdminShowcaseOutput, adminApi } from '@/api/admin'
 import { useErrorMessage } from '@/composables/useErrorMessage'
+import { formatDateTime } from '@/utils/datetime'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { messageOf } = useErrorMessage()
 
 type Tab = 'images' | 'outputs'
@@ -26,8 +27,7 @@ function formatTime(raw: string): string {
   if (raw === '') {
     return t('admin.common.none')
   }
-  const parsed = new Date(raw)
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString()
+  return formatDateTime(raw, locale.value)
 }
 
 /** truncate 把长文本压成单行摘要。 */

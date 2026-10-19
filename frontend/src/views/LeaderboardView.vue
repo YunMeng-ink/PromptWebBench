@@ -9,8 +9,9 @@ import {
   statsApi,
 } from '@/api/stats'
 import { useErrorMessage } from '@/composables/useErrorMessage'
+import { formatTime as formatClock, formatDateTime } from '@/utils/datetime'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { messageOf } = useErrorMessage()
 
 const WINDOWS: { value: LeaderboardWindow; labelKey: string }[] = [
@@ -30,13 +31,14 @@ const items = computed(() => board.value?.items ?? [])
 const refreshSeconds = computed(() => board.value?.refresh_seconds ?? 60)
 const refreshedAt = computed(() => formatTime(board.value?.refreshed_at ?? ''))
 
-/** formatTime 把 UTC 时刻按本机时区呈现。 */
+/** formatTime 把榜单刷新时刻按本机时区呈现，只显示时分秒。 */
 function formatTime(raw: string): string {
-  if (raw === '') {
-    return ''
-  }
-  const parsed = new Date(raw)
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleTimeString()
+  return formatClock(raw, locale.value)
+}
+
+/** formatComputedAt 把统计计算时刻按本机时区呈现完整日期与时间。 */
+function formatComputedAt(raw: string): string {
+  return formatDateTime(raw, locale.value)
 }
 
 function scorePercent(value: number): string {
@@ -204,7 +206,7 @@ onBeforeUnmount(() => {
 
           <span
             class="pb-leaderboard__score"
-            :title="t('leaderboard.computedAt', { time: formatTime(entry.computed_at) })"
+            :title="t('leaderboard.computedAt', { time: formatComputedAt(entry.computed_at) })"
           >
             <span class="pb-leaderboard__score-value">{{ entry.discrimination.toFixed(2) }}</span>
             <span class="pb-leaderboard__meter">

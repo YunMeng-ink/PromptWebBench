@@ -1207,19 +1207,37 @@ html.dark .el-loading-mask {
 }
 
 /* ---------- 页面切换 ----------
- * 新视图淡入并轻微上移；离开不做过渡，避免新旧视图同时占位造成的
- * 高度叠加与滚动位置跳动。
+ * 新旧视图在切换期间同时存在：新视图在文档流中淡入，旧视图绝对定位后淡出。
+ * 离开不占位，容器高度立即等于新页面的高度，滚动位置不会因为旧页面仍在
+ * 文档流里而先停在旧高度再跳一次。
  */
+
+.pb-main__slot {
+  position: relative;
+}
 
 .pb-page-enter-active {
   transition:
-    opacity 220ms var(--pb-ease-out),
-    transform 220ms var(--pb-ease-out);
+    opacity 240ms var(--pb-ease-out),
+    transform 240ms var(--pb-ease-out);
 }
 
 .pb-page-enter-from {
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(6px);
+}
+
+.pb-page-leave-active {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  pointer-events: none;
+  transition: opacity 140ms var(--pb-ease);
+}
+
+.pb-page-leave-to {
+  opacity: 0;
 }
 
 /* ---------- 动效 ---------- */

@@ -118,9 +118,10 @@ type Querier interface {
 	// ============================================================
 	AdminListUsers(ctx context.Context, arg AdminListUsersParams) ([]AdminListUsersRow, error)
 	AdminRecentPrompts(ctx context.Context, limitCount int32) ([]AdminRecentPromptsRow, error)
-	// 已读全部公告：把水位线推到当前时刻。窗口边界由应用层给出，
-	// SQL 中不出现依赖会话时区的表达式（开发方案 §3.4）。
-	AdvanceAnnouncementWatermark(ctx context.Context, arg AdvanceAnnouncementWatermarkParams) error
+	// 已读全部公告：把水位线推到当前时刻。
+	// 取值与公告的 published_at 同用数据库时钟，避免应用进程与数据库的时钟偏差
+	// 让刚发布的公告落在水位线之后仍被判为未读。
+	AdvanceAnnouncementWatermark(ctx context.Context, userID int64) error
 	// 重大修改时把当前评分归档到历史版本表（需求 §7.3 第 4 步）。
 	// 先归档再删除：归档表保留原始评分时间与创建时间，统计窗口仍以评分创建时间为准。
 	ArchivePromptRatings(ctx context.Context, arg ArchivePromptRatingsParams) ([]int64, error)

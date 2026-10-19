@@ -151,8 +151,15 @@ func EchoSecure() echo.MiddlewareFunc {
 }
 
 // EchoCORS 允许前端开发服务器跨域携带 Cookie。
+//
+// 只对接口路径生效：静态资源始终与页面同源加载，给它们附加 Vary: Origin
+// 只会让 CDN 按来源拆分缓存，降低命中率。
 func EchoCORS(allowOrigins []string) echo.MiddlewareFunc {
 	return middleware.CORSWithConfig(middleware.CORSConfig{
+		Skipper: func(c *echo.Context) bool {
+			p := c.Request().URL.Path
+			return p != APIPrefix && !strings.HasPrefix(p, APIPrefix+"/")
+		},
 		AllowOrigins:     allowOrigins,
 		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 		AllowHeaders:     []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization, "X-CSRF-Token", echo.HeaderXRequestID},
@@ -163,9 +170,15 @@ func EchoCORS(allowOrigins []string) echo.MiddlewareFunc {
 }
 
 // EchoCSRF 装载 CSRF 双提交 Cookie 校验，Bearer 通道豁免。
+//
+// 静态资源与可共享缓存的只读接口同样豁免：CSRF 中间件会在响应上写 Set-Cookie
+// 与 Vary: Cookie，两者都会让 CDN 无法缓存，Set-Cookie 被缓存后还会把同一个
+// 令牌发给不同访问者。登录态探测与全部写请求仍经过校验。
 func EchoCSRF(cookieSecure bool) echo.MiddlewareFunc {
 	return middleware.CSRFWithConfig(middleware.CSRFConfig{
-		Skipper:        isBearerRequest,
+		Skipper: func(c *echo.Context) bool {
+			return isBearerRequest(c) || skipCSRFForSharedCache(c)
+		},
 		CookieName:     CSRFCookieName,
 		TokenLookup:    "header:" + CSRFHeaderName,
 		CookiePath:     "/",

@@ -17,6 +17,7 @@ import {
 import type { PromptVersion } from '@/api/prompt'
 import { useErrorMessage } from '@/composables/useErrorMessage'
 import { useDictionaryStore } from '@/stores/dictionary'
+import { formatDateTime } from '@/utils/datetime'
 
 const { t, locale } = useI18n()
 const { messageOf } = useErrorMessage()
@@ -99,8 +100,7 @@ function formatTime(raw: string): string {
   if (raw === '') {
     return ''
   }
-  const parsed = new Date(raw)
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString()
+  return formatDateTime(raw, locale.value)
 }
 
 /** availableTags 是尚未挂到当前提示词上的标签，避免重复挂载。 */

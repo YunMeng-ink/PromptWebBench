@@ -40,6 +40,14 @@ const NAV_ITEMS: AdminNavItem[] = [
 ]
 
 const activePath = computed(() => `/admin/${String(route.name ?? '').replace('admin-', '')}`)
+
+/** hideLeaving 让离场模块退出无障碍树，避免新旧模块的标题同时被读到。 */
+function hideLeaving(el: Element): void {
+  el.setAttribute('aria-hidden', 'true')
+  if (el instanceof HTMLElement) {
+    el.inert = true
+  }
+}
 </script>
 
 <template>
@@ -73,7 +81,7 @@ const activePath = computed(() => `/admin/${String(route.name ?? '').replace('ad
 
       <div class="pb-admin__content">
         <RouterView v-slot="{ Component }">
-          <Transition name="pb-page" mode="out-in">
+          <Transition name="pb-page" @leave="hideLeaving">
             <component :is="Component" />
           </Transition>
         </RouterView>
@@ -228,6 +236,7 @@ const activePath = computed(() => `/admin/${String(route.name ?? '').replace('ad
 }
 
 .pb-admin__content {
+  position: relative;
   min-width: 0;
 }
 

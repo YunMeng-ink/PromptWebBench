@@ -22,9 +22,19 @@ const sections = computed(() => {
   if (props.mode === 'privacy') {
     return [
       {
+        id: 'scope',
+        title: t('privacy.scopeTitle'),
+        body: paragraphs('privacy.scopeBody'),
+      },
+      {
         id: 'collect',
         title: t('privacy.collectTitle'),
         body: paragraphs('privacy.collectBody'),
+      },
+      {
+        id: 'basis',
+        title: t('privacy.basisTitle'),
+        body: paragraphs('privacy.basisBody'),
       },
       { id: 'use', title: t('privacy.useTitle'), body: paragraphs('privacy.useBody') },
       {
@@ -33,6 +43,11 @@ const sections = computed(() => {
         body: paragraphs('privacy.storageBody'),
       },
       { id: 'share', title: t('privacy.shareTitle'), body: paragraphs('privacy.shareBody') },
+      {
+        id: 'transfer',
+        title: t('privacy.transferTitle'),
+        body: paragraphs('privacy.transferBody'),
+      },
       {
         id: 'retention',
         title: t('privacy.retentionTitle'),
@@ -44,15 +59,30 @@ const sections = computed(() => {
         body: paragraphs('privacy.securityBody'),
       },
       { id: 'rights', title: t('privacy.rightsTitle'), body: paragraphs('privacy.rightsBody') },
+      {
+        id: 'automated',
+        title: t('privacy.automatedTitle'),
+        body: paragraphs('privacy.automatedBody'),
+      },
       { id: 'minor', title: t('privacy.minorTitle'), body: paragraphs('privacy.minorBody') },
       {
         id: 'update',
         title: t('privacy.updateTitle'),
         body: paragraphs('privacy.updateBody'),
       },
+      {
+        id: 'contact',
+        title: t('privacy.contactTitle'),
+        body: paragraphs('privacy.contactBody'),
+      },
     ]
   }
   return [
+    {
+      id: 'service',
+      title: t('terms.serviceTitle'),
+      body: paragraphs('terms.serviceBody'),
+    },
     { id: 'account', title: t('terms.accountTitle'), body: paragraphs('terms.accountBody') },
     { id: 'content', title: t('terms.contentTitle'), body: paragraphs('terms.contentBody') },
     { id: 'conduct', title: t('terms.conductTitle'), body: paragraphs('terms.conductBody') },
@@ -63,12 +93,19 @@ const sections = computed(() => {
     },
     { id: 'ip', title: t('terms.ipTitle'), body: paragraphs('terms.ipBody') },
     {
+      id: 'availability',
+      title: t('terms.availabilityTitle'),
+      body: paragraphs('terms.availabilityBody'),
+    },
+    {
       id: 'termination',
       title: t('terms.terminationTitle'),
       body: paragraphs('terms.terminationBody'),
     },
     { id: 'liability', title: t('terms.liabilityTitle'), body: paragraphs('terms.liabilityBody') },
+    { id: 'indemnity', title: t('terms.indemnityTitle'), body: paragraphs('terms.indemnityBody') },
     { id: 'dispute', title: t('terms.disputeTitle'), body: paragraphs('terms.disputeBody') },
+    { id: 'update', title: t('terms.updateTitle'), body: paragraphs('terms.updateBody') },
     { id: 'contact', title: t('terms.contactTitle'), body: paragraphs('terms.contactBody') },
   ]
 })
@@ -83,7 +120,14 @@ const eyebrow = computed(() => (props.mode === 'privacy' ? 'Legal / Privacy' : '
     <header class="pb-legal__hero">
       <span class="pb-eyebrow" aria-hidden="true">{{ eyebrow }}</span>
       <h1 class="pb-legal__title">{{ pageTitle }}</h1>
-      <p class="pb-legal__updated">{{ t('legal.updated') }}</p>
+      <p class="pb-legal__meta" data-testid="legal-meta">
+        <span class="pb-legal__updated">{{ t('legal.updated') }}</span>
+        <span class="pb-legal__dot" aria-hidden="true">·</span>
+        <span>{{ t('legal.effective') }}</span>
+        <span class="pb-legal__dot" aria-hidden="true">·</span>
+        <span>{{ t('legal.version') }}</span>
+      </p>
+      <p class="pb-legal__operator" data-testid="legal-operator">{{ t('legal.operatorNote') }}</p>
       <p class="pb-legal__intro">{{ intro }}</p>
     </header>
 
@@ -154,12 +198,35 @@ const eyebrow = computed(() => (props.mode === 'privacy' ? 'Legal / Privacy' : '
   line-height: 1.1;
 }
 
-.pb-legal__updated {
+.pb-legal__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
   margin: 0;
   color: var(--pb-ink-faint);
   font-size: 10.5px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+}
+
+.pb-legal__updated {
+  color: inherit;
+}
+
+.pb-legal__dot {
+  opacity: 0.5;
+}
+
+.pb-legal__operator {
+  max-width: 72ch;
+  margin: var(--pb-space-sm) 0 0;
+  padding: 12px 16px;
+  border-left: 2px solid var(--pb-accent);
+  background: var(--pb-surface-sunken);
+  color: var(--pb-ink-soft);
+  font-size: 13.5px;
+  line-height: 1.8;
 }
 
 .pb-legal__intro {

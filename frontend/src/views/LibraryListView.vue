@@ -9,10 +9,11 @@ import { type Library, libraryApi, type RecycledLibrary } from '@/api/library'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import { useErrorMessage } from '@/composables/useErrorMessage'
 import { useAuthStore } from '@/stores/auth'
+import { formatDateTime } from '@/utils/datetime'
 import { roleKey } from '@/views/libraryText'
 
 const router = useRouter()
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const auth = useAuthStore()
 const { messageOf } = useErrorMessage()
 
@@ -153,7 +154,7 @@ onMounted(async () => {
           :data-testid="`library-recycled-${entry.library_id}`"
         >
           <span class="pb-libraries__name">{{ entry.name }}</span>
-          <span class="pb-libraries__meta">{{ entry.expires_at }}</span>
+          <span class="pb-libraries__meta">{{ formatDateTime(entry.expires_at, locale) }}</span>
           <div class="pb-libraries__entry-actions">
             <el-button
               size="small"

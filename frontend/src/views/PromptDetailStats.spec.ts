@@ -194,6 +194,42 @@ async function mountDetail(): Promise<VueWrapper> {
   return wrapper
 }
 
+/** mountPendingDetail 让详情请求挂起，返回挂起中的包装器与放行函数。 */
+async function mountPendingDetail(): Promise<{ wrapper: VueWrapper; release: () => void }> {
+  let release: (() => void) | undefined
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      const path = url.replace(/^https?:\/\/[^/]+/, '').split('?')[0] ?? ''
+      if (path.endsWith('/session')) {
+        return stubResponse({ status: 401, body: errorEnvelope('unauthorized') })
+      }
+      if (path === '/api/v1/prompts/1') {
+        await gate
+        return stubResponse({ status: 200, body: detailFixture })
+      }
+      if (path === '/api/v1/prompts/1/ratings') {
+        return stubResponse({ status: 200, body: { items: [] } })
+      }
+      if (path === '/api/v1/prompts/1/stats') {
+        return stubResponse({ status: 200, body: statsFixture })
+      }
+      return stubResponse({ status: 404, body: errorEnvelope('not_found') })
+    }),
+  )
+
+  const router = memoryRouter()
+  await router.push('/prompts/1')
+  await router.isReady()
+  const wrapper = mountView(PromptDetailView, { router })
+  await flushPromises()
+  return { wrapper, release: () => release?.() }
+}
+
 beforeEach(() => {
   setActivePinia(createPinia())
   resetLocale()
@@ -327,5 +363,199 @@ describe('PromptDetailView 测量结果', () => {
     expect(wrapper.find('[data-testid="stats-tag-saturation"]').text()).toBe('Saturated: 模型甲')
 
     setLocale('zh')
+  })
+})
+
+describe('PromptDetailView 模型表与评分选择联动', () => {
+  /** mountWithRatings 用给定的评分列表挂载详情页。 */
+  async function mountWithRatings(items: unknown[]): Promise<VueWrapper> {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const path = url.replace(/^https?:\/\/[^/]+/, '').split('?')[0] ?? ''
+        if (path.endsWith('/session')) {
+          return stubResponse({ status: 401, body: errorEnvelope('unauthorized') })
+        }
+        if (path === '/api/v1/prompts/1/stats') {
+          return stubResponse({ status: 200, body: statsFixture })
+        }
+        if (path === '/api/v1/prompts/1/ratings') {
+          return stubResponse({ status: 200, body: { items } })
+        }
+        if (path === '/api/v1/prompts/1') {
+          return stubResponse({ status: 200, body: detailFixture })
+        }
+        return stubResponse({ status: 404, body: errorEnvelope('not_found') })
+      }),
+    )
+    return mountDetail()
+  }
+
+  it('统计表只展示评分区选中的模型', async () => {
+    const wrapper = await mountWithRatings([
+      { model_id: 11, model_name: '模型甲', rating_count: 8, user_count: 8, mean_score: 1.4 },
+      { model_id: 12, model_name: '模型乙', rating_count: 0, user_count: 0, mean_score: 0 },
+    ])
+
+    expect(wrapper.findAll('[data-testid="stats-models"] tbody tr')).toHaveLength(2)
+    expect(wrapper.find('[data-testid="stats-model-summary"]').text()).toContain('显示 2 / 2')
+
+    // 只保留有评分的模型：统计表随之只剩一行。
+    await wrapper.find('[data-testid="stats-models-rated"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.findAll('[data-testid="stats-models"] tbody tr')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="stats-model-11"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="stats-model-12"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stats-model-summary"]').text()).toContain('显示 1 / 2')
+  })
+
+  it('选择为空时给出提示而不是空白表格', async () => {
+    const wrapper = await mountWithRatings([
+      { model_id: 11, model_name: '模型甲', rating_count: 0, user_count: 0, mean_score: 0 },
+    ])
+
+    await wrapper.find('[data-testid="stats-models-rated"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="stats-models"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stats-models-empty"]').exists()).toBe(true)
+  })
+
+  it('全部模型按钮恢复完整列表', async () => {
+    const wrapper = await mountWithRatings([
+      { model_id: 11, model_name: '模型甲', rating_count: 3, user_count: 3, mean_score: 4.2 },
+      { model_id: 12, model_name: '模型乙', rating_count: 0, user_count: 0, mean_score: 0 },
+    ])
+
+    await wrapper.find('[data-testid="stats-models-rated"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="stats-models"] tbody tr')).toHaveLength(1)
+
+    await wrapper.find('[data-testid="stats-models-all"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="stats-models"] tbody tr')).toHaveLength(2)
+  })
+})
+
+describe('PromptDetailView 标签与时间', () => {
+  it('展示提示词的主题标签', async () => {
+    const withTags = {
+      ...detailFixture,
+      tags: [
+        {
+          id: 7,
+          slug: 'finance',
+          name_zh: '金融',
+          name_en: 'Finance',
+          color: '#336699',
+          kind: 'theme',
+        },
+      ],
+    }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const path = url.replace(/^https?:\/\/[^/]+/, '').split('?')[0] ?? ''
+        if (path.endsWith('/session')) {
+          return stubResponse({ status: 401, body: errorEnvelope('unauthorized') })
+        }
+        if (path === '/api/v1/prompts/1/stats') {
+          return stubResponse({ status: 200, body: statsFixture })
+        }
+        if (path === '/api/v1/prompts/1/ratings') {
+          return stubResponse({ status: 200, body: { items: [] } })
+        }
+        if (path === '/api/v1/prompts/1') {
+          return stubResponse({ status: 200, body: withTags })
+        }
+        return stubResponse({ status: 404, body: errorEnvelope('not_found') })
+      }),
+    )
+
+    const wrapper = await mountDetail()
+
+    expect(wrapper.find('[data-testid="detail-tags"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="detail-tag-7"]').text()).toContain('金融')
+  })
+
+  it('上传时间与更新时间按浏览器时区呈现', async () => {
+    stubDetailEndpoints()
+    const wrapper = await mountDetail()
+
+    // fixture 使用 UTC 时刻，界面输出应包含本地年份而不是原始的 Z 后缀文本。
+    expect(wrapper.find('[data-testid="detail-updated-at"]').text()).not.toContain('Z')
+    expect(wrapper.find('[data-testid="detail-updated-at"]').text()).toMatch(/2026/)
+    expect(wrapper.find('[data-testid="detail-created-at"]').text()).toMatch(/2026/)
+  })
+})
+
+describe('PromptDetailView 加载状态', () => {
+  it('详情返回前展示加载提示，不展示不存在文案', async () => {
+    const { wrapper, release } = await mountPendingDetail()
+
+    expect(wrapper.find('[data-testid="detail-loading"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="detail-loading"]').text()).toContain('正在加载提示词')
+    expect(wrapper.find('[data-testid="detail-error"]').exists()).toBe(false)
+
+    release()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="detail-loading"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="detail-title"]').text()).toBe('统计展示提示词')
+  })
+
+  it('提示词不存在时展示未找到且不提供重试', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const path = url.replace(/^https?:\/\/[^/]+/, '').split('?')[0] ?? ''
+        if (path.endsWith('/session')) {
+          return stubResponse({ status: 401, body: errorEnvelope('unauthorized') })
+        }
+        return stubResponse({ status: 404, body: errorEnvelope('not_found') })
+      }),
+    )
+
+    const wrapper = await mountDetail()
+
+    expect(wrapper.find('[data-testid="detail-error"]').text()).toContain('该提示词不存在')
+    expect(wrapper.find('[data-testid="detail-retry"]').exists()).toBe(false)
+  })
+
+  it('服务不可用时展示错误并提供重试', async () => {
+    let attempts = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const path = url.replace(/^https?:\/\/[^/]+/, '').split('?')[0] ?? ''
+        if (path.endsWith('/session')) {
+          return stubResponse({ status: 401, body: errorEnvelope('unauthorized') })
+        }
+        if (path === '/api/v1/prompts/1') {
+          attempts += 1
+          if (attempts === 1) {
+            return stubResponse({ status: 503, body: errorEnvelope('service_unavailable') })
+          }
+          return stubResponse({ status: 200, body: detailFixture })
+        }
+        if (path === '/api/v1/prompts/1/ratings') {
+          return stubResponse({ status: 200, body: { items: [] } })
+        }
+        if (path === '/api/v1/prompts/1/stats') {
+          return stubResponse({ status: 200, body: statsFixture })
+        }
+        return stubResponse({ status: 404, body: errorEnvelope('not_found') })
+      }),
+    )
+
+    const wrapper = await mountDetail()
+    expect(wrapper.find('[data-testid="detail-retry"]').exists()).toBe(true)
+
+    await wrapper.find('[data-testid="detail-retry"]').trigger('click')
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="detail-title"]').text()).toBe('统计展示提示词')
+    expect(wrapper.find('[data-testid="detail-error"]').exists()).toBe(false)
   })
 })

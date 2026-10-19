@@ -8,8 +8,9 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { type AdminReport, adminApi, type ReportStatus } from '@/api/admin'
 import { useErrorMessage } from '@/composables/useErrorMessage'
+import { formatDateTime } from '@/utils/datetime'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { messageOf } = useErrorMessage()
 
 const rows = ref<AdminReport[]>([])
@@ -74,8 +75,7 @@ function formatTime(raw: string | undefined): string {
   if (raw === undefined || raw === '') {
     return t('admin.common.none')
   }
-  const parsed = new Date(raw)
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString()
+  return formatDateTime(raw, locale.value)
 }
 
 async function loadReports(): Promise<void> {

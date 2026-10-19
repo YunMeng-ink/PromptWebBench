@@ -151,6 +151,7 @@ func New(deps Deps) (*Server, error) {
 		EchoCORS(deps.Env.CORSAllowOrigins),
 		EchoBodyLimit(),
 		EchoMetrics(deps.Metrics),
+		EchoAPICache(),
 		EchoCSRF(deps.Env.CookieSecure),
 	)
 
@@ -326,19 +327,27 @@ func (s *Server) registerWebRoutes() {
 		s.deps.Logger.Info("未找到前端构建产物，静态服务未启用")
 		return
 	}
-	s.echo.GET("/*", s.webHandler(root))
+	assets, err := newStaticAssets(root)
+	if err != nil {
+		// 静态产物在注册路由前已经确认存在，索引失败说明目录内容不可读，
+		// 继续提供不带 ETag 的服务只会让缓存行为不可预期，因此在启动阶段终止。
+		panic(fmt.Errorf("索引静态产物失败: %w", err))
+	}
+	s.echo.GET("/*", s.webHandler(assets))
+	// HEAD 与 GET 共用同一处理器：CDN 回源探测与浏览器预检会发 HEAD，
+	// 只注册 GET 会让这类请求落到 404。Echo 不会自动补 HEAD 路由。
+	s.echo.HEAD("/*", s.webHandler(assets))
 	s.deps.Logger.Info("前端静态服务已启用", slog.String("source", source))
 }
 
 // webHandler 服务前端静态资源：未命中文件的路径回落到 index.html（SPA 路由）。
 // 带扩展名的路径视为真实文件，未命中直接 404，避免资源请求拿到 HTML。
-func (s *Server) webHandler(root fs.FS) echo.HandlerFunc {
+func (s *Server) webHandler(assets *staticAssets) echo.HandlerFunc {
 	return func(c *echo.Context) error {
 		p := c.Request().URL.Path
 		if p == APIPrefix || strings.HasPrefix(p, APIPrefix+"/") {
 			return NewError(apperr.CodeNotFound, "")
 		}
-		c.Response().Header().Set(echo.HeaderCacheControl, webCacheControl(p))
 
 		// 去掉前导斜杠：os.DirFS 不接受根路径；path.Clean 同时消除路径穿越。
 		name := strings.TrimPrefix(path.Clean(p), "/")
@@ -348,25 +357,29 @@ func (s *Server) webHandler(root fs.FS) echo.HandlerFunc {
 		if !fs.ValidPath(name) {
 			return NewError(apperr.CodeNotFound, "")
 		}
+
+		served := name
+		if _, ok := assets.etag(served); !ok {
+			if path.Ext(name) != "" {
+				return NewError(apperr.CodeNotFound, "")
+			}
+			served = "index.html"
+		}
+
+		// 缓存策略按实际返回的文件判定：SPA 回落拿到的是页面入口，不能按请求路径
+		// 当成普通资源，否则 /prompts/123 会拿到长缓存，部署后仍停留在旧页面。
+		c.Response().Header().Set(echo.HeaderCacheControl, webCacheControl("/"+served))
+		if tag, ok := assets.etag(served); ok {
+			c.Response().Header().Set("ETag", tag)
+		}
+
 		// Echo v5 的 FileFS 对目录请求自动回落该目录的 index.html，
 		// 并自带 MIME、Range 与 Last-Modified 处理。
-		if err := c.FileFS(name, root); err == nil {
-			return nil
-		}
-		if path.Ext(name) != "" {
+		if err := c.FileFS(served, assets.root); err != nil {
 			return NewError(apperr.CodeNotFound, "")
 		}
-		if err := c.FileFS("index.html", root); err == nil {
-			return nil
-		}
-		return NewError(apperr.CodeNotFound, "")
+		return nil
 	}
 }
 
-// webCacheControl 为页面入口与带哈希的静态资源区分缓存策略。
-func webCacheControl(p string) string {
-	if strings.HasPrefix(p, "/assets/") {
-		return "public, max-age=31536000, immutable"
-	}
-	return "no-cache"
-}
+// webCacheControl 的规则集中在 static.go，与 ETag 生成放在一处维护。

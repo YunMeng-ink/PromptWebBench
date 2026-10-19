@@ -7,8 +7,9 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { type AdminConfigValue, adminApi, type ConfigKind } from '@/api/admin'
 import { useErrorMessage } from '@/composables/useErrorMessage'
+import { formatDateTime } from '@/utils/datetime'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { messageOf } = useErrorMessage()
 
 /** SettingRow 承载配置项与界面上的编辑草稿。 */
@@ -123,8 +124,7 @@ function formatTime(raw?: string): string {
   if (raw === undefined || raw === '') {
     return ''
   }
-  const parsed = new Date(raw)
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString()
+  return formatDateTime(raw, locale.value)
 }
 
 /** enumOptions 返回枚举配置项的候选取值；目前只有注册策略是枚举。 */

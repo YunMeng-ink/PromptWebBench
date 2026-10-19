@@ -12,8 +12,9 @@ import {
   type RegistrationPolicy,
 } from '@/api/admin'
 import { useErrorMessage } from '@/composables/useErrorMessage'
+import { formatDateTime } from '@/utils/datetime'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { messageOf } = useErrorMessage()
 
 const PAGE_SIZE = 20
@@ -61,8 +62,7 @@ function formatTime(raw?: string): string {
   if (raw === undefined || raw === '') {
     return ''
   }
-  const parsed = new Date(raw)
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString()
+  return formatDateTime(raw, locale.value)
 }
 
 /** formatExpires 呈现过期时刻；未设置过期时间时显示永不过期。 */

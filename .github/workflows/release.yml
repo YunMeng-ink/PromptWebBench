@@ -52,4 +52,4 @@ jobs:
           gh release create "${{ github.ref_name }}" \
             dist/prompt-benchmark dist/prompt-benchmark.sha256 \
             --title "${{ github.ref_name }}" \
-            --notes "由 deploy/pb.sh build 产出的 Linux amd64 单二进制（内嵌前端产物），附 sha256 校验文件。服务端用 deploy/update.sh 校验并安装，说明见 docs/部署手册.md 第十三节。"
+            --notes "由 deploy/pb.sh build 产出的 Linux amd64 单二进制（内嵌前端产物），附 sha256 校验文件。服务端用 deploy/update.sh 校验并安装，说明见 docs/部署手册.md 第十四节。"

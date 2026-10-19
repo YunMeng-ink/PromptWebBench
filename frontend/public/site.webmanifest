@@ -1,0 +1,17 @@
+{
+  "name": "Prompt Benchmark",
+  "short_name": "PromptBench",
+  "description": "提示词能力边界评测平台",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7f6f3",
+  "theme_color": "#1a1815",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

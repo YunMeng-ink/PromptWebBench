@@ -6,8 +6,9 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { type AdminOperationLog, adminApi } from '@/api/admin'
 import { useErrorMessage } from '@/composables/useErrorMessage'
+import { formatDateTime } from '@/utils/datetime'
 
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 const { messageOf } = useErrorMessage()
 
 const rows = ref<AdminOperationLog[]>([])
@@ -81,8 +82,7 @@ function formatTime(raw: string): string {
   if (raw === '') {
     return ''
   }
-  const parsed = new Date(raw)
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString()
+  return formatDateTime(raw, locale.value)
 }
 
 /** jsonText 把日志快照渲染为可读文本。 */

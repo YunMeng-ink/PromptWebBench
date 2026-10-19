@@ -256,14 +256,17 @@ test.describe('隐私政策与用户条款', () => {
 
     await page.getByTestId('footer-privacy').click()
     await expect(page.getByTestId('legal-page')).toContainText('隐私政策')
-    await expect(page.getByTestId('legal-page')).toContainText('你的权利')
+    await expect(page.getByTestId('legal-page')).toContainText('你的权利与行使方式')
+    await expect(page.getByTestId('legal-operator')).toContainText('非营利项目')
+    await expect(page.getByTestId('legal-meta')).toContainText('版本：1.0')
 
     await page.getByTestId('legal-back').click()
     await expect(page).toHaveURL('/')
 
     await page.getByTestId('footer-terms').click()
     await expect(page.getByTestId('legal-page')).toContainText('用户条款')
-    await expect(page.getByTestId('legal-page')).toContainText('行为规范')
+    await expect(page.getByTestId('legal-page')).toContainText('使用规范')
+    await expect(page.getByTestId('legal-operator')).toContainText('个人开发者')
   })
 
   test('英文界面下条款显示英文文案', async ({ page }) => {
@@ -273,7 +276,7 @@ test.describe('隐私政策与用户条款', () => {
     await page.getByRole('option', { name: 'English' }).click()
 
     await expect(page.getByTestId('legal-page')).toContainText('Terms of service')
-    await expect(page.getByTestId('legal-page')).toContainText('Conduct')
+    await expect(page.getByTestId('legal-page')).toContainText('Acceptable use')
   })
 
   test('页脚入口可查看公开的计算方法', async ({ page }) => {

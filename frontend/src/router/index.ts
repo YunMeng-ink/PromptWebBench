@@ -237,6 +237,8 @@ export function createAppRouter(history: RouterHistory = createWebHistory()): Ro
   const router = createRouter({
     history,
     routes,
+    // 每次跳转回到页首。切换期间旧视图已脱离文档流，容器高度立即等于新页面，
+    // 滚动位置不会先停在旧页面的高度上再跳一次。
     scrollBehavior: () => ({ top: 0 }),
   })
 

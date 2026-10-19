@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRoute, useRouter } from 'vue-router'
+import { ApiError } from '@/api/client'
 import { type PromptDetail, promptApi } from '@/api/prompt'
 import { type PromptModelRating, ratingApi } from '@/api/rating'
 import { MAX_IMAGE_BYTES, MAX_IMAGE_COUNT, MAX_OUTPUT_CHARS, showcaseApi } from '@/api/showcase'
@@ -12,6 +13,7 @@ import ReportDialog from '@/components/ReportDialog.vue'
 import { useClipboard } from '@/composables/useClipboard'
 import { useErrorMessage } from '@/composables/useErrorMessage'
 import { useAuthStore } from '@/stores/auth'
+import { formatDateTime, timeZoneLabel } from '@/utils/datetime'
 import { type CopyLabels, promptBodyText, promptFullText } from './libraryText'
 import { confidenceKey, discriminationOf, formatScore, meanOf, modelLabel } from './promptStats'
 
@@ -33,7 +35,16 @@ const stats = ref<PromptStats | null>(null)
 const statsFailure = ref('')
 const loading = ref(true)
 const failure = ref('')
+const retryable = ref(false)
 const notice = ref('')
+
+/**
+ * loadSequence 标记当前加载批次。
+ *
+ * 同路由参数切换时前一次请求可能后到，迟到的响应会把新提示词的内容覆盖成旧内容。
+ * 每次加载取一个递增序号，响应回来时序号不一致就整批丢弃。
+ */
+let loadSequence = 0
 
 /** 收藏与举报。收藏需要先选收藏夹，因此把列表一并取回。 */
 const favorited = ref(false)
@@ -183,6 +194,64 @@ function resetRatingSelection(): void {
   ratingModelIDs.value = defaultRatingModelIDs(ratings.value)
 }
 
+/**
+ * visibleStatsModels 是按评分区的模型选择过滤后的统计行。
+ *
+ * 统计接口返回全部已登记模型，其中多数没有任何评分。全部平铺会让测量结果区
+ * 随模型字典增长而无限变长，因此与上方的评分选择共用同一集合：用户在评分区
+ * 调整展示哪些模型，表格随之变化。
+ */
+const visibleStatsModels = computed(() => {
+  if (stats.value === null) {
+    return []
+  }
+  // 评分接口没有返回任何模型时不具备筛选依据，此时展示统计接口给出的全部模型，
+  // 否则页面会因为一个空的筛选集合而看起来没有数据。
+  if (ratings.value.length === 0) {
+    return stats.value.models
+  }
+  const selected = new Set(ratingModelIDs.value)
+  return stats.value.models.filter((model) => selected.has(model.model_id))
+})
+
+/** statsModelSummary 说明当前统计表展示了多少行，以及被隐藏的行数。 */
+const statsModelSummary = computed(() => {
+  const shown = visibleStatsModels.value.length
+  const total = stats.value?.models.length ?? 0
+  return { shown, total, hidden: total - shown }
+})
+
+/** statsHasRatedModel 报告当前选择里是否至少有一个模型带评分。 */
+const statsHasRatedModel = computed(() =>
+  visibleStatsModels.value.some((model) => model.history.has_data || model.recent.has_data),
+)
+
+/** formattedUpdatedAt 按浏览器所在时区呈现更新时间。 */
+const formattedUpdatedAt = computed(() =>
+  formatDateTime(detail.value?.prompt.updated_at, locale.value),
+)
+
+/** formattedCreatedAt 按浏览器所在时区呈现上传时间。 */
+const formattedCreatedAt = computed(() =>
+  formatDateTime(detail.value?.prompt.created_at, locale.value),
+)
+
+/** formattedComputedAt 按浏览器所在时区呈现统计计算时刻。 */
+const formattedComputedAt = computed(() => formatDateTime(stats.value?.computed_at, locale.value))
+
+/** formattedVersionTime 按浏览器所在时区呈现某个版本的创建时刻。 */
+function formattedVersionTime(raw: string): string {
+  return formatDateTime(raw, locale.value)
+}
+
+/** timezone 是当前浏览器时区，用于向用户说明时间口径。 */
+const timezone = timeZoneLabel()
+
+/** tagText 返回标签在当前语言下的名称。 */
+function tagText(tag: PromptDetail['tags'][number]): string {
+  return locale.value === 'en' ? tag.name_en : tag.name_zh
+}
+
 function localized(zh: string, en: string): string {
   return locale.value === 'en' ? en : zh
 }
@@ -250,8 +319,8 @@ function meanText(window: PromptStats['models'][number]['history']): string {
   return formatScore(meanOf(window))
 }
 
-/** tagText 返回推荐标签的文案，按当前语言取后端给出的双语之一。 */
-function tagText(tag: PromptStats['recommendation'][number]): string {
+/** recommendTagText 返回推荐标签的文案，按当前语言取后端给出的双语之一。 */
+function recommendTagText(tag: PromptStats['recommendation'][number]): string {
   return locale.value === 'en' ? tag.label_en : tag.label_zh
 }
 
@@ -432,7 +501,11 @@ async function reloadRatings(): Promise<void> {
   if (promptID.value === null) {
     return
   }
-  const result = await ratingApi.byPrompt(promptID.value)
+  const requested = promptID.value
+  const result = await ratingApi.byPrompt(requested)
+  if (requested !== promptID.value) {
+    return
+  }
   ratings.value = result.items
   if (!ratingSelectionTouched.value) {
     ratingModelIDs.value = defaultRatingModelIDs(ratings.value)
@@ -449,10 +522,18 @@ async function reloadStats(): Promise<void> {
   if (promptID.value === null) {
     return
   }
+  const requested = promptID.value
   try {
-    stats.value = await statsApi.byPrompt(promptID.value)
+    const result = await statsApi.byPrompt(requested)
+    if (requested !== promptID.value) {
+      return
+    }
+    stats.value = result
     statsFailure.value = ''
   } catch (error) {
+    if (requested !== promptID.value) {
+      return
+    }
     stats.value = null
     statsFailure.value = messageOf(error)
   }
@@ -527,12 +608,16 @@ async function reloadFavorited(): Promise<void> {
 
 /** loadDetail 加载当前路由参数对应的提示词详情与全部附属数据。 */
 async function loadDetail(): Promise<void> {
+  const current = ++loadSequence
   loading.value = true
   failure.value = ''
+  retryable.value = false
   detail.value = null
   ratings.value = []
   ratingModelIDs.value = []
   ratingSelectionTouched.value = false
+  stats.value = null
+  statsFailure.value = ''
   if (promptID.value === null) {
     loading.value = false
     failure.value = t('prompt.notFound')
@@ -540,12 +625,39 @@ async function loadDetail(): Promise<void> {
   }
 
   try {
-    detail.value = await promptApi.detail(promptID.value)
+    const result = await promptApi.detail(promptID.value)
+    if (current !== loadSequence) {
+      return
+    }
+    detail.value = result
+  } catch (error) {
+    if (current !== loadSequence) {
+      return
+    }
+    // 404 说明这条提示词确实不存在或不可见，重试没有意义；
+    // 其余错误（网络中断、服务不可用）保留可重试入口。
+    if (error instanceof ApiError && error.status === 404) {
+      failure.value = t('prompt.notFound')
+    } else {
+      failure.value = messageOf(error)
+      retryable.value = true
+    }
+    detail.value = null
+    loading.value = false
+    return
+  }
+
+  loading.value = false
+  // 评分与统计读取失败只影响各自的区块，正文与操作入口照常可用。
+  try {
     await reloadRatings()
   } catch (error) {
-    failure.value = messageOf(error)
-  } finally {
-    loading.value = false
+    if (current === loadSequence) {
+      failure.value = messageOf(error)
+    }
+  }
+  if (current !== loadSequence) {
+    return
   }
   await reloadStats()
   await reloadFavorited()
@@ -565,7 +677,19 @@ watch(promptID, () => {
 
 <template>
   <section class="pb-prompt-detail" :class="groupClass">
-    <p v-if="loading" class="pb-prompt-detail__hint">{{ t('home.loadFailed') }}</p>
+    <div v-if="loading" class="pb-detail-skeleton" data-testid="detail-loading" aria-busy="true">
+      <p class="pb-detail-skeleton__label">{{ t('prompt.loading') }}</p>
+      <div class="pb-detail-skeleton__head">
+        <span class="pb-detail-skeleton__line pb-detail-skeleton__line--chips" />
+        <span class="pb-detail-skeleton__line pb-detail-skeleton__line--title" />
+      </div>
+      <div class="pb-detail-skeleton__meta">
+        <span v-for="index in 6" :key="index" class="pb-detail-skeleton__line" />
+      </div>
+      <div class="pb-detail-skeleton__body">
+        <span v-for="index in 8" :key="index" class="pb-detail-skeleton__line" />
+      </div>
+    </div>
 
     <template v-else-if="detail">
       <div class="pb-prompt-detail__head">
@@ -673,9 +797,28 @@ watch(promptID, () => {
         </div>
         <div>
           <dt>{{ t('prompt.updatedAt') }}</dt>
-          <dd>{{ detail.prompt.updated_at }}</dd>
+          <dd data-testid="detail-updated-at">{{ formattedUpdatedAt }}</dd>
+        </div>
+        <div>
+          <dt>{{ t('prompt.createdAt') }}</dt>
+          <dd data-testid="detail-created-at">{{ formattedCreatedAt }}</dd>
         </div>
       </dl>
+
+      <div v-if="detail.tags.length > 0" class="pb-prompt-detail__tags" data-testid="detail-tags">
+        <span class="pb-prompt-detail__tags-label">{{ t('prompt.tagsLabel') }}</span>
+        <ul class="pb-prompt-detail__tag-list">
+          <li
+            v-for="tag in detail.tags"
+            :key="tag.id"
+            class="pb-prompt-detail__tag"
+            :data-testid="`detail-tag-${tag.id}`"
+          >
+            <span class="pb-prompt-detail__tag-dot" :style="{ background: tag.color }" aria-hidden="true" />
+            {{ tagText(tag) }}
+          </li>
+        </ul>
+      </div>
 
       <p v-if="detail.version.description" class="pb-prompt-detail__description">
         {{ detail.version.description }}
@@ -684,7 +827,7 @@ watch(promptID, () => {
       <div class="pb-prompt-detail__manuscript">
         <div class="pb-prompt-detail__manuscript-head">
           <span>Prompt · {{ detail.prompt.version_no }}</span>
-          <span>{{ detail.prompt.updated_at }}</span>
+          <span>{{ formattedUpdatedAt }}</span>
         </div>
         <pre class="pb-prompt-detail__body" data-testid="detail-body">{{ detail.version.body }}</pre>
       </div>
@@ -924,7 +1067,8 @@ watch(promptID, () => {
           </RouterLink>
         </p>
         <p v-if="stats" class="pb-stats__computed" data-testid="stats-computed-at">
-          {{ t('prompt.statsComputedAt') }} · {{ stats.computed_at }}
+          {{ t('prompt.statsComputedAt') }} · {{ formattedComputedAt }}
+          <span v-if="timezone" class="pb-stats__timezone">{{ timezone }}</span>
         </p>
 
         <p v-if="statsFailure" class="pb-prompt-detail__error" data-testid="stats-error">
@@ -935,7 +1079,7 @@ watch(promptID, () => {
           <ul v-if="stats.recommendation.length > 0" class="pb-stats__tags" data-testid="stats-tags">
             <li v-for="tag in stats.recommendation" :key="tag.id" class="pb-stats__tag">
               <span class="pb-stats__tag-label" :data-testid="`stats-tag-${tag.kind}`">
-                {{ tagText(tag) }}
+                {{ recommendTagText(tag) }}
               </span>
               <span class="pb-stats__tag-confidence">
                 {{ t('prompt.confidence') }}：{{ confidenceText(tag.confidence) }}
@@ -989,7 +1133,47 @@ watch(promptID, () => {
           </dl>
 
           <h3 class="pb-stats__subtitle">{{ t('prompt.modelCompletion') }}</h3>
-          <div class="pb-stats__table-wrap">
+          <div class="pb-stats__model-tools" data-testid="stats-model-tools">
+            <p class="pb-stats__model-summary" data-testid="stats-model-summary">
+              {{
+                t('prompt.statsModelSummary', {
+                  shown: statsModelSummary.shown,
+                  total: statsModelSummary.total,
+                })
+              }}
+              <span v-if="statsModelSummary.hidden > 0" class="pb-stats__model-linked">
+                {{ t('prompt.statsModelLinked') }}
+              </span>
+            </p>
+            <div class="pb-stats__model-actions">
+              <el-button
+                size="small"
+                text
+                data-testid="stats-models-all"
+                @click="applyRatingQuick('all')"
+              >
+                {{ t('prompt.statsModelsAll') }}
+              </el-button>
+              <el-button
+                size="small"
+                text
+                data-testid="stats-models-rated"
+                @click="applyRatingQuick('rated')"
+              >
+                {{ t('prompt.statsModelsRated') }}
+              </el-button>
+            </div>
+          </div>
+
+          <p
+            v-if="visibleStatsModels.length === 0"
+            class="pb-stats__model-empty"
+            data-testid="stats-models-empty"
+          >
+            {{ t('prompt.statsModelsEmpty') }}
+          </p>
+
+          <div v-else class="pb-stats__table-wrap">
             <table class="pb-stats__table" data-testid="stats-models">
               <thead>
                 <tr>
@@ -1004,7 +1188,7 @@ watch(promptID, () => {
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="model in stats.models" :key="model.model_id">
+                <tr v-for="model in visibleStatsModels" :key="model.model_id">
                   <td :data-testid="`stats-model-${model.model_id}`">
                     {{ modelLabel(model.model_name, model.model_id) }}
                   </td>
@@ -1025,6 +1209,10 @@ watch(promptID, () => {
               </tbody>
             </table>
           </div>
+
+          <p v-if="!statsHasRatedModel" class="pb-stats__model-note" data-testid="stats-models-note">
+            {{ t('prompt.statsModelsNoRating') }}
+          </p>
         </template>
       </section>
 
@@ -1037,15 +1225,23 @@ watch(promptID, () => {
             <span class="pb-versions__no">{{ version.version_no }}</span>
             <span class="pb-versions__note">{{ version.change_note }}</span>
             <span v-if="version.is_major" class="pb-versions__major">{{ t('prompt.majorChange') }}</span>
-            <span class="pb-versions__date">{{ version.created_at }}</span>
+            <span class="pb-versions__date">{{ formattedVersionTime(version.created_at) }}</span>
           </li>
         </ul>
       </section>
     </template>
 
-    <p v-else class="pb-prompt-detail__error" data-testid="detail-error">
-      {{ failure || t('prompt.notFound') }}
-    </p>
+    <div v-else class="pb-prompt-detail__failure" data-testid="detail-error">
+      <p class="pb-prompt-detail__error">{{ failure || t('prompt.notFound') }}</p>
+      <el-button
+        v-if="retryable"
+        size="small"
+        data-testid="detail-retry"
+        @click="loadDetail"
+      >
+        {{ t('prompt.retry') }}
+      </el-button>
+    </div>
 
     <p v-if="copied" class="pb-prompt-detail__notice" data-testid="detail-copied">{{ copied }}</p>
     <p v-if="notice" class="pb-prompt-detail__notice" data-testid="detail-notice">{{ notice }}</p>
@@ -1303,6 +1499,59 @@ watch(promptID, () => {
   color: var(--pb-ink-soft);
   font-size: 15px;
   line-height: 1.8;
+}
+
+/* ---------- 标签 ----------
+ * 标签是提示词的分类入口，与考察目的、考察维度并列展示在元信息下方。
+ */
+
+.pb-prompt-detail__tags {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--pb-space-sm);
+  padding: var(--pb-space-sm) var(--pb-space-md);
+  background: color-mix(in srgb, var(--pb-surface-muted) 52%, transparent);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-md);
+}
+
+.pb-prompt-detail__tags-label {
+  color: var(--pb-ink-faint);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.pb-prompt-detail__tag-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--pb-space-xs);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.pb-prompt-detail__tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-pill);
+  background: var(--pb-surface);
+  color: var(--pb-ink-soft);
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+
+.pb-prompt-detail__tag-dot {
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: 50%;
 }
 
 .pb-prompt-detail__manuscript {
@@ -1583,6 +1832,63 @@ watch(promptID, () => {
   letter-spacing: 0.02em;
 }
 
+.pb-stats__timezone {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-pill);
+  color: var(--pb-ink-faint);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+}
+
+/* ---------- 模型完成度表 ----------
+ * 表格与评分区的模型选择联动：工具条说明当前展示范围，并提供两个快捷入口。
+ */
+
+.pb-stats__model-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--pb-space-sm);
+  margin-bottom: var(--pb-space-sm);
+}
+
+.pb-stats__model-summary {
+  margin: 0;
+  color: var(--pb-ink-faint);
+  font-size: 12px;
+}
+
+.pb-stats__model-linked {
+  margin-left: 6px;
+  color: var(--pb-ink-faint);
+  opacity: 0.85;
+}
+
+.pb-stats__model-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--pb-space-xs);
+}
+
+.pb-stats__model-empty {
+  margin: 0;
+  padding: var(--pb-space-lg);
+  border: 1px dashed var(--pb-line-strong);
+  border-radius: var(--pb-radius-md);
+  color: var(--pb-ink-faint);
+  font-size: 13px;
+  text-align: center;
+}
+
+.pb-stats__model-note {
+  margin: var(--pb-space-sm) 0 0;
+  color: var(--pb-ink-faint);
+  font-size: 12px;
+}
+
 .pb-ratings__list,
 .pb-versions__list {
   display: flex;
@@ -1835,15 +2141,112 @@ watch(promptID, () => {
   font-size: 13.5px;
 }
 
+.pb-prompt-detail__failure {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--pb-space-sm);
+}
+
+/* ---------- 加载骨架 ----------
+ * 结构对齐详情页的真实版式：标题区、元信息网格与正文块。
+ * 这样数据到达时页面高度不会突变，滚动条也不会跳动。
+ */
+
+.pb-detail-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-lg);
+}
+
+.pb-detail-skeleton__label {
+  margin: 0;
+  color: var(--pb-ink-faint);
+  font-size: 13px;
+}
+
+.pb-detail-skeleton__head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-sm);
+  padding: var(--pb-space-xl);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-xl);
+  box-shadow:
+    var(--pb-shadow-sm),
+    var(--pb-shadow-inset);
+}
+
+.pb-detail-skeleton__meta {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--pb-space-md) var(--pb-space-xl);
+  padding: var(--pb-space-lg) var(--pb-space-xl);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-lg);
+}
+
+.pb-detail-skeleton__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--pb-space-sm);
+  padding: var(--pb-space-xl);
+  background: var(--pb-surface);
+  border: 1px solid var(--pb-line);
+  border-radius: var(--pb-radius-lg);
+}
+
+.pb-detail-skeleton__line {
+  height: 11px;
+  border-radius: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--pb-surface-muted) 20%,
+    var(--pb-surface) 45%,
+    var(--pb-surface-muted) 70%
+  );
+  background-size: 220% 100%;
+  animation: pb-shimmer 1.5s linear infinite;
+}
+
+.pb-detail-skeleton__line--chips {
+  width: 280px;
+  height: 16px;
+}
+
+.pb-detail-skeleton__line--title {
+  width: 52%;
+  height: 34px;
+}
+
+.pb-detail-skeleton__body .pb-detail-skeleton__line:nth-child(3n) {
+  width: 88%;
+}
+
+.pb-detail-skeleton__body .pb-detail-skeleton__line:last-child {
+  width: 62%;
+}
+
+@media (max-width: 640px) {
+  .pb-detail-skeleton__head,
+  .pb-detail-skeleton__meta,
+  .pb-detail-skeleton__body {
+    padding: var(--pb-space-lg);
+  }
+
+  .pb-detail-skeleton__line--title {
+    width: 74%;
+    height: 28px;
+  }
+}
+
 .pb-prompt-detail__notice {
   margin: 0;
   color: var(--pb-ink-soft);
   font-size: 13.5px;
   word-break: break-all;
-}
-
-.pb-prompt-detail__hint {
-  color: var(--pb-ink-soft);
 }
 
 @media (max-width: 640px) {

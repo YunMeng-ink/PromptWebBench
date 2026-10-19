@@ -7,8 +7,9 @@ import { onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { type AdminRecycleEntry, adminApi, type RecycleObjectType } from '@/api/admin'
 import { useErrorMessage } from '@/composables/useErrorMessage'
+import { formatDateTime } from '@/utils/datetime'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { messageOf } = useErrorMessage()
 
 const rows = ref<AdminRecycleEntry[]>([])
@@ -69,8 +70,7 @@ function formatTime(raw: string): string {
   if (raw === '') {
     return ''
   }
-  const parsed = new Date(raw)
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString()
+  return formatDateTime(raw, locale.value)
 }
 
 async function restoreEntry(entry: AdminRecycleEntry): Promise<void> {

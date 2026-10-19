@@ -17,8 +17,9 @@ import {
 } from '@/api/admin'
 import { useErrorMessage } from '@/composables/useErrorMessage'
 import { useAuthStore } from '@/stores/auth'
+import { formatDateTime } from '@/utils/datetime'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const { messageOf } = useErrorMessage()
 const router = useRouter()
 const auth = useAuthStore()
@@ -123,8 +124,7 @@ function formatTime(raw: string): string {
   if (raw === '') {
     return ''
   }
-  const parsed = new Date(raw)
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString()
+  return formatDateTime(raw, locale.value)
 }
 
 /** canModerate 判断这一行是否允许封禁、解封：系统账户与管理员自己都不可操作。 */

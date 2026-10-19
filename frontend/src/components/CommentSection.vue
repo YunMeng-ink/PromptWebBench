@@ -7,10 +7,11 @@ import { type Comment, socialApi } from '@/api/social'
 import ReportDialog from '@/components/ReportDialog.vue'
 import { useErrorMessage } from '@/composables/useErrorMessage'
 import { useAuthStore } from '@/stores/auth'
+import { formatDateTime } from '@/utils/datetime'
 
 const props = defineProps<{ promptId: number }>()
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const auth = useAuthStore()
 const { messageOf } = useErrorMessage()
 
@@ -225,7 +226,7 @@ onMounted(async () => {
       >
         <div class="pb-comments__head">
           <span class="pb-comments__author">{{ comment.author_name }}</span>
-          <span class="pb-comments__time">{{ comment.created_at }}</span>
+          <span class="pb-comments__time">{{ formatDateTime(comment.created_at, locale) }}</span>
         </div>
         <p class="pb-comments__body">{{ comment.body }}</p>
 

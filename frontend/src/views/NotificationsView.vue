@@ -15,8 +15,9 @@ import {
 import { useErrorMessage } from '@/composables/useErrorMessage'
 import { useAuthStore } from '@/stores/auth'
 import { useNotificationStore } from '@/stores/notifications'
+import { formatDateTime } from '@/utils/datetime'
 
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const router = useRouter()
 const auth = useAuthStore()
 const notifications = useNotificationStore()
@@ -37,11 +38,7 @@ const announcementUnread = computed(() => announcements.value.filter((item) => !
 
 /** formatTime 把 UTC 时刻按本机时区呈现。 */
 function formatTime(raw: string): string {
-  if (raw === '') {
-    return ''
-  }
-  const parsed = new Date(raw)
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString()
+  return formatDateTime(raw, locale.value)
 }
 
 const kindOptions = computed(() =>

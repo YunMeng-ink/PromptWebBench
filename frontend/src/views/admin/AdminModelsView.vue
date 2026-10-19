@@ -23,6 +23,7 @@ import {
 } from '@/api/admin'
 import { useErrorMessage } from '@/composables/useErrorMessage'
 import { useDictionaryStore } from '@/stores/dictionary'
+import { formatDateTime } from '@/utils/datetime'
 
 /** ModelForm 是新建与编辑对话框共用的表单结构。 */
 interface ModelForm {
@@ -94,8 +95,7 @@ function formatTime(raw: string): string {
   if (raw === '') {
     return ''
   }
-  const parsed = new Date(raw)
-  return Number.isNaN(parsed.getTime()) ? raw : parsed.toLocaleString()
+  return formatDateTime(raw, locale.value)
 }
 
 /** importSourceLabel 把导入来源转成文案，未登记的取值原样显示。 */

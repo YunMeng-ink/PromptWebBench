@@ -39,6 +39,11 @@ export interface RequestOptions {
    * 若拦截器对 401 一律跳转登录页，游客将无法浏览任何内容（开发方案 §3.6）。
    */
   silent?: boolean
+  /**
+   * 覆盖浏览器的缓存行为。字典等可被 CDN 缓存的只读接口在需要立即看到
+   * 后台改动时传 no-store，使这次请求绕过浏览器与 CDN 的已有副本。
+   */
+  cache?: RequestCache
   signal?: AbortSignal
 }
 
@@ -124,6 +129,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
     headers,
     credentials: 'include',
     body,
+    cache: options.cache,
     signal: options.signal ?? null,
   })
 

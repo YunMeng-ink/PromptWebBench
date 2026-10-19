@@ -43,7 +43,9 @@ const pageSize = 20
 
 const items = ref<PromptListItem[]>([])
 const total = ref(0)
-const loading = ref(false)
+// 初值为真：挂载后要先取字典与登录态，列表请求才发出。若从假开始，
+// 这段时间会先渲染「没有符合条件的提示词」与 0 条计数，数据到达后再跳成真实结果。
+const loading = ref(true)
 const failed = ref(false)
 const notice = ref('')
 
@@ -302,7 +304,7 @@ watch(locale, () => {
           <span class="pb-ledger__code">PB / INDEX</span>
         </div>
         <p class="pb-ledger__total">
-          <span class="pb-ledger__number">{{ total }}</span>
+          <span class="pb-ledger__number">{{ loading && items.length === 0 ? '—' : total }}</span>
           <span class="pb-ledger__unit">{{ t('home.entries') }}</span>
         </p>
         <p class="pb-ledger__caption">{{ t('home.currentResults') }}</p>
@@ -336,7 +338,7 @@ watch(locale, () => {
           <span class="pb-eyebrow" aria-hidden="true">Index</span>
           <h2 id="library-heading" class="pb-library__title">{{ t('home.libraryTitle') }}</h2>
         </div>
-        <p class="pb-library__count">{{ t('home.total', { count: total }) }}</p>
+        <p class="pb-library__count">{{ loading && items.length === 0 ? '' : t('home.total', { count: total }) }}</p>
       </header>
 
       <div class="pb-filters" data-testid="home-filters">

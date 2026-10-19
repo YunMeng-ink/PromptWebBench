@@ -62,6 +62,7 @@ func TestWebStaticDirServing(t *testing.T) {
 	dir := t.TempDir()
 	writeWebFile(t, filepath.Join(dir, "index.html"), "<!doctype html><title>Prompt Benchmark</title>")
 	writeWebFile(t, filepath.Join(dir, "assets", "app.js"), "console.log('app')")
+	writeWebFile(t, filepath.Join(dir, "robots.txt"), "User-agent: *")
 
 	srv := newWebServer(t, dir)
 	ts := httptest.NewServer(srv.Handler())
@@ -105,6 +106,95 @@ func TestWebStaticDirServing(t *testing.T) {
 	// 接口路由不受静态兜底影响。
 	expectStatus(t, webGet(t, ts.URL, api.APIPrefix+"/health"), http.StatusOK)
 	expectErrorCode(t, webGet(t, ts.URL, api.APIPrefix+"/nonexistent"), http.StatusNotFound, "not_found")
+}
+
+// TestWebStaticCacheHeaders 验证静态资源与 SPA 回落的缓存头与协商缓存：
+// 页面入口按请求路径拿到 no-cache 与 ETag，条件请求返回 304；
+// 非哈希的根目录文件使用短缓存；静态响应不携带 CSRF Cookie 与 Vary: Cookie。
+func TestWebStaticCacheHeaders(t *testing.T) {
+	dir := t.TempDir()
+	writeWebFile(t, filepath.Join(dir, "index.html"), "<!doctype html><title>Prompt Benchmark</title>")
+	writeWebFile(t, filepath.Join(dir, "assets", "app.js"), "console.log('app')")
+	writeWebFile(t, filepath.Join(dir, "robots.txt"), "User-agent: *")
+
+	srv := newWebServer(t, dir)
+	ts := httptest.NewServer(srv.Handler())
+	t.Cleanup(ts.Close)
+
+	// SPA 回落拿到的是 index.html，缓存策略必须按实际返回的文件判定。
+	spa := webGet(t, ts.URL, "/prompts/123/edit")
+	if cc := spa.Header.Get("Cache-Control"); cc != "no-cache" {
+		t.Fatalf("SPA 回落 Cache-Control = %q，期望 no-cache", cc)
+	}
+	etag := spa.Header.Get("ETag")
+	if etag == "" {
+		t.Fatal("SPA 回落缺少 ETag")
+	}
+	if cookies := spa.Header.Values("Set-Cookie"); len(cookies) != 0 {
+		t.Fatalf("静态响应不应签发 Cookie，实际 %v", cookies)
+	}
+	if vary := spa.Header.Get("Vary"); strings.Contains(vary, "Cookie") {
+		t.Fatalf("静态响应不应带 Vary: Cookie，实际 %q", vary)
+	}
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/prompts/123/edit", nil)
+	if err != nil {
+		t.Fatalf("构造请求失败: %v", err)
+	}
+	req.Header.Set("If-None-Match", etag)
+	conditional, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("条件请求失败: %v", err)
+	}
+	t.Cleanup(func() { conditional.Body.Close() })
+	if conditional.StatusCode != http.StatusNotModified {
+		t.Fatalf("条件请求状态码 = %d，期望 304", conditional.StatusCode)
+	}
+
+	asset := webGet(t, ts.URL, "/assets/app.js")
+	if etag := asset.Header.Get("ETag"); etag == "" {
+		t.Fatal("带哈希资源缺少 ETag")
+	}
+	if cc := webGet(t, ts.URL, "/robots.txt").Header.Get("Cache-Control"); cc != "public, max-age=3600" {
+		t.Fatalf("robots.txt Cache-Control = %q，期望 public, max-age=3600", cc)
+	}
+}
+
+// TestAPICacheHeaders 验证接口缓存策略：只读字典与公开聚合可共享缓存，
+// 与身份相关的接口与全部写方法一律 no-store，且不签发 CSRF Cookie。
+func TestAPICacheHeaders(t *testing.T) {
+	e := newTestEnv(t)
+	c := e.newClient(t)
+
+	if cc := c.get(api.APIPrefix + "/capabilities").Header.Get("Cache-Control"); cc != "public, max-age=300, stale-while-revalidate=3600" {
+		t.Fatalf("/capabilities Cache-Control = %q", cc)
+	}
+	if cc := c.get(api.APIPrefix + "/leaderboard").Header.Get("Cache-Control"); cc != "public, max-age=60, stale-while-revalidate=300" {
+		t.Fatalf("/leaderboard Cache-Control = %q", cc)
+	}
+	if cc := c.get(api.APIPrefix + "/prompts").Header.Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("/prompts Cache-Control = %q，期望 no-store", cc)
+	}
+	if cc := c.get(api.APIPrefix + "/purposes").Header.Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("/purposes Cache-Control = %q，期望 no-store", cc)
+	}
+	if cc := c.get(api.APIPrefix + "/auth/session").Header.Get("Cache-Control"); cc != "no-store" {
+		t.Fatalf("/auth/session Cache-Control = %q，期望 no-store", cc)
+	}
+
+	// 登录态探测签发 CSRF Cookie，写请求才能通过双提交校验。
+	if token := c.csrfToken(); token == "" {
+		t.Fatal("登录态探测应签发 CSRF Cookie")
+	}
+
+	// 可共享缓存的只读接口不重新签发 Cookie，否则 CDN 无法缓存。
+	clean := e.newClient(t)
+	if cc := clean.get(api.APIPrefix + "/capabilities").Header.Get("Cache-Control"); cc == "" {
+		t.Fatal("可缓存接口缺少 Cache-Control")
+	}
+	if token := clean.csrfToken(); token != "" {
+		t.Fatalf("可缓存的只读接口不应签发 CSRF Cookie，实际 %q", token)
+	}
 }
 
 // TestWebWithoutStatic 验证常规构建（未开启 embedweb 标签、未设置 STATIC_DIR）
